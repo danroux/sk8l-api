@@ -1,0 +1,18 @@
+apiVersion: v2
+name: sk8l
+description: |
+  sk8l collects Cronjob activity, displays it visually in the UI and publishes cronjob metrics: duration, successes, failures
+keywords:
+  - Cronjob
+  - Monitoring
+  - Observability
+  - Prometheus
+home: https://sk8l.io
+type: application
+maintainers:
+  - name: danroux
+    email: dan@sk8l.io
+    url: https://sk8l.io
+version: 0.1.0
+kubeVersion: ">=1.26.0-0"
+appVersion: "0.1.0"

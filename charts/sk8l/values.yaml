@@ -1,0 +1,161 @@
+# # Default values for sk8l.
+# # This is a YAML-formatted file.
+# # Declare variables to be passed into your templates.
+
+namespace: ""
+serviceAccountName: "sk8l"
+labels:
+  name: "sk8l"
+
+# Specifies whether a service account should be created
+createServiceAccount: true
+createNamespace: true
+
+serviceAccount:
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  metadata:
+    name: "sk8l"
+    namespace: "sk8l"
+    labels:
+      name: "sk8l"
+    # Annotations to add to the service account
+    annotations: {}
+    # Automatically mount a ServiceAccount's API credentials?
+    automountServiceAccountToken: true
+
+sk8lApi:
+  # imagePullPolicy: ""
+  autoscaling:
+    enabled: true
+    replicaCount: 1
+  # sk8l-api needs a TLS server and ca certificate(if self-signed)
+  volumeMounts: []
+    # - name: tls-certs
+    #   mountPath: /etc/sk8l-certs
+    #   readOnly: true
+  volumes: []
+    # - name: tls-certs
+    #   projected:
+    #     sources:
+    #     - secret:
+    #         name: tls-server-cert
+    #         items:
+    #           - key: tls.crt
+    #             path: server-cert.pem
+    #           - key: tls.key
+    #             path: server-key.pem
+    #     - secret:
+    #         name: tls-ca-cert
+    #         items:
+    #           - key: tls.crt
+    #             path: ca-cert.pem
+    #           - key: tls.key
+    #             path: ca-key.pem
+
+sk8lWeb:
+  # imagePullPolicy: ""
+  volumeMounts: []
+    # - name: tls-certs
+    #   mountPath: /etc/sk8l-certs
+    #   readOnly: true
+  volumes: []
+    # If you need to conifure the nginx instance serving the ui
+    # you can do it by replacing the mounted nginx-configmap.
+    #
+    # nginx also needs the TLS certificates
+    # - name: tls-certs
+    #   projected:
+    #     sources:
+    #     - secret:
+    #         name: tls-server-cert
+    #         items:
+    #           - key: tls.crt
+    #             path: server-cert.pem
+    #           - key: tls.key
+    #             path: server-key.pem
+    #     - secret:
+    #         name: tls-ca-cert
+    #         items:
+    #           - key: tls.crt
+    #             path: ca-cert.pem
+    #           - key: tls.key
+    #             path: ca-key.pem
+
+envoy:
+  image: ""
+  volumeMounts: []
+    # Envoy needs a TLS certificate.
+    # You can mount a volume with a secret with the keys:
+    # - tls.crt.
+    # - tls.key.
+    #
+    # Eg.:
+    # - name: tls-certs
+    #   mountPath: /etc/sk8l-certs
+    #   readOnly: true
+prometheus:
+  create: false
+
+# podAnnotations: {}
+# podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+  # ---
+  # runAsUser: 0
+  # runAsUser: 1000
+  # # runAsGroup: 3000
+  # fsGroup: 1000
+
+service:
+  annotations: []
+  type: LoadBalancer
+  labels:
+    app.kubernetes.io/name: sk8l
+  ports:
+    - name: sk8l-web
+      protocol: TCP
+      port: 8001
+      targetPort: sk8l-web-port
+    - name: sk8l-api
+      protocol: TCP
+      port: 8585
+      targetPort: api-port
+    - name: sk8l-api-health
+      protocol: TCP
+      port: 8588
+      targetPort: api-health-port
+    - name: sk8l-api-metrics
+      protocol: TCP
+      port: 8590
+      targetPort: metrics-port
+    - name: envoy
+      protocol: TCP
+      port: 9080
+      targetPort: envoy-port
+    - name: envoy-admin
+      protocol: TCP
+      port: 9901
+      targetPort: envoy-admin
+
+configMaps:
+  web:
+    # You can change the URL used on the frontend if needed.
+    vue_app_sk8l_api_url: "https://localhost:9080"
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
