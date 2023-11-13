@@ -201,18 +201,6 @@ func (s Sk8lServer) buildJobResponse(batchJob batchv1.Job) *protos.JobResponse {
 		TerminationReasons: terminationReasons,
 	}
 
-	// y := os.MkdirAll("/var/log", os.ModePerm)
-	// if y != nil {
-	//      log.Fatalf("error MkdirAll: %v", y)
-	// }
-	// f, err := os.OpenFile("/var/log/ordersx.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE|os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	// if err != nil {
-	//      log.Fatalf("error opening file: %v", err)
-	// }
-	// defer f.Close()
-	// wrt := io.MultiWriter(os.Stdout, f)
-	// log.SetOutput(wrt)
-
 	return jobResponse
 }
 
