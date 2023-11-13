@@ -1,6 +1,6 @@
 # sk8l
 
-skål/k8s
+sk8l/skål
 
 Monitor your cronjobs activity. Use the exported prometheus metrics to get alerts when your cronjob fails, takes longer than expected or does not start when it should.
 
@@ -39,6 +39,8 @@ helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
 
 ### ROADMAP
 
-- Support HTTP(not HTTPS) if desired by user
-- Scaling up deployments might break prometheus, the app
-- Performance
+- Support making HTTP configurable
+- Make caching configurable
+  - When adding replicas, each instance sends metrics and have their own cache
+- Make intervals configurable(metrics, refresh timer on UI)
+  - Stream responses instead of js timers
