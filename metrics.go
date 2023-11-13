@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"sync"
@@ -33,12 +34,18 @@ var (
 		Name:      "completed_cronjobs_total",
 		Subsystem: namespace,
 	}
+	registeredCronjobsOpts = prometheus.GaugeOpts{
+		Namespace: opt_namespace,
+		Name:      "registered_cronjobs_total",
+		Subsystem: namespace,
+	}
 
-	failingCronjobsGauge   = promauto.NewGauge(failingCronjobsOpts)
-	runningCronjobsGauge   = promauto.NewGauge(runningCronjobsOpts)
-	completedCronjobsGauge = promauto.NewGauge(completedCronjobsOpts)
+	failingCronjobsGauge    = promauto.NewGauge(failingCronjobsOpts)
+	runningCronjobsGauge    = promauto.NewGauge(runningCronjobsOpts)
+	completedCronjobsGauge  = promauto.NewGauge(completedCronjobsOpts)
+	registeredCronjobsGauge = promauto.NewGauge(registeredCronjobsOpts)
 
-	cjFailingJobs          float64
+	cronjobFailingJobs     float64
 	cronjobCompletions     float64
 	completedCronjobs      float64
 	failingJobs            float64
@@ -57,9 +64,15 @@ func recordMetrics(svr *Sk8lServer) {
 		for {
 			m := &protos.CronjobsRequest{}
 			ctx := context.TODO()
-			res, _ := svr.GetCronjobs(ctx, m)
+			cronjobResponse, _ := svr.GetCronjobs(ctx, m)
+			registeredCronjobs := len(cronjobResponse.Cronjobs)
+			registeredCronjobsGauge.Set(float64(registeredCronjobs))
 
-			for _, cj := range res.Cronjobs {
+			if registeredCronjobs == 0 {
+				log.Println("Setting registeredCronjobs to 0")
+			}
+
+			for _, cj := range cronjobResponse.Cronjobs {
 				sanitizedCjName := sanitizeMetricName(cj.Name)
 				cronjobDurationOpts = prometheus.GaugeOpts{
 					Name:      fmt.Sprintf("%s_duration_seconds", sanitizedCjName),
@@ -87,7 +100,7 @@ func recordMetrics(svr *Sk8lServer) {
 
 				for _, job := range cj.Jobs {
 					if job.Failed {
-						cjFailingJobs += 1
+						cronjobFailingJobs += 1
 					}
 
 					if job.Succeeded || cj.LastSuccessfulTime != "" {
@@ -133,16 +146,16 @@ func recordMetrics(svr *Sk8lServer) {
 				)
 
 				if failingJobsGauge, ok := summaryMap.Load(failuresKey); ok {
-					failingJobsGauge.(prometheus.Gauge).Set(cjFailingJobs)
+					failingJobsGauge.(prometheus.Gauge).Set(cronjobFailingJobs)
 				} else {
 					failingJobsGauge := promauto.NewGauge(failingJobsOpts)
 					summaryMap.Store(failuresKey, failingJobsGauge)
-					failingJobsGauge.Set(cjFailingJobs)
+					failingJobsGauge.Set(cronjobFailingJobs)
 				}
 
-				failingJobs += cjFailingJobs
+				failingJobs += cronjobFailingJobs
 				completedCronjobs += cronjobCompletions
-				cjFailingJobs = 0
+				cronjobFailingJobs = 0
 				cronjobCompletions = 0
 			}
 
