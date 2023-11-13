@@ -1,5 +1,3 @@
-// GOEXPERIMENT=loopvar
-
 package main
 
 import (
@@ -12,6 +10,7 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/protos"
+	badger "github.com/dgraph-io/badger/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -50,8 +49,11 @@ func main() {
 
 	log.Printf("grpcS creds %v", creds)
 	k8sClient := NewK8sClient(WithNamespace(os.Getenv("K8_NAMESPACE")))
+
+	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
 	sk8lServer := &Sk8lServer{
 		K8sClient: k8sClient,
+		DB:        db,
 	}
 
 	recordMetrics(sk8lServer)
@@ -89,6 +91,8 @@ func main() {
 	}
 
 	err = grpcS.Serve(conn)
+
+	// grpcS.GracefulStop
 
 	if err != nil {
 		log.Fatal("grpcS error", err)
