@@ -10,18 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	// "k8s.io/apimachinery/pkg/util/yaml"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	//
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
-	//
-	// Or uncomment to load specific auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
 type K8sClient struct {
@@ -39,8 +29,12 @@ func WithNamespace(namespace string) ClientOption {
 }
 
 func NewK8sClient(options ...ClientOption) *K8sClient {
-	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
+	config.ContentConfig = rest.ContentConfig{
+		AcceptContentTypes: "application/vnd.kubernetes.protobuf,application/json",
+		ContentType:        "application/vnd.kubernetes.protobuf",
+	}
+
 	if err != nil {
 		panic(err.Error())
 	}
