@@ -34,7 +34,9 @@ spec:
         - name: sk8l-api
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: {{ .Values.sk8lApi.image | default "danroux/sk8l-api" | quote }}
+          {{- $apiImage := .Values.sk8lApi.image | default "danrouxsk8l-api" }}
+          {{- $apiTag := .Values.sk8lApi.imageTag | default "latest" }}
+          image: {{ printf "%s:%s" $apiImage $apiTag }}
           imagePullPolicy: {{ .Values.sk8lApi.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
             - name: api-port
@@ -63,6 +65,8 @@ spec:
             - configMapRef:
                 name: sk8l-api-configmap
           volumeMounts:
+            - name: badger-storage
+              mountPath: /tmp/badger
             - name: tls-certs
               mountPath: /etc/sk8l-certs
               readOnly: true
@@ -95,10 +99,12 @@ spec:
             {{- if .Values.envoy.volumeMounts }}
             {{- toYaml .Values.envoy.volumeMounts | nindent 12 }}
             {{- end }}
-        - name: sk8l-web
+        - name: sk8l-ui
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: {{ .Values.sk8lWeb.image | default "danroux/sk8l-web" | quote }}
+          {{- $uiImage := .Values.sk8lWeb.image | default "danrouxsk8l-ui" }}
+          {{- $uiTag := .Values.sk8lWeb.imageTag | default "latest" }}
+          image: {{ printf "%s:%s" $uiImage $uiTag }}
           imagePullPolicy: {{ .Values.sk8lWeb.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
             {{- with (index .Values.service) }}
@@ -119,6 +125,8 @@ spec:
             - configMapRef:
                 name: sk8l-web-configmap
           volumeMounts:
+            - name: badger-storage
+              mountPath: /tmp/badger
             - name: nginx-config
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
@@ -149,6 +157,8 @@ spec:
         {{- end }}
       terminationGracePeriodSeconds: 30
       volumes:
+        - name: badger-storage
+          emptyDir: {}
         - name: envoy-config
           configMap:
             name: envoy-configmap

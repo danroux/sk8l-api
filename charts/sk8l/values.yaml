@@ -25,7 +25,8 @@ serviceAccount:
     automountServiceAccountToken: true
 
 sk8lApi:
-  # imagePullPolicy: ""
+  imagePullPolicy: ""
+  imageTag: ""
   autoscaling:
     enabled: true
     replicaCount: 1
@@ -54,7 +55,8 @@ sk8lApi:
     #             path: ca-key.pem
 
 sk8lWeb:
-  # imagePullPolicy: ""
+  imagePullPolicy: ""
+  imageTag: ""
   volumeMounts: []
     # - name: tls-certs
     #   mountPath: /etc/sk8l-certs

@@ -7,6 +7,7 @@ This chart installs sk8l/skål(https://sk8l.io)
 ```
 helm repo add sk8l https://sk8l.io/charts
 helm repo update
+helm search repo sk8l
 ```
 
 ## Install chart
@@ -25,15 +26,17 @@ helm uninstall [RELEASE_NAME]
 
 ## Configuration
 
-See . To see all configurable options with detailed comments, visit the chart's values.yaml, or run these configuration commands:
+To see all configurable options with detailed comments, visit the chart's values.yaml, or run these configuration commands:
 
 ```
 helm show values sk8l/sk8l
 ```
 
+### Prometheus
+
 If you wish to consume the exported metrics with prometheus, you can point prometheus to port 8590(HTTPS).
 
-## Kubernetes SD configurations
+#### Kubernetes SD configurations
 
 You can also benefit from prometheus support of Kubernetes SD and use the pod's label `sk8l.io/api-scrape-port` to configure the scrapping jobs:
 
@@ -53,9 +56,16 @@ relabel_configs:
 
 ### Secrets
 
-The commmunication between apps is encrypted so during installation server and ca certificates are created as placeholders and used as mounted volumes.
+#### TLS
 
-You should replace them as soon as possible and create your own.
+The commmunication between apps is encrypted.
+
+To manually configure TLS, first create/retrieve a key & certificate pair. Then create TLS secrets in the namespace:
+
+```
+kubectl create secret tls -n NAMESPACE tls-server-cert --cert=path/to/tls.cert --key=path/to/tls.key
+kubectl create secret tls -n NAMESPACE tls-ca-cert --cert=ca-cert.pem --key=ca-key.pem
+```
 
 ### Labels
 
