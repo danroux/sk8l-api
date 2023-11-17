@@ -21,6 +21,8 @@ package sk8l;
 // import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
 // import "k8s.io/apimachinery/pkg/apis/core/v1/generated.proto";
 import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
+// https://github.com/protocolbuffers/protobuf/issues/2388
+// import "google/protobuf/struct.proto";
 import "k8s.io/api/batch/v1/generated.proto";
 import "k8s.io/api/core/v1/generated.proto";
 import "sk8l_custom.proto";
@@ -150,4 +152,14 @@ message CronjobResponse {
 message CronjobPodsResponse {
   repeated PodResponse pods = 1 [json_name="pods"];
   CronjobResponse cronjob = 2 [json_name="cronjob"];
+}
+
+message JobList {
+  repeated k8s.io.api.batch.v1.Job Items = 1;
+}
+
+message MappedJobs {
+  // google.protobuf.ListValue Jobs = 1;
+  map<string, JobList> JobLists = 1;
+
 }

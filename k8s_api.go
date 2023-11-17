@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 
+	"slices"
+
+	"github.com/danroux/sk8l/protos"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -100,7 +102,7 @@ func (kc *K8sClient) GetJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 	} else if err != nil {
 		panic(err.Error())
 	} else {
-		log.Printf("There are %d jobPods in the cluster\n", len(jobPods.Items))
+		log.Printf("There are %d jobPods in the cluster for job %s - %s\n", len(jobPods.Items), job.UID, job.Name)
 	}
 
 	return jobPods
@@ -148,6 +150,49 @@ func (kc *K8sClient) GetAllJobs() *batchv1.JobList {
 		panic(err.Error())
 	}
 	log.Printf("There are %d jobs in the cluster\n", len(jobs.Items))
-
+	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
 	return jobs
+}
+
+func (kc *K8sClient) GetAllJobsMapped() *protos.MappedJobs {
+	ctx := context.TODO()
+
+	// get pods in all the namespaces by omitting namespace
+	// Or specify namespace to get pods in particular namespace
+	// Limit: 10, // need to fix this - last duration / current duration get messed up
+	jobs, err := kc.ClientSet.BatchV1().Jobs(kc.namespace).List(ctx, metav1.ListOptions{})
+
+	if err != nil {
+		panic(err.Error())
+	}
+	log.Printf("There are %d jobs in the cluster\n", len(jobs.Items))
+	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
+
+	cronjobNames := []string{}
+	// for _, cronjob := range cronJobList.Items {
+	//      cronjobNames = append(cronjobNames, cronjob.Name)
+	// }
+
+	jobsMapped := make(map[string][]*batchv1.Job)
+	for _, job := range jobs.Items {
+		job := job
+		for _, owr := range job.ObjectMeta.OwnerReferences {
+			target := jobsMapped[owr.Name]
+			jobsMapped[owr.Name] = append(target, &job)
+			if !slices.Contains(cronjobNames, owr.Name) {
+				cronjobNames = append(cronjobNames, owr.Name)
+			}
+		}
+	}
+
+	x := &protos.MappedJobs{}
+	x.JobLists = make(map[string]*protos.JobList)
+
+	for _, name := range cronjobNames {
+		x.JobLists[name] = &protos.JobList{
+			Items: jobsMapped[name],
+		}
+	}
+
+	return x
 }
