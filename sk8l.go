@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -191,6 +192,56 @@ func (s *Sk8lServer) findJobs() *protos.MappedJobs {
 	return mappedJobs
 }
 
+func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
+	fKey := fmt.Sprintf("jobs_pods_for_job_%", job.Name)
+	key := []byte(fKey)
+	collection := &corev1.PodList{}
+
+	s.DB.View(func(txn *badger.Txn) error {
+		current, err := txn.Get(key)
+		// Your code here…
+
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil
+		}
+
+		current.Value(func(val []byte) error {
+			proto.Unmarshal(val, collection)
+
+			return nil
+		})
+
+		return nil
+	})
+
+	podItems := []corev1.Pod{}
+
+	podMap := make(map[string][]corev1.Pod)
+	for _, pod := range collection.Items {
+		for _, ownr := range pod.OwnerReferences {
+			if ownr.Name == job.Name && pod.Status.StartTime != nil {
+				podMap[pod.Name] = append(podMap[pod.Name], pod)
+			}
+		}
+	}
+
+	for _, pods := range podMap {
+		slices.SortFunc(pods,
+			func(a, b corev1.Pod) int {
+				return cmp.Compare(a.ResourceVersion, b.ResourceVersion)
+			})
+
+		latestVersion := pods[len(pods)-1]
+		podItems = append(podItems, latestVersion)
+	}
+
+	podList := &corev1.PodList{
+		Items: podItems,
+	}
+
+	return podList
+}
+
 func (s *Sk8lServer) GetCronjob(ctx context.Context, in *protos.CronjobRequest) (*protos.CronjobResponse, error) {
 	cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
 
@@ -291,7 +342,7 @@ func jobFailed(job *batchv1.Job, jobPodsResponses []*protos.PodResponse) (bool, 
 }
 
 func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse {
-	jobPodsForJob := s.K8sClient.GetJobPodsForJob(batchJob)
+	jobPodsForJob := s.findJobPodsForJob(batchJob)
 	jobPodsResponses := buildJobPodsResponses(jobPodsForJob)
 
 	jobFailed, failureCondition, jobConditions := jobFailed(batchJob, jobPodsResponses)
@@ -334,6 +385,55 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 	}
 
 	return jobResponse
+}
+
+func (s *Sk8lServer) WatchPods() {
+	x := s.K8sClient.WatchPods()
+
+	go func() {
+		for {
+			event, more := <-x.ResultChan()
+			if more {
+				podObject := event.Object.(*corev1.Pod)
+				fmt.Println("Job watching - received pod", event.Type, podObject.Name)
+
+				fKey := fmt.Sprintf("jobs_pods_for_job_%", podObject.Labels["job-name"])
+				key := []byte(fKey)
+				err := s.DB.Update(func(txn *badger.Txn) error {
+					item, err := txn.Get(key)
+					if err != nil {
+						rec := &corev1.PodList{
+							Items: []corev1.Pod{*podObject},
+						}
+
+						result, _ := proto.Marshal(rec)
+						entry := badger.NewEntry(key, result)
+						err := txn.SetEntry(entry)
+						return err
+					}
+
+					err = item.Value(func(val []byte) error {
+						rec := &corev1.PodList{}
+						proto.Unmarshal(val, rec)
+
+						rec.Items = append(rec.Items, *podObject)
+						result, _ := proto.Marshal(rec)
+
+						entry := badger.NewEntry(key, result)
+						err := txn.SetEntry(entry)
+						return err
+					})
+
+					return err
+				})
+
+				if err != nil {
+				}
+			} else {
+				fmt.Println("received all Pods")
+			}
+		}
+	}()
 }
 
 func (s *Sk8lServer) allAndRunningJobsAnPods(jobs []*batchv1.Job, cronjobUID types.UID) ([]*protos.JobResponse, []*protos.PodResponse, []*protos.JobResponse, []*protos.PodResponse) {

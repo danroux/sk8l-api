@@ -61,6 +61,8 @@ func main() {
 	healthgrpc.RegisterHealthServer(probeS, sk8lServer)
 	protos.RegisterCronjobServer(grpcS, sk8lServer)
 
+	sk8lServer.WatchPods()
+
 	http.Handle("/metrics", promhttp.Handler())
 
 	httpS := &http.Server{

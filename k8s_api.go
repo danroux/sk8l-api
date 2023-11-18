@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -87,10 +88,16 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 	return cronJob
 }
 
+func (kc *K8sClient) WatchPods() watch.Interface {
+	ctx := context.TODO()
+	x, _ := kc.ClientSet.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
+
+	return x
+}
+
 func (kc *K8sClient) GetJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 	ctx := context.TODO()
 
-	fmt.Println("searching for", job.Namespace, job.Name)
 	jobPods, err := kc.ClientSet.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("job-name=%s", job.Name),
 	})
