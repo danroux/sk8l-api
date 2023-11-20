@@ -18,9 +18,9 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CronjobClient interface {
-	GetCronjobs(ctx context.Context, in *CronjobsRequest, opts ...grpc.CallOption) (*CronjobsResponse, error)
-	GetCronjob(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (*CronjobResponse, error)
-	GetCronjobPods(ctx context.Context, in *CronjobPodsRequest, opts ...grpc.CallOption) (*CronjobPodsResponse, error)
+	GetCronjobs(ctx context.Context, in *CronjobsRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobsClient, error)
+	GetCronjob(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobClient, error)
+	GetCronjobPods(ctx context.Context, in *CronjobPodsRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobPodsClient, error)
 	GetCronjobYAML(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (*CronjobYAMLResponse, error)
 	GetJobYAML(ctx context.Context, in *JobRequest, opts ...grpc.CallOption) (*JobYAMLResponse, error)
 	GetPodYAML(ctx context.Context, in *PodRequest, opts ...grpc.CallOption) (*PodYAMLResponse, error)
@@ -34,31 +34,100 @@ func NewCronjobClient(cc grpc.ClientConnInterface) CronjobClient {
 	return &cronjobClient{cc}
 }
 
-func (c *cronjobClient) GetCronjobs(ctx context.Context, in *CronjobsRequest, opts ...grpc.CallOption) (*CronjobsResponse, error) {
-	out := new(CronjobsResponse)
-	err := c.cc.Invoke(ctx, "/sk8l.Cronjob/GetCronjobs", in, out, opts...)
+func (c *cronjobClient) GetCronjobs(ctx context.Context, in *CronjobsRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Cronjob_ServiceDesc.Streams[0], "/sk8l.Cronjob/GetCronjobs", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &cronjobGetCronjobsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
-func (c *cronjobClient) GetCronjob(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (*CronjobResponse, error) {
-	out := new(CronjobResponse)
-	err := c.cc.Invoke(ctx, "/sk8l.Cronjob/GetCronjob", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
+type Cronjob_GetCronjobsClient interface {
+	Recv() (*CronjobsResponse, error)
+	grpc.ClientStream
 }
 
-func (c *cronjobClient) GetCronjobPods(ctx context.Context, in *CronjobPodsRequest, opts ...grpc.CallOption) (*CronjobPodsResponse, error) {
-	out := new(CronjobPodsResponse)
-	err := c.cc.Invoke(ctx, "/sk8l.Cronjob/GetCronjobPods", in, out, opts...)
+type cronjobGetCronjobsClient struct {
+	grpc.ClientStream
+}
+
+func (x *cronjobGetCronjobsClient) Recv() (*CronjobsResponse, error) {
+	m := new(CronjobsResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *cronjobClient) GetCronjob(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Cronjob_ServiceDesc.Streams[1], "/sk8l.Cronjob/GetCronjob", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &cronjobGetCronjobClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Cronjob_GetCronjobClient interface {
+	Recv() (*CronjobResponse, error)
+	grpc.ClientStream
+}
+
+type cronjobGetCronjobClient struct {
+	grpc.ClientStream
+}
+
+func (x *cronjobGetCronjobClient) Recv() (*CronjobResponse, error) {
+	m := new(CronjobResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *cronjobClient) GetCronjobPods(ctx context.Context, in *CronjobPodsRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobPodsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Cronjob_ServiceDesc.Streams[2], "/sk8l.Cronjob/GetCronjobPods", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &cronjobGetCronjobPodsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Cronjob_GetCronjobPodsClient interface {
+	Recv() (*CronjobPodsResponse, error)
+	grpc.ClientStream
+}
+
+type cronjobGetCronjobPodsClient struct {
+	grpc.ClientStream
+}
+
+func (x *cronjobGetCronjobPodsClient) Recv() (*CronjobPodsResponse, error) {
+	m := new(CronjobPodsResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (c *cronjobClient) GetCronjobYAML(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (*CronjobYAMLResponse, error) {
@@ -92,9 +161,9 @@ func (c *cronjobClient) GetPodYAML(ctx context.Context, in *PodRequest, opts ...
 // All implementations must embed UnimplementedCronjobServer
 // for forward compatibility
 type CronjobServer interface {
-	GetCronjobs(context.Context, *CronjobsRequest) (*CronjobsResponse, error)
-	GetCronjob(context.Context, *CronjobRequest) (*CronjobResponse, error)
-	GetCronjobPods(context.Context, *CronjobPodsRequest) (*CronjobPodsResponse, error)
+	GetCronjobs(*CronjobsRequest, Cronjob_GetCronjobsServer) error
+	GetCronjob(*CronjobRequest, Cronjob_GetCronjobServer) error
+	GetCronjobPods(*CronjobPodsRequest, Cronjob_GetCronjobPodsServer) error
 	GetCronjobYAML(context.Context, *CronjobRequest) (*CronjobYAMLResponse, error)
 	GetJobYAML(context.Context, *JobRequest) (*JobYAMLResponse, error)
 	GetPodYAML(context.Context, *PodRequest) (*PodYAMLResponse, error)
@@ -105,14 +174,14 @@ type CronjobServer interface {
 type UnimplementedCronjobServer struct {
 }
 
-func (UnimplementedCronjobServer) GetCronjobs(context.Context, *CronjobsRequest) (*CronjobsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCronjobs not implemented")
+func (UnimplementedCronjobServer) GetCronjobs(*CronjobsRequest, Cronjob_GetCronjobsServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetCronjobs not implemented")
 }
-func (UnimplementedCronjobServer) GetCronjob(context.Context, *CronjobRequest) (*CronjobResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCronjob not implemented")
+func (UnimplementedCronjobServer) GetCronjob(*CronjobRequest, Cronjob_GetCronjobServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetCronjob not implemented")
 }
-func (UnimplementedCronjobServer) GetCronjobPods(context.Context, *CronjobPodsRequest) (*CronjobPodsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCronjobPods not implemented")
+func (UnimplementedCronjobServer) GetCronjobPods(*CronjobPodsRequest, Cronjob_GetCronjobPodsServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetCronjobPods not implemented")
 }
 func (UnimplementedCronjobServer) GetCronjobYAML(context.Context, *CronjobRequest) (*CronjobYAMLResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCronjobYAML not implemented")
@@ -136,58 +205,67 @@ func RegisterCronjobServer(s grpc.ServiceRegistrar, srv CronjobServer) {
 	s.RegisterService(&Cronjob_ServiceDesc, srv)
 }
 
-func _Cronjob_GetCronjobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CronjobsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _Cronjob_GetCronjobs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(CronjobsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(CronjobServer).GetCronjobs(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/sk8l.Cronjob/GetCronjobs",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CronjobServer).GetCronjobs(ctx, req.(*CronjobsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(CronjobServer).GetCronjobs(m, &cronjobGetCronjobsServer{stream})
 }
 
-func _Cronjob_GetCronjob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CronjobRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CronjobServer).GetCronjob(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/sk8l.Cronjob/GetCronjob",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CronjobServer).GetCronjob(ctx, req.(*CronjobRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+type Cronjob_GetCronjobsServer interface {
+	Send(*CronjobsResponse) error
+	grpc.ServerStream
 }
 
-func _Cronjob_GetCronjobPods_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CronjobPodsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+type cronjobGetCronjobsServer struct {
+	grpc.ServerStream
+}
+
+func (x *cronjobGetCronjobsServer) Send(m *CronjobsResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Cronjob_GetCronjob_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(CronjobRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(CronjobServer).GetCronjobPods(ctx, in)
+	return srv.(CronjobServer).GetCronjob(m, &cronjobGetCronjobServer{stream})
+}
+
+type Cronjob_GetCronjobServer interface {
+	Send(*CronjobResponse) error
+	grpc.ServerStream
+}
+
+type cronjobGetCronjobServer struct {
+	grpc.ServerStream
+}
+
+func (x *cronjobGetCronjobServer) Send(m *CronjobResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Cronjob_GetCronjobPods_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(CronjobPodsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/sk8l.Cronjob/GetCronjobPods",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CronjobServer).GetCronjobPods(ctx, req.(*CronjobPodsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(CronjobServer).GetCronjobPods(m, &cronjobGetCronjobPodsServer{stream})
+}
+
+type Cronjob_GetCronjobPodsServer interface {
+	Send(*CronjobPodsResponse) error
+	grpc.ServerStream
+}
+
+type cronjobGetCronjobPodsServer struct {
+	grpc.ServerStream
+}
+
+func (x *cronjobGetCronjobPodsServer) Send(m *CronjobPodsResponse) error {
+	return x.ServerStream.SendMsg(m)
 }
 
 func _Cronjob_GetCronjobYAML_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -252,18 +330,6 @@ var Cronjob_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*CronjobServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "GetCronjobs",
-			Handler:    _Cronjob_GetCronjobs_Handler,
-		},
-		{
-			MethodName: "GetCronjob",
-			Handler:    _Cronjob_GetCronjob_Handler,
-		},
-		{
-			MethodName: "GetCronjobPods",
-			Handler:    _Cronjob_GetCronjobPods_Handler,
-		},
-		{
 			MethodName: "GetCronjobYAML",
 			Handler:    _Cronjob_GetCronjobYAML_Handler,
 		},
@@ -276,6 +342,22 @@ var Cronjob_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Cronjob_GetPodYAML_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "GetCronjobs",
+			Handler:       _Cronjob_GetCronjobs_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "GetCronjob",
+			Handler:       _Cronjob_GetCronjob_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "GetCronjobPods",
+			Handler:       _Cronjob_GetCronjobPods_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "sk8l.proto",
 }

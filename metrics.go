@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/protos"
+	"google.golang.org/grpc"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -60,15 +61,30 @@ var (
 )
 
 func recordMetrics(svr *Sk8lServer) {
+	conn, err := grpc.Dial(svr.Target, svr.Options...)
+	c := protos.NewCronjobClient(conn)
+
+	if err != nil {
+		panic(err)
+	}
+
 	go func() {
 		for {
 			m := &protos.CronjobsRequest{}
 			ctx := context.TODO()
-			cronjobResponse, _ := svr.GetCronjobs(ctx, m)
-			registeredCronjobs := len(cronjobResponse.Cronjobs)
+			cronjobsClient, err := c.GetCronjobs(ctx, m)
+			if err != nil {
+				panic(err)
+			}
+
+			cronjobsResponse, err := cronjobsClient.Recv()
+
+			if err != nil {
+			}
+			registeredCronjobs := len(cronjobsResponse.Cronjobs)
 			registeredCronjobsGauge.Set(float64(registeredCronjobs))
 
-			for _, cj := range cronjobResponse.Cronjobs {
+			for _, cj := range cronjobsResponse.Cronjobs {
 				sanitizedCjName := sanitizeMetricName(cj.Name)
 				runningCronjobs += float64(len(cj.RunningJobs))
 

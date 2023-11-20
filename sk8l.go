@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 	gyaml "github.com/ghodss/yaml"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
 	// structpb "google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/grpc"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,6 +31,8 @@ type Sk8lServer struct {
 	protos.UnimplementedCronjobServer
 	K8sClient *K8sClient
 	*badger.DB
+	Target  string
+	Options []grpc.DialOption
 }
 
 type APICall (func() []byte)
@@ -47,42 +52,138 @@ func (h Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 	return nil
 }
 
-func (s *Sk8lServer) GetCronjobs(context.Context, *protos.CronjobsRequest) (*protos.CronjobsResponse, error) {
-	cronJobList := s.findCronjobs()
-	jobsMapped := s.findJobs()
+func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
+	for {
+		cronJobList := s.findCronjobs()
+		jobsMapped := s.findJobs()
 
-	// cronJobList := getMocks()
-	// mocked := getMocks().Items
-	// cronJobList.Items = append(cronJobList.Items, mocked...)
+		// cronJobList := getMocks()
+		// mocked := getMocks().Items
+		// cronJobList.Items = append(cronJobList.Items, mocked...)
 
-	n := len(cronJobList.Items)
-	cronjobs := make([]*protos.CronjobResponse, 0, n)
+		n := len(cronJobList.Items)
+		cronjobs := make([]*protos.CronjobResponse, 0, n)
 
-	wg := sync.WaitGroup{}
-	wg.Add(n)
-	for _, cronjobItem := range cronJobList.Items {
-		go func(cronjobItem batchv1.CronJob) {
-			defer wg.Done()
-			jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjobItem.Name)
-			cronjob := s.cronJobResponse(cronjobItem, jobsForCronjob)
-			cronjobs = append(cronjobs, cronjob)
-		}(cronjobItem)
+		wg := sync.WaitGroup{}
+		wg.Add(n)
+		for _, cronjobItem := range cronJobList.Items {
+			go func(cronjobItem batchv1.CronJob) {
+				defer wg.Done()
+				jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjobItem.Name)
+				cronjob := s.cronJobResponse(cronjobItem, jobsForCronjob)
+				cronjobs = append(cronjobs, cronjob)
+			}(cronjobItem)
+		}
+		wg.Wait()
+
+		slices.SortFunc(cronjobs,
+			func(a, b *protos.CronjobResponse) int {
+				return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+			})
+
+		y := &protos.CronjobsResponse{
+			Cronjobs: cronjobs,
+		}
+
+		if err := stream.Send(y); err != nil {
+			return err
+		}
+
+		time.Sleep(time.Second * 10)
 	}
-	wg.Wait()
+	return nil
+}
 
-	slices.SortStableFunc(cronjobs,
-		func(a, b *protos.CronjobResponse) int {
-			aTime, _ := time.Parse(time.RFC3339, a.CreationTimestamp)
-			bTime, _ := time.Parse(time.RFC3339, b.CreationTimestamp)
-			return aTime.Compare(bTime)
+func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
+	for {
+		cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
 
-		})
+		jobsMapped := s.findJobs()
+		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
+		cronjobPodsResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
+		if err := stream.Send(cronjobPodsResponse); err != nil {
+			return err
+		}
 
-	y := &protos.CronjobsResponse{
-		Cronjobs: cronjobs,
+		time.Sleep(time.Second * 10)
 	}
 
-	return y, nil
+	return nil
+}
+
+func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
+	for {
+		cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
+
+		jobsMapped := s.findJobs()
+		jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
+
+		cronjobResponse := s.cronJobResponse(*cronjob, jobs)
+		lightweightCronjobPodsResponse := &protos.CronjobResponse{
+			Name:      cronjob.Name,
+			Namespace: cronjob.Namespace,
+			Jobs:      cronjobResponse.Jobs,
+		}
+
+		slices.SortFunc(cronjobResponse.JobsPods,
+			func(a, b *protos.PodResponse) int {
+				aStartTime := a.Status.StartTime
+				bStartTime := b.Status.StartTime
+				return aStartTime.Compare(bStartTime.Time)
+			})
+
+		cronjobPodsResponse := &protos.CronjobPodsResponse{
+			Pods:    cronjobResponse.JobsPods,
+			Cronjob: lightweightCronjobPodsResponse,
+		}
+
+		if err := stream.Send(cronjobPodsResponse); err != nil {
+			return err
+		}
+
+		time.Sleep(time.Second * 10)
+	}
+
+	return nil
+}
+
+func (s *Sk8lServer) GetCronjobYAML(ctx context.Context, in *protos.CronjobRequest) (*protos.CronjobYAMLResponse, error) {
+	cronjob := s.K8sClient.GetCronjob(in.CronjobNamespace, in.CronjobName)
+	prettyJson, _ := json.MarshalIndent(cronjob, "", "  ")
+
+	y, _ := gyaml.JSONToYAML(prettyJson)
+
+	response := &protos.CronjobYAMLResponse{
+		Cronjob: string(y),
+	}
+
+	return response, nil
+}
+
+func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*protos.JobYAMLResponse, error) {
+	job := s.K8sClient.GetJob(in.JobNamespace, in.JobName)
+	prettyJson, _ := json.MarshalIndent(job, "", "  ")
+
+	y, _ := gyaml.JSONToYAML(prettyJson)
+
+	response := &protos.JobYAMLResponse{
+		Job: string(y),
+	}
+
+	return response, nil
+}
+
+func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*protos.PodYAMLResponse, error) {
+	pod := s.K8sClient.GetPod(in.PodNamespace, in.PodName)
+	prettyJson, _ := json.MarshalIndent(pod, "", "  ")
+
+	y, _ := gyaml.JSONToYAML(prettyJson)
+
+	response := &protos.PodYAMLResponse{
+		Pod: string(y),
+	}
+
+	return response, nil
 }
 
 func (s *Sk8lServer) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
@@ -242,76 +343,6 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 	return podList
 }
 
-func (s *Sk8lServer) GetCronjob(ctx context.Context, in *protos.CronjobRequest) (*protos.CronjobResponse, error) {
-	cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
-
-	jobsMapped := s.findJobs()
-	jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
-	cronjobPodsResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
-
-	return cronjobPodsResponse, nil
-}
-
-func (s *Sk8lServer) GetCronjobPods(ctx context.Context, in *protos.CronjobPodsRequest) (*protos.CronjobPodsResponse, error) {
-	cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
-
-	jobsMapped := s.findJobs()
-	jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
-
-	cronjobResponse := s.cronJobResponse(*cronjob, jobs)
-	lightweightCronjobPodsResponse := &protos.CronjobResponse{
-		Name:      cronjob.Name,
-		Namespace: cronjob.Namespace,
-		Jobs:      cronjobResponse.Jobs,
-	}
-
-	cronjobPodsResponse := &protos.CronjobPodsResponse{
-		Pods:    cronjobResponse.JobsPods,
-		Cronjob: lightweightCronjobPodsResponse,
-	}
-
-	return cronjobPodsResponse, nil
-}
-
-func (s *Sk8lServer) GetCronjobYAML(ctx context.Context, in *protos.CronjobRequest) (*protos.CronjobYAMLResponse, error) {
-	cronjob := s.K8sClient.GetCronjob(in.CronjobNamespace, in.CronjobName)
-	prettyJson, _ := json.MarshalIndent(cronjob, "", "  ")
-
-	y, _ := gyaml.JSONToYAML(prettyJson)
-
-	response := &protos.CronjobYAMLResponse{
-		Cronjob: string(y),
-	}
-
-	return response, nil
-}
-
-func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*protos.JobYAMLResponse, error) {
-	job := s.K8sClient.GetJob(in.JobNamespace, in.JobName)
-	prettyJson, _ := json.MarshalIndent(job, "", "  ")
-
-	y, _ := gyaml.JSONToYAML(prettyJson)
-
-	response := &protos.JobYAMLResponse{
-		Job: string(y),
-	}
-
-	return response, nil
-}
-
-func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*protos.PodYAMLResponse, error) {
-	pod := s.K8sClient.GetPod(in.PodNamespace, in.PodName)
-	prettyJson, _ := json.MarshalIndent(pod, "", "  ")
-
-	y, _ := gyaml.JSONToYAML(prettyJson)
-
-	response := &protos.PodYAMLResponse{
-		Pod: string(y),
-	}
-
-	return response, nil
-}
-
 // Revisit this. JobConditions are not being used yet anywhere. PodResponse.TerminationReasons.TerminationDetails -> ContainerStateTerminated
 func jobFailed(job *batchv1.Job, jobPodsResponses []*protos.PodResponse) (bool, *batchv1.JobCondition, []*batchv1.JobCondition) {
 	var jobFailed bool
@@ -320,9 +351,6 @@ func jobFailed(job *batchv1.Job, jobPodsResponses []*protos.PodResponse) (bool, 
 	n := len(job.Status.Conditions)
 	jobConditions := make([]*batchv1.JobCondition, 0, n)
 	for _, jobCondition := range job.Status.Conditions {
-		log.Println("\n\njobCondition", jobCondition)
-		log.Println("checking Type", jobCondition.Type == batchv1.JobFailed, jobCondition.Type, "\n\n")
-
 		if jobFailed != true {
 			if jobCondition.Type == batchv1.JobFailed {
 				jobFailed = true
@@ -473,8 +501,6 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(jobs []*batchv1.Job, cronjobUID typ
 			bTime, _ := time.Parse(time.RFC3339, b.CreationTimestamp)
 			return aTime.Compare(bTime)
 		})
-
-	log.Printf("Paramore: There are %d jobs for cronjob %s in the cluster\n", len(jobs), cronjobUID)
 
 	return allJobsForCronJob, allJobPodsForCronjob, runningJobs, runningPods
 }

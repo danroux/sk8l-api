@@ -29,7 +29,8 @@ var (
 
 func main() {
 	serverTLSConfig, err := setupTLS(certFile, certKeyFile, caFile)
-	conn, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", API_PORT))
+	target := fmt.Sprintf("0.0.0.0:%s", API_PORT)
+	conn, err := net.Listen("tcp", target)
 
 	if err != nil {
 		log.Fatal("tlsListen error:", err)
@@ -51,9 +52,14 @@ func main() {
 	k8sClient := NewK8sClient(WithNamespace(os.Getenv("K8_NAMESPACE")))
 
 	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
+
 	sk8lServer := &Sk8lServer{
 		K8sClient: k8sClient,
 		DB:        db,
+		Target:    target,
+		Options: []grpc.DialOption{
+			grpc.WithTransportCredentials(serverCreds),
+		},
 	}
 
 	recordMetrics(sk8lServer)

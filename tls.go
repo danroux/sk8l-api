@@ -26,8 +26,8 @@ func setupTLS(certFile, certKeyFile, caFile string) (*tls.Config, error) {
 
 	caBytes, err := ioutil.ReadFile(caFile)
 
-	ca := x509.NewCertPool()
-	ok := ca.AppendCertsFromPEM([]byte(caBytes))
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM([]byte(caBytes))
 
 	if !ok {
 		return nil, fmt.Errorf(
@@ -35,8 +35,9 @@ func setupTLS(certFile, certKeyFile, caFile string) (*tls.Config, error) {
 		)
 	}
 
-	tlsConfig.RootCAs = ca
-	tlsConfig.ServerName = "0.0.0.0:8585"
+	tlsConfig.ClientCAs = certPool
+	tlsConfig.RootCAs = certPool
+	tlsConfig.ServerName = "0.0.0.0"
 
 	return tlsConfig, nil
 }

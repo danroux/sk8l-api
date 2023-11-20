@@ -28,9 +28,9 @@ import "k8s.io/api/core/v1/generated.proto";
 import "sk8l_custom.proto";
 
 service Cronjob {
-  rpc GetCronjobs(CronjobsRequest) returns (CronjobsResponse);
-  rpc GetCronjob(CronjobRequest) returns (CronjobResponse);
-  rpc GetCronjobPods(CronjobPodsRequest) returns (CronjobPodsResponse);
+  rpc GetCronjobs(CronjobsRequest) returns (stream CronjobsResponse);
+  rpc GetCronjob(CronjobRequest) returns (stream CronjobResponse);
+  rpc GetCronjobPods(CronjobPodsRequest) returns (stream CronjobPodsResponse);
   rpc GetCronjobYAML(CronjobRequest) returns (CronjobYAMLResponse);
   rpc GetJobYAML(JobRequest) returns (JobYAMLResponse);
   rpc GetPodYAML(PodRequest) returns (PodYAMLResponse);
