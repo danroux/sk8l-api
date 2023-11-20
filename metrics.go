@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"sync"
@@ -48,6 +47,7 @@ var (
 	cronjobFailingJobs     float64
 	cronjobCompletions     float64
 	completedCronjobs      float64
+	jobDuration            float64
 	failingJobs            float64
 	runningCronjobs        float64
 	cronjobCompletionsOpts prometheus.GaugeOpts
@@ -68,34 +68,8 @@ func recordMetrics(svr *Sk8lServer) {
 			registeredCronjobs := len(cronjobResponse.Cronjobs)
 			registeredCronjobsGauge.Set(float64(registeredCronjobs))
 
-			if registeredCronjobs == 0 {
-				log.Println("Setting registeredCronjobs to 0")
-			}
-
 			for _, cj := range cronjobResponse.Cronjobs {
 				sanitizedCjName := sanitizeMetricName(cj.Name)
-				cronjobDurationOpts = prometheus.GaugeOpts{
-					Name:      fmt.Sprintf("%s_duration_seconds", sanitizedCjName),
-					Namespace: opt_namespace,
-					Subsystem: svr.K8sClient.namespace,
-					Help:      fmt.Sprintf("Durations of %s in seconds", sanitizedCjName),
-				}
-
-				durationKey = fmt.Sprintf(
-					"%s_%s_%s_durations",
-					cronjobDurationOpts.Namespace,
-					cronjobDurationOpts.Subsystem,
-					cj.Name,
-				)
-
-				if cronjobDuration, ok := summaryMap.Load(durationKey); ok {
-					cronjobDuration.(prometheus.Gauge).Set(float64(cj.CurrentDuration))
-				} else {
-					cronjobDuration := promauto.NewGauge(cronjobDurationOpts)
-					summaryMap.Store(durationKey, cronjobDuration)
-					cronjobDuration.Set(float64(cj.CurrentDuration))
-				}
-
 				runningCronjobs += float64(len(cj.RunningJobs))
 
 				for _, job := range cj.Jobs {
@@ -103,8 +77,40 @@ func recordMetrics(svr *Sk8lServer) {
 						cronjobFailingJobs += 1
 					}
 
-					if job.Succeeded || cj.LastSuccessfulTime != "" {
+					if job.Status.CompletionTime != nil {
 						cronjobCompletions += 1
+					}
+
+					sanitizedJobName := job.Name
+					labels := prometheus.Labels{}
+					labels["job_name"] = sanitizedJobName
+					cronjobDurationOpts = prometheus.GaugeOpts{
+						Name:        fmt.Sprintf("%s_duration_seconds", sanitizedCjName),
+						Namespace:   opt_namespace,
+						Subsystem:   svr.K8sClient.namespace,
+						Help:        fmt.Sprintf("Duration of %s in seconds", sanitizedCjName),
+						ConstLabels: labels,
+					}
+					durationKey = fmt.Sprintf(
+						"%s_%s_%s_%s_durations",
+						cronjobDurationOpts.Namespace,
+						cronjobDurationOpts.Subsystem,
+						sanitizedCjName,
+						sanitizedJobName,
+					)
+
+					if *job.Status.Active > 0 {
+						jobDuration = float64(job.DurationInS)
+					} else {
+						jobDuration = float64(0)
+					}
+
+					if jobsDurationssGauge, ok := summaryMap.Load(durationKey); ok {
+						jobsDurationssGauge.(prometheus.Gauge).Set(jobDuration)
+					} else {
+						jobsDurationssGauge := promauto.NewGauge(cronjobDurationOpts)
+						summaryMap.Store(durationKey, jobsDurationssGauge)
+						jobsDurationssGauge.Set(jobDuration)
 					}
 				}
 
@@ -125,7 +131,6 @@ func recordMetrics(svr *Sk8lServer) {
 				if cronjobCompletionsGauge, ok := summaryMap.Load(completionsKey); ok {
 					cronjobCompletionsGauge.(prometheus.Gauge).Set(cronjobCompletions)
 				} else {
-					fmt.Printf("cronjobcompletionsgauge %s - %s", completionsKey, cronjobCompletionsOpts.Name)
 					cronjobCompletionsGauge := promauto.NewGauge(cronjobCompletionsOpts)
 					summaryMap.Store(completionsKey, cronjobCompletionsGauge)
 					cronjobCompletionsGauge.Set(cronjobCompletions)
