@@ -105,6 +105,7 @@ message PodResponse {
   TerminatedContainers failedContainers = 6 [json_name="failed_containers"];
   bool failed = 7;
   repeated TerminationReason terminationReasons = 8 [json_name="termination_reasons"];
+  k8s.io.apimachinery.pkg.apis.meta.v1.Time FinishedAt = 9 [json_name="finished_at"];
 }
 
 message ContainerCommands {

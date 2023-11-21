@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -572,6 +573,7 @@ func terminatedAndFailedContainers(pod *corev1.Pod) (*protos.TerminatedContainer
 				Conditions: l,
 			}
 			terminatedEphContainers = append(terminatedEphContainers, cr)
+
 			if container.State.Terminated.Reason == "Error" {
 				cr.TerminatedReason = &protos.TerminationReason{
 					TerminationDetails: container.State.Terminated,
@@ -599,6 +601,7 @@ func terminatedAndFailedContainers(pod *corev1.Pod) (*protos.TerminatedContainer
 			}
 
 			terminatedInitContainers = append(terminatedInitContainers, cr)
+
 			if container.State.Terminated.Reason == "Error" {
 				cr.TerminatedReason = &protos.TerminationReason{
 					TerminationDetails: container.State.Terminated,
@@ -663,8 +666,26 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 		// jobPodsForJob.Items[0].Status.ContainerStatuses
 		// jobPodsForJob.Items[0].Status.InitContainerStatuses
 		terminatedContainers, failedContainers := terminatedAndFailedContainers(&pod)
-
 		failed := len(failedContainers.TerminationReasons) > 0
+
+		var containerTerminatedState *corev1.ContainerStateTerminated
+		containerFinishedAtTimes := make([]*metav1.Time, 0)
+		for _, x := range terminatedContainers.Containers {
+			containerTerminatedState = x.Status.State.Terminated
+			if containerTerminatedState != nil && !containerTerminatedState.FinishedAt.Time.IsZero() {
+				containerFinishedAtTimes = append(containerFinishedAtTimes, &containerTerminatedState.FinishedAt)
+			}
+		}
+
+		var finishedAt *metav1.Time
+		if len(containerFinishedAtTimes) > 0 {
+			slices.SortFunc(containerFinishedAtTimes,
+				func(aFinishedAtTime, bFinishedAtTime *metav1.Time) int {
+					return aFinishedAtTime.Compare(bFinishedAtTime.Time)
+				})
+
+			finishedAt = containerFinishedAtTimes[len(containerFinishedAtTimes)-1]
+		}
 
 		jobResponse := &protos.PodResponse{
 			Metadata:             &pod.ObjectMeta,
@@ -675,6 +696,7 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 			Failed:               failed,
 			Phase:                string(pod.Status.Phase),
 			TerminationReasons:   failedContainers.TerminationReasons,
+			FinishedAt:           finishedAt,
 		}
 		jobPodsResponses = append(jobPodsResponses, jobResponse)
 	}
