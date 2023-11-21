@@ -8,6 +8,7 @@ Monitor your cronjobs activity. Use the exported prometheus metrics to get alert
 - See which cronjobs run more often
 - Get a quick glimpse of a cronjob, job or pod configuration via the UI
 - Use the exported prometheus metrics:
+  - Total registered cronjobs
   - Total completed cronjobs
   - Total cronjobs failures
   - Amount of current running cronjobs
@@ -44,3 +45,4 @@ helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
   - When adding replicas, each instance sends metrics and have their own cache
 - Make intervals configurable(metrics, refresh timer on UI)
   - Stream responses instead of js timers
+- Fix edge cases when cronjob executions overlap
