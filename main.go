@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/danroux/sk8l/protos"
@@ -62,8 +65,6 @@ func main() {
 		},
 	}
 
-	recordMetrics(sk8lServer)
-
 	healthgrpc.RegisterHealthServer(probeS, sk8lServer)
 	protos.RegisterCronjobServer(grpcS, sk8lServer)
 
@@ -80,7 +81,7 @@ func main() {
 	}
 	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 
-	logger.Printf("this is not wrong! starting %s server on %s", "sk8l", conn.Addr().String())
+	logger.Printf("Starting %s server on %s", "sk8l", conn.Addr().String())
 
 	go func() {
 		err = httpS.ListenAndServeTLS(certFile, certKeyFile)
@@ -92,17 +93,41 @@ func main() {
 
 	go func() {
 		err = probeS.Serve(healthConn)
+
+		if err != nil {
+			log.Fatal("httpS error", err)
+		}
+
 	}()
 
-	if err != nil {
-		log.Fatal("httpS error", err)
+	go func() {
+		err = grpcS.Serve(conn)
+		if err != nil {
+			log.Fatal("grpcS error", err)
+		}
+	}()
+
+	x := context.Background()
+	metricsCxt, metricsCancel := context.WithCancel(x)
+	recordMetrics(metricsCxt, sk8lServer)
+
+	// Servers shutdown
+	log.Printf("Shutdown: setting up")
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	sig := <-c
+
+	log.Printf("Shutdown: Got %v signal. sk8l will shut down in x seconds\n", sig)
+
+	ctx, cancel := context.WithTimeout(x, 5*time.Second)
+	defer cancel()
+	if err := httpS.Shutdown(ctx); err != nil {
+		log.Printf("Shutdown: Server forced to shutdown: %v\n", err)
 	}
 
-	err = grpcS.Serve(conn)
+	metricsCancel()
+	grpcS.GracefulStop()
 
-	// grpcS.GracefulStop
-
-	if err != nil {
-		log.Fatal("grpcS error", err)
-	}
+	log.Println("Shutdown: sk8l has stopped")
 }

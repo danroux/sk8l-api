@@ -295,7 +295,7 @@ func (s *Sk8lServer) findJobs() *protos.MappedJobs {
 }
 
 func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
-	fKey := fmt.Sprintf("jobs_pods_for_job_%", job.Name)
+	fKey := fmt.Sprintf("jobs_pods_for_job_%s", job.Name)
 	key := []byte(fKey)
 	collection := &corev1.PodList{}
 
@@ -421,12 +421,11 @@ func (s *Sk8lServer) WatchPods() {
 
 	go func() {
 		for {
-			event, more := <-x.ResultChan()
-			if more {
+			for event := range x.ResultChan() {
 				podObject := event.Object.(*corev1.Pod)
-				fmt.Println("Job watching - received pod", event.Type, podObject.Name)
+				log.Println("Job watching - received pod", event.Type, podObject.Name, podObject.ResourceVersion)
 
-				fKey := fmt.Sprintf("jobs_pods_for_job_%", podObject.Labels["job-name"])
+				fKey := fmt.Sprintf("jobs_pods_for_job_%s", podObject.Labels["job-name"])
 				key := []byte(fKey)
 				err := s.DB.Update(func(txn *badger.Txn) error {
 					item, err := txn.Get(key)
@@ -457,9 +456,8 @@ func (s *Sk8lServer) WatchPods() {
 				})
 
 				if err != nil {
+					panic(err)
 				}
-			} else {
-				fmt.Println("received all Pods")
 			}
 		}
 	}()

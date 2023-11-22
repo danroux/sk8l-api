@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
-	"log"
 )
 
 func setupTLS(certFile, certKeyFile, caFile string) (*tls.Config, error) {
@@ -17,8 +16,6 @@ func setupTLS(certFile, certKeyFile, caFile string) (*tls.Config, error) {
 		certFile,
 		certKeyFile,
 	)
-
-	log.Printf("Certificates: %s - %s, tlsConfig: %v", certFile, certKeyFile, tlsConfig.Certificates)
 
 	if err != nil {
 		return nil, err
