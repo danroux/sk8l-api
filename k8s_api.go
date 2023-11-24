@@ -89,10 +89,11 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 }
 
 func (kc *K8sClient) WatchPods() watch.Interface {
-	ctx := context.TODO()
-	x, _ := kc.ClientSet.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
+	ctx := context.Background()
 
-	return x
+	watcher, _ := kc.ClientSet.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
+
+	return watcher
 }
 
 func (kc *K8sClient) GetJobPodsForJob(job *batchv1.Job) *corev1.PodList {
