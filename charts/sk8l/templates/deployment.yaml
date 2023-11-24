@@ -102,13 +102,13 @@ spec:
         - name: sk8l-ui
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- $uiImage := .Values.sk8lWeb.image | default "danrouxsk8l-ui" }}
-          {{- $uiTag := .Values.sk8lWeb.imageTag | default "latest" }}
+          {{- $uiImage := .Values.sk8lUi.image | default "danrouxsk8l-ui" }}
+          {{- $uiTag := .Values.sk8lUi.imageTag | default "latest" }}
           image: {{ printf "%s:%s" $uiImage $uiTag }}
-          imagePullPolicy: {{ .Values.sk8lWeb.imagePullPolicy | default "IfNotPresent" | quote }}
+          imagePullPolicy: {{ .Values.sk8lUi.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
             {{- with (index .Values.service) }}
-            - name: sk8l-web-port
+            - name: sk8l-ui-port
               protocol: TCP
               containerPort: {{ (index  .ports 0).port }}
             {{- end }}
@@ -123,7 +123,7 @@ spec:
             periodSeconds: 120
           envFrom:
             - configMapRef:
-                name: sk8l-web-configmap
+                name: sk8l-ui-configmap
           volumeMounts:
             - name: badger-storage
               mountPath: /tmp/badger
@@ -134,8 +134,8 @@ spec:
             - name: tls-certs
               mountPath: /etc/sk8l-certs
               readOnly: true
-            {{- if .Values.sk8lWeb.volumeMounts }}
-            {{- toYaml .Values.sk8lWeb.volumeMounts | nindent 12 }}
+            {{- if .Values.sk8lUi.volumeMounts }}
+            {{- toYaml .Values.sk8lUi.volumeMounts | nindent 12 }}
             {{ end }}
         {{- if .Values.prometheus.create }}
         - name: prometheus
@@ -187,8 +187,8 @@ spec:
         {{- if .Values.sk8lApi.volumes }}
         {{- toYaml .Values.sk8lApi.volumes | nindent 8 }}
         {{ end }}
-        {{- if .Values.sk8lWeb.volumes }}
-        {{- toYaml .Values.sk8lWeb.volumes | nindent 8 }}
+        {{- if .Values.sk8lUi.volumes }}
+        {{- toYaml .Values.sk8lUi.volumes | nindent 8 }}
         {{ end }}
         {{- if .Values.prometheus.create }}
         - name: prometheus-config

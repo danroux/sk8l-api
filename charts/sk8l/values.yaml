@@ -54,7 +54,7 @@ sk8lApi:
     #           - key: tls.key
     #             path: ca-key.pem
 
-sk8lWeb:
+sk8lUi:
   imagePullPolicy: ""
   imageTag: ""
   volumeMounts: []
@@ -124,10 +124,10 @@ service:
   labels:
     app.kubernetes.io/name: sk8l
   ports:
-    - name: sk8l-web
+    - name: sk8l-ui
       protocol: TCP
       port: 8001
-      targetPort: sk8l-web-port
+      targetPort: sk8l-ui-port
     - name: sk8l-api
       protocol: TCP
       port: 8585
@@ -150,7 +150,7 @@ service:
       targetPort: envoy-admin
 
 configMaps:
-  web:
+  ui:
     # You can change the URL used on the frontend if needed.
     vue_app_sk8l_api_url: "https://localhost:9080"
 

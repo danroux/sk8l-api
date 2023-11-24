@@ -27,4 +27,4 @@
 
 # templates/secrets.yaml
 values-local.yaml
-templates/ConfigMap-prometheus.yaml
+# templates/ConfigMap-prometheus.yaml

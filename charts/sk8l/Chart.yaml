@@ -13,9 +13,9 @@ maintainers:
   - name: danroux
     email: dan@sk8l.io
     url: https://sk8l.io
-version: 0.2.0
+version: 0.3.0
 kubeVersion: ">=1.26.0-0"
-appVersion: "0.2.0"
+appVersion: "0.3.0"
 sources:
   - "https://github.com/danroux/sk8l-api"
   - "https://github.com/danroux/sk8l-ui"
