@@ -4,12 +4,14 @@ on: workflow_dispatch
   # push:
   #   branches:
   #     - 'main'
+
 jobs:
   production-image:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Checkout - set env
+        run: echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -31,3 +33,4 @@ jobs:
           push: true
           tags: |
             ${{ vars.DOCKERHUB_SK8L_API_IMAGE_NAME }}:latest
+            ${{ vars.DOCKERHUB_SK8L_API_IMAGE_NAME }}:${{ env.IMAGE_TAG }}

@@ -81,7 +81,7 @@ func main() {
 	}
 	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 
-	logger.Printf("Starting %s server on %s", "sk8l", conn.Addr().String())
+	logger.Printf("Starting %s server %s on %s", "sk8l", Version(), conn.Addr().String())
 
 	go func() {
 		err = httpS.ListenAndServeTLS(certFile, certKeyFile)

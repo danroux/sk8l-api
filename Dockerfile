@@ -1,4 +1,4 @@
-FROM golang:1.21.3-alpine3.18 AS build
+FROM golang:1.21.3 AS build
 
 WORKDIR /src/
 
@@ -13,14 +13,10 @@ COPY go.mod .
 COPY go.sum .
 COPY *.go .
 COPY protos/ ./protos
-# RUN go mod download
-
-ENV CGO_ENABLED="0"
-# ENV GOARCH=amd64
-# ENV GOOS=darwin
+COPY Makefile .
 
 RUN --mount=type=cache,target=/gomodcache go mod download -x
-RUN --mount=type=cache,target=/gomodcache go build -o /src/sk8l .
+RUN --mount=type=cache,target=/gocache make go-out
 
 COPY . .
 
