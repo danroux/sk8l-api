@@ -425,7 +425,8 @@ func (s *Sk8lServer) WatchPods() {
 
 	go func() {
 		for {
-			for event := range x.ResultChan() {
+			event, more := <-x.ResultChan()
+			if more {
 				podObject := event.Object.(*corev1.Pod)
 				log.Println("Job watching - received pod", event.Type, podObject.Name, podObject.ResourceVersion)
 
@@ -462,6 +463,9 @@ func (s *Sk8lServer) WatchPods() {
 				if err != nil {
 					panic(err)
 				}
+			} else {
+				x = s.K8sClient.WatchPods()
+				log.Println("Job watching - Received all Pods. Opening again", x)
 			}
 		}
 	}()
