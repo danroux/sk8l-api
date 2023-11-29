@@ -34,7 +34,7 @@ spec:
         - name: sk8l-api
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- $apiImage := .Values.sk8lApi.image | default "danrouxsk8l-api" }}
+          {{- $apiImage := .Values.sk8lApi.image | default "danroux/sk8l-api" }}
           {{- $apiTag := .Values.sk8lApi.imageTag | default "latest" }}
           image: {{ printf "%s:%s" $apiImage $apiTag }}
           imagePullPolicy: {{ .Values.sk8lApi.imagePullPolicy | default "IfNotPresent" | quote }}
@@ -102,7 +102,7 @@ spec:
         - name: sk8l-ui
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- $uiImage := .Values.sk8lUi.image | default "danrouxsk8l-ui" }}
+          {{- $uiImage := .Values.sk8lUi.image | default "danroux/sk8l-ui" }}
           {{- $uiTag := .Values.sk8lUi.imageTag | default "latest" }}
           image: {{ printf "%s:%s" $uiImage $uiTag }}
           imagePullPolicy: {{ .Values.sk8lUi.imagePullPolicy | default "IfNotPresent" | quote }}
