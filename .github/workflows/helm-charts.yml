@@ -1,0 +1,23 @@
+name: update-helm-charts-index
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+jobs:
+  update-helm-charts-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - name: verify Chart version matches tag version
+        run: |-
+          export TAG=${{ github.ref_name }}
+          git_tag="${TAG#v}"
+          chart_tag=$(yq -r '.version' charts/sk8l/Chart.yaml)
+          if [ "${git_tag}" != "${chart_tag}" ]; then
+            echo "chart version (${chart_tag}) did not match git version (${git_tag})"
+            exit 1
+          fi

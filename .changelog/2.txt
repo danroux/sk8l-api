@@ -1,0 +1,11 @@
+```release-note:enhancement
+Set up CHANGELOG && .changelog
+```
+
+```release-note:enhancement
+Set up release-notes generation on CI
+```
+
+```release-note:enhancement
+Set up version check on CI that tests that the new tag version matches the helm appVersion on tag creation
+```
