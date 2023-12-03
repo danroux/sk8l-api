@@ -35,7 +35,7 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           {{- $apiImage := .Values.sk8lApi.image | default "danroux/sk8l-api" }}
-          {{- $apiTag := .Values.sk8lApi.imageTag | default "latest" }}
+          {{- $apiTag := .Values.sk8lApi.imageTag | default "v0.4.0"
           image: {{ printf "%s:%s" $apiImage $apiTag }}
           imagePullPolicy: {{ .Values.sk8lApi.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
@@ -103,7 +103,7 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           {{- $uiImage := .Values.sk8lUi.image | default "danroux/sk8l-ui" }}
-          {{- $uiTag := .Values.sk8lUi.imageTag | default "latest" }}
+          {{- $uiTag := .Values.sk8lUi.imageTag | default "v0.4.0"
           image: {{ printf "%s:%s" $uiImage $uiTag }}
           imagePullPolicy: {{ .Values.sk8lUi.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
