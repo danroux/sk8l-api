@@ -95,21 +95,24 @@ prometheus:
   create: false
 # podAnnotations: {}
 # podLabels: {}
-podSecurityContext: {}
-# fsGroup: 2000
 
-securityContext: {}
-# capabilities:
-#   drop:
-#   - ALL
+# Security context for the pod template and containers
+# The default securityContexts are:
+# securityContext:
+#   pod:
+#     runAsNonRoot: true
+#     runAsGroup: {{ .Values.gid | default 1000 }}
+#     runAsUser: {{ .Values.uid | default 100 }}
+#     fsGroup: {{ .Values.gid | default 1000 }}
+#   container:
+#     allowPrivilegeEscalation: false
+#     capabilities:
+#       drop:
+#         - ALL
+securityContext:
+  pod: {}
+  container: {}
 # readOnlyRootFilesystem: true
-# runAsNonRoot: true
-# runAsUser: 1000
-# ---
-# runAsUser: 0
-# runAsUser: 1000
-# # runAsGroup: 3000
-# fsGroup: 1000
 
 service:
   annotations: []
@@ -117,10 +120,6 @@ service:
   labels:
     app.kubernetes.io/name: sk8l
   ports:
-    - name: sk8l-ui
-      protocol: TCP
-      port: 8001
-      targetPort: sk8l-ui-port
     - name: sk8l-api
       protocol: TCP
       port: 8585
@@ -133,6 +132,17 @@ service:
       protocol: TCP
       port: 8590
       targetPort: metrics-port
+
+uiService:
+  annotations: []
+  type: LoadBalancer
+  labels:
+    app.kubernetes.io/name: sk8l
+  ports:
+    - name: sk8l-ui
+      protocol: TCP
+      port: 8001
+      targetPort: sk8l-ui-port
     - name: envoy
       protocol: TCP
       port: 9080
@@ -141,6 +151,37 @@ service:
       protocol: TCP
       port: 9901
       targetPort: envoy-admin
+
+# Enables network policy for sk8l pods
+networkPolicy:
+  enabled: true
+  uiPolicy:
+    ingress:
+      - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/pod: sk8l-ui
+        ports:
+          - protocol: TCP
+            port: 8585
+    egress:
+      - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/pod: sk8l-ui
+        ports:
+          - protocol: TCP
+            port: 8585
+  apiserverPolicy:
+    ingress:
+      - from:
+        - ipBlock:
+            cidr: 172.18.0.3/8
+    egress:
+      - to:
+        - ipBlock:
+            cidr: 172.18.0.3/8
+
 configMaps:
   ui:
     # You can change the URL used on the frontend if needed.

@@ -1,0 +1,7 @@
+```release-note:improvement
+security: Add pod/container securityContext && networkPolicies
+```
+
+```release-note:improvement
+chart: Split api/ui deployments && service and overall cleaned up chart files
+```

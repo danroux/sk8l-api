@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "sk8l-ui"
+  namespace: {{ .Values.namespace }}
+  annotations:
+    {{- if .Values.uiService.annotations }}
+    {{- toYaml .Values.uiService.annotations | nindent 4 }}
+    {{ end }}
+  labels:
+    {{- if .Values.uiService.labels }}
+    {{- toYaml .Values.uiService.labels | nindent 4 }}
+    {{ end }}
+spec:
+  {{- if .Values.uiService }}
+  type: {{ .Values.uiService.type }}
+  {{ end }}
+  {{- if .Values.uiService }}
+  ports:
+  {{- toYaml .Values.uiService.ports | nindent 4 }}
+  {{ end }}
+  selector:
+    app.kubernetes.io/pod: sk8l-ui

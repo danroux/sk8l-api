@@ -99,7 +99,7 @@ data:
                 - endpoint:
                     address:
                       socket_address:
-                        address: 0.0.0.0
+                        address: sk8l
                         port_value: 8585
           # http2_protocol_options: {} # Force HTTP/2
           # Your grpc server communicates over TLS. You must configure the transport

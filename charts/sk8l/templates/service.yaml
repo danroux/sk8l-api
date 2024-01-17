@@ -29,4 +29,4 @@ spec:
   {{- toYaml .Values.service.ports | nindent 4 }}
   {{ end }}
   selector:
-    app.kubernetes.io/name: sk8l
+    app.kubernetes.io/pod: sk8l-api

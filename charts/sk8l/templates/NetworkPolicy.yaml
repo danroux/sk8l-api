@@ -1,0 +1,47 @@
+{{- if eq (.Values.networkPolicy.enabled | toString) "true"  }}
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: default-deny
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/pod: sk8l-api
+  ingress: []
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: egress-allow-internal-only
+spec:
+  policyTypes:
+  - Egress
+  podSelector: {}
+  egress:
+  - to:
+    - namespaceSelector: {}
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: allow-apiserver
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/pod: sk8l-api
+  {{- toYaml .Values.networkPolicy.apiserverPolicy | nindent 2 }}
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: sk8l-ui
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/pod: sk8l-api
+  {{- toYaml .Values.networkPolicy.uiPolicy | nindent 2 }}
+{{ end }}
