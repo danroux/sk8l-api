@@ -12,10 +12,7 @@ securityContext for the pod level.
         {{- end }}
   {{- else }}
       securityContext:
-        runAsNonRoot: {{/* .Values.securityContext.pod */}}
-        runAsGroup: {{/* .Values.gid | default 1000 */}}
-        runAsUser: {{/* .Values.uid | default 100 */}}
-        fsGroup: {{/* .Values.gid | default 1000 */}}
+        runAsNonRoot: true
   {{- end }}
 {{- end -}}
 
@@ -34,5 +31,7 @@ securityContext for the container level.
   {{- else }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
   {{- end }}
 {{- end -}}
