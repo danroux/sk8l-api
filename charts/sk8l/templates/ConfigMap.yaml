@@ -3,25 +3,25 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: sk8l-api-configmap
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Values.namespace.name }}
 data:
-  K8_NAMESPACE: {{ .Values.namespace }}
+  K8_NAMESPACE: {{ .Values.namespace.name }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: sk8l-ui-configmap
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Values.namespace.name }}
 data:
   NODE_EXTRA_CA_CERTS: "/etc/sk8l-certs/ca-cert.pem"
   VUE_APP_SK8L_API_URL: {{ .Values.configMaps.ui.vue_app_sk8l_api_url }}
-  VUE_APP_SK8L_K8_NAMESPACE: {{ .Values.namespace }}
+  VUE_APP_SK8L_K8_NAMESPACE: {{ .Values.namespace.name }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: envoy-configmap
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Values.namespace.name }}
 data:
   envoy.yaml: |-
     admin:
@@ -115,7 +115,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nginx-configmap
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Values.namespace.name }}
 data:
   nginx.conf: |-
     user  nginx;

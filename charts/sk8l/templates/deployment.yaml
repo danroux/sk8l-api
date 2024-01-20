@@ -4,7 +4,7 @@ metadata:
   name: sk8l-api
   labels:
     app: sk8l
-  namespace: {{ .Values.namespace | default "sk8l" | quote }}
+  namespace: {{ .Values.namespace.name | default "sk8l" | quote }}
 spec:
   {{- if .Values.sk8lApi.autoscaling.enabled }}
   replicas: {{ .Values.sk8lApi.autoscaling.replicaCount }}
@@ -29,6 +29,7 @@ spec:
     spec:
       hostname: sk8l-api
       subdomain: sk8l
+      automountServiceAccountToken: true
       serviceAccountName: {{ .Values.serviceAccount.metadata.name | default "sk8l" }}
       {{- template "securityContext.pod" . }}
       containers:
