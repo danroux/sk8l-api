@@ -61,11 +61,25 @@ sk8lUi:
   image: "danroux/sk8l-ui"
   imageTag: "v0.4.0"
   imagePullPolicy: ""
-  volumeMounts: []
+  volumeMounts:
+    - name: nginx-cache
+      mountPath: /var/cache/nginx/
+    - name: var-run
+      mountPath: /var/run
+    - name: source
+      mountPath: /app
   # - name: tls-certs
   #   mountPath: /etc/sk8l-certs
   #   readOnly: true
-  volumes: []
+  volumes:
+    - name: app-dir
+      emptyDir: {}
+    - name: nginx-cache
+      emptyDir: {}
+    - name: var-run
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}
   # If you need to conifure the nginx instance serving the ui
   # you can do it by replacing the mounted nginx-configmap.
   #
@@ -90,7 +104,9 @@ sk8lUi:
 
 envoy:
   image: ""
-  volumeMounts: []
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
   # Envoy needs a TLS certificate.
   # You can mount a volume with a secret with the keys:
   # - tls.crt.
@@ -115,9 +131,18 @@ envoy:
 #       drop:
 #         - ALL
 securityContext:
-  pod: {}
-  container: {}
-# readOnlyRootFilesystem: true
+  # pod: {}
+  # container: {}
+  pod:
+    runAsNonRoot: true
+  container:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop: ['ALL']
+    seccompProfile:
+      type: RuntimeDefault
 
 service:
   annotations: []
@@ -181,11 +206,11 @@ networkPolicy:
     ingress:
       - from:
         - ipBlock:
-            cidr: 172.18.0.3/8
+            cidr: 0.0.0.0/8
     egress:
       - to:
         - ipBlock:
-            cidr: 172.18.0.3/8
+            cidr: 0.0.0.0/8
 
 configMaps:
   ui:

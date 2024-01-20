@@ -27,8 +27,26 @@ spec:
     spec:
       hostname: sk8l-ui
       subdomain: sk8l
+      automountServiceAccountToken: false
       serviceAccountName: {{ .Values.serviceAccount.metadata.name | default "sk8l" }}
       {{- template "securityContext.pod" . }}
+        runAsNonRoot: true
+        runAsGroup: {{ .Values.envoyGid | default 101 }}
+        runAsUser: {{ .Values.envoyUid | default 101 }}
+      initContainers:
+        - name: replace-env-vars
+          {{- $uiImage := .Values.sk8lUi.image | default "danroux/sk8l-ui" }}
+          {{- $uiTag := .Values.sk8lUi.imageTag | default "v0.4.0" }}
+          image: {{ printf "%s:%s" $uiImage $uiTag }}
+          imagePullPolicy: {{ .Values.sk8lUi.imagePullPolicy | default "IfNotPresent" | quote }}
+          command:
+            - /app_tmp/replace-env-vars.sh
+          envFrom:
+            - configMapRef:
+                name: sk8l-ui-configmap
+          volumeMounts:
+            - mountPath: /app
+              name: app-dir
       containers:
         - name: envoy
           {{- template "securityContext.container" . }}
