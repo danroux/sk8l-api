@@ -4,7 +4,7 @@ metadata:
   name: sk8l-ui
   labels:
     app: sk8l-app
-  namespace: sk8l
+  namespace: {{ .Values.namespace.name | default "sk8l" | quote }}
 spec:
   {{- if .Values.sk8lApi.autoscaling.enabled }}
   replicas: {{ .Values.sk8lApi.autoscaling.replicaCount }}
@@ -12,11 +12,10 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/pod: sk8l-ui
+  {{- with .Values.updateStrategy }}
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
+    {{ toYaml . | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -35,6 +34,14 @@ spec:
         runAsUser: {{ .Values.envoyUid | default 101 }}
       initContainers:
         - name: replace-env-vars
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ['ALL']
+            seccompProfile:
+              type: RuntimeDefault
           {{- $uiImage := .Values.sk8lUi.image | default "danroux/sk8l-ui" }}
           {{- $uiTag := .Values.sk8lUi.imageTag | default "v0.4.0" }}
           image: {{ printf "%s:%s" $uiImage $uiTag }}
@@ -45,24 +52,26 @@ spec:
             - configMapRef:
                 name: sk8l-ui-configmap
           volumeMounts:
-            - mountPath: /app
-              name: app-dir
+            - name: app-dir
+              mountPath: /app
       containers:
         - name: envoy
           {{- template "securityContext.container" . }}
           image: {{ .Values.envoy.image | default "envoyproxy/envoy:v1.28-latest" | quote }}
           imagePullPolicy: IfNotPresent
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
           ports:
-            - name: envoy-admin
-              protocol: TCP
-              containerPort: 9901
+            {{- with (index .Values.uiService) }}
             - name: envoy-port
               protocol: TCP
-              {{- with (index .Values.uiService) }}
+              containerPort: {{ (index .ports 1).port }}
+            {{- end }}
+            {{- with (index .Values.uiService) }}
+            - name: envoy-adm-port
+              protocol: TCP
               containerPort: {{ (index .ports 2).port }}
-              {{- end }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: envoy-config
               mountPath: /etc/envoy
@@ -85,6 +94,8 @@ spec:
               protocol: TCP
               containerPort: {{ (index .ports 0).port }}
             {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /

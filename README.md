@@ -34,8 +34,8 @@ helm repo update
 helm search repo sk8l
 
 helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
---set namespace=[NAMESPACE] \
---set serviceAccount.metadata.namespace=[NAMESPACE]
+--set namespace.name=[NAMESPACE] \
+--set serviceAccount.metadata.namespace.name=[NAMESPACE]
 ```
 
 ### ROADMAP

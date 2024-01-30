@@ -12,11 +12,10 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/pod: sk8l-api
+  {{- with .Values.updateStrategy }}
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
+    {{ toYaml . | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -43,18 +42,20 @@ spec:
             - name: api-port
               protocol: TCP
               {{- with (index .Values.service) }}
-              containerPort: {{ (index  .ports 0).port }}
+              containerPort: {{ (index .ports 0).port }}
               {{- end }}
             - name: api-health-port
               protocol: TCP
               {{- with (index .Values.service) }}
-              containerPort: {{ (index  .ports 1).port }}
+              containerPort: {{ (index .ports 1).port }}
               {{- end }}
             - name: metrics-port
               protocol: TCP
               {{- with (index .Values.service) }}
-              containerPort: {{ (index  .ports 2).port }}
+              containerPort: {{ (index .ports 2).port }}
               {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 10 }}
           livenessProbe:
             grpc:
               {{- with (index .Values.service) }}

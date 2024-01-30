@@ -1,13 +1,7 @@
 # Available parameters and their default values for the sk8l Chart.
 
-namespace: ""
-serviceAccountName: "sk8l"
-
-# Specifies whether a service account should be created
-createServiceAccount: true
-
 namespace:
-  createNamespace: true
+  create: true
   name: ""
   labels:
     pod-security.kubernetes.io/enforce: baseline
@@ -16,8 +10,9 @@ namespace:
     pod-security.kubernetes.io/warn-version: latest
 
 serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
   # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
   metadata:
     name: "sk8l"
     namespace: "sk8l"
@@ -66,7 +61,7 @@ sk8lUi:
       mountPath: /var/cache/nginx/
     - name: var-run
       mountPath: /var/run
-    - name: source
+    - name: app-dir
       mountPath: /app
   # - name: tls-certs
   #   mountPath: /etc/sk8l-certs
@@ -180,7 +175,7 @@ uiService:
     - name: envoy-admin
       protocol: TCP
       port: 9901
-      targetPort: envoy-admin
+      targetPort: envoy-adm-port
 
 # Enables network policy for sk8l pods
 networkPolicy:
@@ -218,6 +213,22 @@ configMaps:
     vue_app_sk8l_api_url: "https://localhost:9080"
 
 resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+updateStrategy: {}
+  # type: RollingUpdate
+  # rollingUpdate:
+  #   maxSurge: 1
+  #   maxUnavailable: 1
