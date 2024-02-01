@@ -23,9 +23,17 @@ FEATURES:
 {{- end -}}
 
 {{- if .NotesByType.enhancement }}
-ENHANCEMENT:
+ENHANCEMENTS:
 
 {{range .NotesByType.enhancement -}}
+* {{ template "note" . }}
+{{ end -}}
+{{- end -}}
+
+{{- if .NotesByType.improvement }}
+IMPROVEMENTS:
+
+{{range .NotesByType.improvement -}}
 * {{ template "note" . }}
 {{ end -}}
 {{- end -}}

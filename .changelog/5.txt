@@ -1,4 +1,4 @@
-```release-note:improvement
+```release-note:security
 security: Add pod/container securityContext && networkPolicies
 ```
 
