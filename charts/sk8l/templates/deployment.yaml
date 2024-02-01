@@ -54,8 +54,10 @@ spec:
               {{- with (index .Values.service) }}
               containerPort: {{ (index .ports 2).port }}
               {{- end }}
+          {{- with .Values.resources }}
           resources:
             {{- toYaml .Values.resources | nindent 10 }}
+          {{- end }}
           livenessProbe:
             grpc:
               {{- with (index .Values.service) }}
