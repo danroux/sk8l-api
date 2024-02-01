@@ -1,3 +1,17 @@
+## v0.5.0 (February 01, 2024)
+
+SECURITY:
+
+* security: Add pod/container securityContext && networkPolicies [[GH-5](https://github.com/danroux/sk8l-api/issues/5)]
+
+ENHANCEMENTS:
+
+* Docker: Increase go image version 1.21.3->1.21.6 [[GH-5](https://github.com/danroux/sk8l-api/issues/5)]
+
+IMPROVEMENTS:
+
+* chart: Split api/ui deployments && service and overall cleaned up chart files [[GH-5](https://github.com/danroux/sk8l-api/issues/5)]
+
 ## 0.4.0 (Dec 3, 2023)
 
 ENHANCEMENT:

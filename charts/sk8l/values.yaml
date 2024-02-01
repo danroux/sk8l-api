@@ -20,10 +20,9 @@ serviceAccount:
       name: "sk8l"
     # Annotations to add to the service account
     annotations: {}
-
 sk8lApi:
   image: "danroux/sk8l-api"
-  imageTag: "v0.4.0"
+  imageTag: "v0.5.0"
   imagePullPolicy: ""
   autoscaling:
     enabled: true
@@ -51,10 +50,9 @@ sk8lApi:
   #             path: ca-cert.pem
   #           - key: tls.key
   #             path: ca-key.pem
-
 sk8lUi:
   image: "danroux/sk8l-ui"
-  imageTag: "v0.4.0"
+  imageTag: "v0.5.0"
   imagePullPolicy: ""
   volumeMounts:
     - name: nginx-cache
