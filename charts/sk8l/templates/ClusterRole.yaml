@@ -4,7 +4,7 @@ metadata:
   labels:
     name: sk8l
   name: sk8l
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Values.namespace.name }}
 rules:
   - apiGroups:
       - ""
@@ -31,7 +31,7 @@ metadata:
   name: sk8l
   labels:
     name: sk8l
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Values.namespace.name }}
 roleRef:
   kind: ClusterRole
   name: sk8l
@@ -39,4 +39,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ .Values.serviceAccount.metadata.name }}
-    namespace: {{ .Values.namespace }}
+    namespace: {{ .Values.namespace.name }}

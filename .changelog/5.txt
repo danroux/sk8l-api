@@ -1,0 +1,11 @@
+```release-note:security
+security: Add pod/container securityContext && networkPolicies
+```
+
+```release-note:improvement
+chart: Split api/ui deployments && service and overall cleaned up chart files
+```
+
+```release-note:enhancement
+Docker: Increase go image version 1.21.3->1.21.6
+```

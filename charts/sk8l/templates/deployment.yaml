@@ -1,66 +1,70 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sk8l
+  name: sk8l-api
   labels:
-    app: sk8l-app
-  namespace: {{ .Values.namespace | default "sk8l" | quote }}
+    app: sk8l
+  namespace: {{ .Values.namespace.name | default "sk8l" | quote }}
 spec:
   {{- if .Values.sk8lApi.autoscaling.enabled }}
   replicas: {{ .Values.sk8lApi.autoscaling.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: sk8l
+      app.kubernetes.io/pod: sk8l-api
+  {{- with .Values.updateStrategy }}
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
+    {{ toYaml . | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/container: sk8l-api
+        app.kubernetes.io/pod: sk8l-api
         app.kubernetes.io/name: sk8l
       annotations:
         sk8l.io/api-scrape-port: "8590"
+        checksum/config: {{ include (print $.Template.BasePath "/ConfigMap.yaml") . | sha256sum }}
+        # checksum/config: {{/* include ("sk8l.configmap") . | sha256sum */}}
     spec:
-      hostname: sk8l
-      subdomain: sk8l-api
+      hostname: sk8l-api
+      subdomain: sk8l
+      automountServiceAccountToken: true
       serviceAccountName: {{ .Values.serviceAccount.metadata.name | default "sk8l" }}
-      securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- template "securityContext.pod" . }}
       containers:
         - name: sk8l-api
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- template "securityContext.container" . }}
           {{- $apiImage := .Values.sk8lApi.image | default "danroux/sk8l-api" }}
-          {{- $apiTag := .Values.sk8lApi.imageTag | default "v0.4.0"
+          {{- $apiTag := .Values.sk8lApi.imageTag | default "v0.4.0" }}
           image: {{ printf "%s:%s" $apiImage $apiTag }}
           imagePullPolicy: {{ .Values.sk8lApi.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
             - name: api-port
               protocol: TCP
               {{- with (index .Values.service) }}
-              containerPort: {{ (index  .ports 1).port }}
+              containerPort: {{ (index .ports 0).port }}
               {{- end }}
             - name: api-health-port
               protocol: TCP
               {{- with (index .Values.service) }}
-              containerPort: {{ (index  .ports 2).port }}
+              containerPort: {{ (index .ports 1).port }}
               {{- end }}
             - name: metrics-port
               protocol: TCP
               {{- with (index .Values.service) }}
-              containerPort: {{ (index  .ports 3).port }}
+              containerPort: {{ (index .ports 2).port }}
               {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml .Values.resources | nindent 10 }}
+          {{- end }}
           livenessProbe:
             grpc:
               {{- with (index .Values.service) }}
-              port: {{ (index .ports 2).port }}
+              port: {{ (index .ports 1).port }}
               {{- end }}
             initialDelaySeconds: 10
-            periodSeconds: 60
+            periodSeconds: 30
           envFrom:
             - configMapRef:
                 name: sk8l-api-configmap
@@ -73,100 +77,10 @@ spec:
             {{- if .Values.sk8lApi.volumeMounts }}
             {{- toYaml .Values.sk8lApi.volumeMounts | nindent 12 }}
             {{- end }}
-        - name: envoy
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          image: {{ .Values.envoy.image | default "envoyproxy/envoy:v1.28-latest" | quote }}
-          imagePullPolicy: IfNotPresent
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-          ports:
-            - name: envoy-admin
-              protocol: TCP
-              containerPort: 9901
-            - name: envoy-port
-              protocol: TCP
-              {{- with (index .Values.service) }}
-              containerPort: {{ (index .ports 4).port }}
-              {{- end }}
-          volumeMounts:
-            - name: envoy-config
-              mountPath: /etc/envoy
-              readOnly: true
-            - name: tls-certs
-              mountPath: /etc/sk8l-certs
-              readOnly: true
-            {{- if .Values.envoy.volumeMounts }}
-            {{- toYaml .Values.envoy.volumeMounts | nindent 12 }}
-            {{- end }}
-        - name: sk8l-ui
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- $uiImage := .Values.sk8lUi.image | default "danroux/sk8l-ui" }}
-          {{- $uiTag := .Values.sk8lUi.imageTag | default "v0.4.0"
-          image: {{ printf "%s:%s" $uiImage $uiTag }}
-          imagePullPolicy: {{ .Values.sk8lUi.imagePullPolicy | default "IfNotPresent" | quote }}
-          ports:
-            {{- with (index .Values.service) }}
-            - name: sk8l-ui-port
-              protocol: TCP
-              containerPort: {{ (index  .ports 0).port }}
-            {{- end }}
-          readinessProbe:
-            httpGet:
-              path: /
-              {{- with (index .Values.service) }}
-              port: {{ (index  .ports 0).port }}
-              scheme: HTTPS
-              {{- end }}
-            initialDelaySeconds: 30
-            periodSeconds: 120
-          envFrom:
-            - configMapRef:
-                name: sk8l-ui-configmap
-          volumeMounts:
-            - name: badger-storage
-              mountPath: /tmp/badger
-            - name: nginx-config
-              mountPath: /etc/nginx/nginx.conf
-              subPath: nginx.conf
-              readOnly: true
-            - name: tls-certs
-              mountPath: /etc/sk8l-certs
-              readOnly: true
-            {{- if .Values.sk8lUi.volumeMounts }}
-            {{- toYaml .Values.sk8lUi.volumeMounts | nindent 12 }}
-            {{ end }}
-        {{- if .Values.prometheus.create }}
-        - name: prometheus
-          image: {{ .Values.prometheus.image | default "prom/prometheus:v2.47.2" | quote }}
-          ports:
-            - name: prometheus-port
-              protocol: TCP
-              containerPort: 9090
-          volumeMounts:
-            - name: prometheus-config
-              mountPath: /etc/prometheus
-              readOnly: true
-            - name: tls-certs
-              mountPath: /etc/sk8l-certs
-              readOnly: true
-            {{- if .Values.prometheus.volumeMounts }}
-            {{- toYaml .Values.prometheus.volumeMounts | nindent 12 }}
-            {{- end }}
-        {{- end }}
       terminationGracePeriodSeconds: 30
       volumes:
         - name: badger-storage
           emptyDir: {}
-        - name: envoy-config
-          configMap:
-            name: envoy-configmap
-        - name: nginx-config
-          projected:
-            sources:
-              - configMap:
-                  name: nginx-configmap
         - name: tls-certs
           projected:
             sources:
@@ -189,11 +103,6 @@ spec:
         {{ end }}
         {{- if .Values.sk8lUi.volumes }}
         {{- toYaml .Values.sk8lUi.volumes | nindent 8 }}
-        {{ end }}
-        {{- if .Values.prometheus.create }}
-        - name: prometheus-config
-          configMap:
-            name: prometheus-configmap
         {{ end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -1,15 +1,18 @@
 # Available parameters and their default values for the sk8l Chart.
 
-namespace: ""
-serviceAccountName: "sk8l"
-labels:
-  name: "sk8l"
-# Specifies whether a service account should be created
-createServiceAccount: true
-createNamespace: true
+namespace:
+  create: true
+  name: ""
+  labels: []
+    # pod-security.kubernetes.io/enforce: baseline
+    # pod-security.kubernetes.io/enforce-version: latest
+    # pod-security.kubernetes.io/warn: restricted
+    # pod-security.kubernetes.io/warn-version: latest
+
 serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
   # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
   metadata:
     name: "sk8l"
     namespace: "sk8l"
@@ -17,8 +20,7 @@ serviceAccount:
       name: "sk8l"
     # Annotations to add to the service account
     annotations: {}
-    # Automatically mount a ServiceAccount's API credentials?
-    automountServiceAccountToken: true
+
 sk8lApi:
   image: "danroux/sk8l-api"
   imageTag: "v0.4.0"
@@ -49,15 +51,30 @@ sk8lApi:
   #             path: ca-cert.pem
   #           - key: tls.key
   #             path: ca-key.pem
+
 sk8lUi:
   image: "danroux/sk8l-ui"
   imageTag: "v0.4.0"
   imagePullPolicy: ""
-  volumeMounts: []
+  volumeMounts:
+    - name: nginx-cache
+      mountPath: /var/cache/nginx/
+    - name: var-run
+      mountPath: /var/run
+    - name: app-dir
+      mountPath: /app
   # - name: tls-certs
   #   mountPath: /etc/sk8l-certs
   #   readOnly: true
-  volumes: []
+  volumes:
+    - name: app-dir
+      emptyDir: {}
+    - name: nginx-cache
+      emptyDir: {}
+    - name: var-run
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}
   # If you need to conifure the nginx instance serving the ui
   # you can do it by replacing the mounted nginx-configmap.
   #
@@ -79,9 +96,12 @@ sk8lUi:
   #             path: ca-cert.pem
   #           - key: tls.key
   #             path: ca-key.pem
+
 envoy:
   image: ""
-  volumeMounts: []
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
   # Envoy needs a TLS certificate.
   # You can mount a volume with a secret with the keys:
   # - tls.crt.
@@ -91,25 +111,33 @@ envoy:
   # - name: tls-certs
   #   mountPath: /etc/sk8l-certs
   #   readOnly: true
-prometheus:
-  create: false
-# podAnnotations: {}
-# podLabels: {}
-podSecurityContext: {}
-# fsGroup: 2000
 
-securityContext: {}
-# capabilities:
-#   drop:
-#   - ALL
-# readOnlyRootFilesystem: true
-# runAsNonRoot: true
-# runAsUser: 1000
-# ---
-# runAsUser: 0
-# runAsUser: 1000
-# # runAsGroup: 3000
-# fsGroup: 1000
+# Security context for the pod template and containers
+# The default securityContexts are:
+# securityContext:
+#   pod:
+#     runAsNonRoot: true
+#     runAsGroup: {{ .Values.gid | default 1000 }}
+#     runAsUser: {{ .Values.uid | default 100 }}
+#     fsGroup: {{ .Values.gid | default 1000 }}
+#   container:
+#     allowPrivilegeEscalation: false
+#     capabilities:
+#       drop:
+#         - ALL
+securityContext:
+  # pod: {}
+  # container: {}
+  pod:
+    runAsNonRoot: true
+  container:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop: ['ALL']
+    seccompProfile:
+      type: RuntimeDefault
 
 service:
   annotations: []
@@ -117,10 +145,6 @@ service:
   labels:
     app.kubernetes.io/name: sk8l
   ports:
-    - name: sk8l-ui
-      protocol: TCP
-      port: 8001
-      targetPort: sk8l-ui-port
     - name: sk8l-api
       protocol: TCP
       port: 8585
@@ -133,6 +157,17 @@ service:
       protocol: TCP
       port: 8590
       targetPort: metrics-port
+
+uiService:
+  annotations: []
+  type: LoadBalancer
+  labels:
+    app.kubernetes.io/name: sk8l
+  ports:
+    - name: sk8l-ui
+      protocol: TCP
+      port: 8001
+      targetPort: sk8l-ui-port
     - name: envoy
       protocol: TCP
       port: 9080
@@ -140,12 +175,60 @@ service:
     - name: envoy-admin
       protocol: TCP
       port: 9901
-      targetPort: envoy-admin
+      targetPort: envoy-adm-port
+
+# Enables network policy for sk8l pods
+networkPolicy:
+  enabled: true
+  uiPolicy:
+    ingress:
+      - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/pod: sk8l-ui
+        ports:
+          - protocol: TCP
+            port: 8585
+    egress:
+      - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/pod: sk8l-ui
+        ports:
+          - protocol: TCP
+            port: 8585
+  apiserverPolicy:
+    ingress:
+      - from:
+        - ipBlock:
+            cidr: 0.0.0.0/8
+    egress:
+      - to:
+        - ipBlock:
+            cidr: 0.0.0.0/8
+
 configMaps:
   ui:
     # You can change the URL used on the frontend if needed.
     vue_app_sk8l_api_url: "https://localhost:9080"
+
 resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+updateStrategy: {}
+  # type: RollingUpdate
+  # rollingUpdate:
+  #   maxSurge: 1
+  #   maxUnavailable: 1
