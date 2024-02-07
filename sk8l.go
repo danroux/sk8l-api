@@ -502,6 +502,13 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(jobs []*batchv1.Job, cronjobUID typ
 	}
 	wg.Wait()
 
+	slices.SortFunc(runningJobs,
+		func(a, b *protos.JobResponse) int {
+			aTime, _ := time.Parse(time.RFC3339, a.CreationTimestamp)
+			bTime, _ := time.Parse(time.RFC3339, b.CreationTimestamp)
+			return aTime.Compare(bTime)
+		})
+
 	slices.SortFunc(allJobsForCronJob,
 		func(a, b *protos.JobResponse) int {
 			aTime, _ := time.Parse(time.RFC3339, a.CreationTimestamp)
@@ -529,6 +536,14 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 	commands := buildCronJobCommand(cronJob)
 	lastSuccessfulTime, lastScheduleTime := buildLastTimes(cronJob)
 
+	var cjFailed bool
+	for _, job := range allJobsForCronJob {
+		if job.Failed {
+			cjFailed = true
+			break
+		}
+	}
+
 	cjr := &protos.CronjobResponse{
 		Name:               cronJob.Name,
 		Namespace:          cronJob.Namespace,
@@ -546,6 +561,7 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 		RunningJobsPods:    runningJobPods,
 		JobsPods:           jobPodsForCronJob,
 		Spec:               &cronJob.Spec,
+		Failed:             cjFailed,
 	}
 
 	return cjr
@@ -554,29 +570,53 @@ func collectTerminatedAndFailedContainers(pod *corev1.Pod, statuses []corev1.Con
 	terminatedContainers := make([]*protos.ContainerResponse, 0)
 	failedContainers := make([]*protos.ContainerResponse, 0)
 
-	for _, container := range statuses {
+	for _, containerStatus := range statuses {
 		// ephStates = append(ephStates, container.State)
 		// if container.State.Waiting != nil && container.State.Waiting.Reason == "Error" {
 		//      failedEphContainers = append(failedEphContainers, &container)
 		// }
-		container := container
+		containerStatus := containerStatus
+
 		podConditions := []*corev1.PodCondition{}
 		for _, pc := range pod.Status.Conditions {
 			pc := pc
 			podConditions = append(podConditions, &pc)
 		}
 
-		if container.State.Terminated != nil {
+		if containerStatus.State.Waiting != nil {
 			cr := &protos.ContainerResponse{
-				Status:     &container,
+				Status:     &containerStatus,
 				Phase:      string(pod.Status.Phase),
 				Conditions: podConditions,
 			}
 			terminatedContainers = append(terminatedContainers, cr)
 
-			if container.State.Terminated.Reason == "Error" {
+			if containerStatus.State.Waiting.Reason == "CreateContainerConfigError" {
+				waitingTerminated := &corev1.ContainerStateTerminated{
+					Message:    containerStatus.State.Waiting.Message,
+					Reason:     containerStatus.State.Waiting.Reason,
+					FinishedAt: *pod.Status.StartTime,
+				}
 				cr.TerminatedReason = &protos.TerminationReason{
-					TerminationDetails: container.State.Terminated,
+					TerminationDetails: waitingTerminated,
+					ContainerName:      cr.Status.Name,
+				}
+				*terminationReasons = append(*terminationReasons, cr.TerminatedReason)
+				failedContainers = append(failedContainers, cr)
+			}
+		}
+
+		if containerStatus.State.Terminated != nil {
+			cr := &protos.ContainerResponse{
+				Status:     &containerStatus,
+				Phase:      string(pod.Status.Phase),
+				Conditions: podConditions,
+			}
+			terminatedContainers = append(terminatedContainers, cr)
+
+			if containerStatus.State.Terminated.Reason == "Error" {
+				cr.TerminatedReason = &protos.TerminationReason{
+					TerminationDetails: containerStatus.State.Terminated,
 					ContainerName:      cr.Status.Name,
 				}
 				*terminationReasons = append(*terminationReasons, cr.TerminatedReason)
