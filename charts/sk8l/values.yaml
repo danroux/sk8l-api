@@ -178,23 +178,6 @@ uiService:
 # Enables network policy for sk8l pods
 networkPolicy:
   enabled: true
-  uiPolicy:
-    ingress:
-      - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/pod: sk8l-ui
-        ports:
-          - protocol: TCP
-            port: 8585
-    egress:
-      - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/pod: sk8l-ui
-        ports:
-          - protocol: TCP
-            port: 8585
   apiserverPolicy:
     ingress:
       - from:
