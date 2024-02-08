@@ -148,6 +148,7 @@ message CronjobResponse {
   int64 lastDuration = 15 [json_name="last_duration"];
   int64 currentDuration = 16 [json_name="current_duration"];
   k8s.io.api.batch.v1.CronJobSpec spec = 17 [json_name="spec"];
+  bool failed = 18  [json_name="failed"];
 }
 
 message CronjobPodsResponse {
