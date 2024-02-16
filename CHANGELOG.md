@@ -1,3 +1,13 @@
+## v0.6.0 (February 16, 2024)
+
+ENHANCEMENTS:
+
+* chart: Rename env variables in sk8l-ui-configmap to work with vite [[GH-8](https://github.com/danroux/sk8l-api/issues/8)]
+
+IMPROVEMENTS:
+
+* Mark cronjobs/jobs/pods as failed when containers errored at init because of configuration errors. [[GH-7](https://github.com/danroux/sk8l-api/issues/7)]
+
 ## v0.5.0 (February 01, 2024)
 
 SECURITY:
