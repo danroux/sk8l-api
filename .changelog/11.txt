@@ -1,0 +1,3 @@
+```release-note:note
+chart: Release chart v.0.8.0
+```
