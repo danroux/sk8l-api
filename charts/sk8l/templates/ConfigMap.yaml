@@ -14,7 +14,7 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 data:
   NODE_EXTRA_CA_CERTS: "/etc/sk8l-certs/ca-cert.pem"
-  VITE_SK8L_API_URL: {{ .Values.configMaps.ui.vue_app_sk8l_api_url }}
+  VITE_SK8L_API_URL: {{ .Values.configMaps.ui.vite_sk8l_api_url }}
   VITE_SK8L_K8_NAMESPACE: {{ .Values.namespace.name }}
 ---
 apiVersion: v1

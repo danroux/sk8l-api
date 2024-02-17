@@ -71,7 +71,7 @@ kubectl create secret tls -n NAMESPACE tls-ca-cert --cert=ca-cert.pem --key=ca-k
 
 ### Environment Variables
 
-The frontend app calls the backend api on `https://localhost:9080`. You can change this by updating the ENV Variable `VUE_APP_SK8L_API_URL` on the `sk8l-ui-configmap` configmap.
+The frontend app calls the backend api on `https://localhost:9080`. You can change this by updating the ENV Variable `VITE_SK8L_API_URL` on the `sk8l-ui-configmap` configmap.
 
 ## Usage
 
