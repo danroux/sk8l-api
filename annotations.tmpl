@@ -53,7 +53,17 @@
   "links": [],
   "liveNow": false,
   "panels": [
-    {{- range . }}
+    {{- range $panelIndex, $panel := . }}
+    {{- if $panelIndex}},{{end}}
+    {{- if (eq .Type "row") }}
+    {
+      "gridPos": {{ marshal .GridPos }},
+      "id": 3,
+      "panels": [],
+      "title": "{{ .Title }}",
+      "type": "row"
+    }
+    {{- else}}
     {
       "datasource": {
         "type": "{{ .DataSource.Type }}",
@@ -113,12 +123,16 @@
         },
         "overrides": []
       },
+      {{- if .GridPos }}
+      "gridPos": {{ marshal .GridPos }},
+      {{- else }}
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
         "y": 0
       },
+      {{- end }}
       "id": 9,
       "options": {
         "legend": {
@@ -133,8 +147,8 @@
         }
       },
       "targets": [
-        {{- range $index, $target := .Targets }}
-        {{if $index}},{{end}}
+        {{- range $targetIndex, $target := .Targets }}
+        {{if $targetIndex}},{{end}}
         {
           "datasource": {
             "type": "{{ .DataSource.Type }}",
@@ -148,25 +162,15 @@
           "instant": false,
           "legendFormat": "{{ .LegendFormat }}",
           "range": true,
-          "refId": "A{{ $index }}",
+          "refId": "A{{ $targetIndex }}",
           "useBackend": false
         }
         {{- end }}
       ],
-      "title": "completed / registered / failed cronjobs totals",
+      "title": "{{ .Title }}",
       "type": "timeseries"
-    },
-    {
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 48
-      },
-      "id": 3,
-      "title": "Row title",
-      "type": "row"
     }
+    {{- end }}
     {{- end }}
   ],
   "refresh": "10s",
@@ -183,6 +187,6 @@
   "timezone": "",
   "title": "sk8l - dashboard",
   "uid": "e0478d83-97df-43f2-9ed4-22abd0d05090",
-  "version": 3,
+  "version": 1,
   "weekStart": ""
 }
