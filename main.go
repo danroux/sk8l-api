@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"text/template"
 	"time"
 
 	"github.com/danroux/sk8l/protos"
@@ -22,12 +24,14 @@ import (
 )
 
 var (
+	K8_NAMESPACE    = os.Getenv("K8_NAMESPACE")
 	API_PORT        = os.Getenv("SK8L_SERVICE_PORT_SK8L_API")
 	API_HEALTH_PORT = os.Getenv("SK8L_SERVICE_PORT_SK8L_API_HEALTH")
 	METRICS_PORT    = os.Getenv("SK8L_SERVICE_PORT_SK8L_API_METRICS")
 	certFile        = filepath.Join("/etc", "sk8l-certs", "server-cert.pem")
 	certKeyFile     = filepath.Join("/etc", "sk8l-certs", "server-key.pem")
 	caFile          = filepath.Join("/etc", "sk8l-certs", "ca-cert.pem")
+	METRIC_PREFIX   = fmt.Sprintf("sk8l_%s", K8_NAMESPACE)
 )
 
 func main() {
@@ -52,7 +56,7 @@ func main() {
 	probeS := grpc.NewServer()
 
 	log.Printf("grpcS creds %v", creds)
-	k8sClient := NewK8sClient(WithNamespace(os.Getenv("K8_NAMESPACE")))
+	k8sClient := NewK8sClient(WithNamespace(K8_NAMESPACE))
 
 	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
 
@@ -71,6 +75,7 @@ func main() {
 	sk8lServer.WatchPods()
 
 	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/cronjobs", nvidiaHandler)
 
 	httpS := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%s", METRICS_PORT),
@@ -130,4 +135,74 @@ func main() {
 	grpcS.GracefulStop()
 
 	log.Println("Shutdown: sk8l has stopped")
+}
+
+func nvidiaHandler(w http.ResponseWriter, r *http.Request) {
+	type DataSource struct {
+		Type, Uid string
+	}
+
+	type Target struct {
+		Expr, LegendFormat string
+		DataSource         *DataSource
+	}
+
+	type Panel struct {
+		Targets    []*Target
+		DataSource *DataSource
+	}
+
+	var targets = []*Target{
+		&Target{
+			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "completed_cronjobs_total"),
+			LegendFormat: "{{__name__}}",
+			DataSource: &DataSource{
+				Type: "prometheus",
+				Uid:  "${DS_PROMETHEUS}",
+			},
+		},
+		&Target{
+			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "failing_cronjobs_total"),
+			LegendFormat: "{{__name__}}",
+			DataSource: &DataSource{
+				Type: "prometheus",
+				Uid:  "${DS_PROMETHEUS}",
+			},
+		},
+		&Target{
+			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "registered_cronjobs_total"),
+			LegendFormat: "{{__name__}}",
+			DataSource: &DataSource{
+				Type: "prometheus",
+				Uid:  "${DS_PROMETHEUS}",
+			},
+		},
+	}
+
+	var panels = []Panel{
+		Panel{
+			Targets: targets,
+			DataSource: &DataSource{
+				Type: "prometheus",
+				Uid:  "${DS_PROMETHEUS}",
+			},
+		},
+	}
+
+	// Create a new template and parse the letter into it.
+	var tmplFile = "annotations.tmpl"
+	t := template.Must(template.New(tmplFile).ParseFiles(tmplFile))
+	// t = t.Funcs(template.FuncMap{"StringsJoin": strings.Join})
+
+	var b bytes.Buffer
+	err := t.Execute(&b, panels)
+	if err != nil {
+		log.Println("executing template:", err)
+	}
+
+	// Set the "Content-Type: application/json" header on the response. If you forget to // this, Go will default to sending a "Content-Type: text/plain; charset=utf-8"
+	// header instead.
+	w.Header().Set("Content-Type", "application/json")
+	// Write the JSON as the HTTP response body.
+	w.Write(b.Bytes())
 }
