@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -12,7 +10,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
-	"text/template"
 	"time"
 
 	"github.com/danroux/sk8l/protos"
@@ -76,7 +73,7 @@ func main() {
 	sk8lServer.WatchPods()
 
 	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/cronjobs", nvidiaHandler)
+	http.HandleFunc("/dashboards", dashboardsHandler)
 
 	httpS := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%s", METRICS_PORT),
@@ -136,158 +133,4 @@ func main() {
 	grpcS.GracefulStop()
 
 	log.Println("Shutdown: sk8l has stopped")
-}
-
-func nvidiaHandler(w http.ResponseWriter, r *http.Request) {
-	type DataSource struct {
-		Type, Uid string
-	}
-
-	type Target struct {
-		Expr, LegendFormat string
-		DataSource         *DataSource
-	}
-
-	type GridPos struct {
-		H uint16 `json:"h"`
-		W uint16 `json:"w"`
-		X uint16 `json:"x"`
-		Y uint16 `json:"y"`
-	}
-
-	type Panel struct {
-		Title      string
-		Targets    []*Target
-		DataSource *DataSource
-		Type       string
-		GridPos    *GridPos `json:"gridPos"`
-	}
-
-	var dataSource = &DataSource{
-		Type: "prometheus",
-		Uid:  "${DS_PROMETHEUS}",
-	}
-
-	var targets = []*Target{
-		&Target{
-			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "completed_cronjobs_total"),
-			LegendFormat: "{{__name__}}",
-			DataSource:   dataSource,
-		},
-		&Target{
-			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "failing_cronjobs_total"),
-			LegendFormat: "{{__name__}}",
-			DataSource:   dataSource,
-		},
-		&Target{
-			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "registered_cronjobs_total"),
-			LegendFormat: "{{__name__}}",
-			DataSource:   dataSource,
-		},
-	}
-
-	var cronjobTotals = []*Target{
-		&Target{
-			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "download_report_files_completion_total"),
-			LegendFormat: "{{__name__}}",
-			DataSource:   dataSource,
-		},
-		&Target{
-			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "download_report_files_failure_total"),
-			LegendFormat: "{{__name__}}",
-			DataSource:   dataSource,
-		},
-	}
-
-	var cronjobDuration = []*Target{
-		&Target{
-			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, "download_report_files_duration_seconds"),
-			LegendFormat: "{{job_name}}",
-			DataSource:   dataSource,
-		},
-	}
-
-	var panels = []Panel{
-		Panel{
-			Type:       "row",
-			Title:      fmt.Sprintf("sk8l: %s overview", K8_NAMESPACE),
-			DataSource: dataSource,
-			GridPos: &GridPos{
-				H: 1,
-				W: 24,
-				X: 0,
-				Y: 0,
-			},
-			Targets: make([]*Target, 0),
-		},
-		Panel{
-			Title:      "completed / registered / failed cronjobs totals",
-			DataSource: dataSource,
-			GridPos: &GridPos{
-				H: 8,
-				W: 12,
-				X: 0,
-				Y: 1,
-			},
-			Targets: targets,
-		},
-		Panel{
-			Type:  "row",
-			Title: fmt.Sprintf("sk8l: %s", "download_report_files"),
-			GridPos: &GridPos{
-				H: 1,
-				W: 24,
-				X: 0,
-				Y: 9,
-			},
-			Targets:    make([]*Target, 0),
-			DataSource: dataSource,
-		},
-		Panel{
-			Title:      fmt.Sprintf("%s_%s", METRIC_PREFIX, "download_report_files: completion / failure totals"),
-			DataSource: dataSource,
-			GridPos: &GridPos{
-				H: 8,
-				W: 12,
-				X: 0,
-				Y: 10,
-			},
-			Targets: cronjobTotals,
-		},
-		Panel{
-			Title:      fmt.Sprintf("%s_%s", METRIC_PREFIX, "download-report-files jobs duration"),
-			DataSource: dataSource,
-			GridPos: &GridPos{
-				H: 8,
-				W: 12,
-				X: 12,
-				Y: 10,
-			},
-			Targets: cronjobDuration,
-		},
-	}
-
-	// Create a new template and parse the letter into it.
-	var tmplFile = "annotations.tmpl"
-	t := template.New(tmplFile)
-	// t = t.Funcs(template.FuncMap{"StringsJoin": strings.Join})
-	t = t.Funcs(template.FuncMap{"marshal": func(v interface{}) string {
-		a, _ := json.Marshal(v)
-		return string(a)
-	},
-	},
-	)
-	t = template.Must(t.ParseFiles(tmplFile))
-
-	var b bytes.Buffer
-	err := t.Execute(&b, panels)
-	if err != nil {
-		log.Println("executing template:", err)
-	}
-
-	// Set the "Content-Type: application/json" header on the response. If you forget to // this, Go will default to sending a "Content-Type: text/plain; charset=utf-8"
-	// header instead.
-	w.Header().Set("Content-Type", "application/json")
-	// Write the JSON as the HTTP response body.
-	w.Write(b.Bytes())
 }

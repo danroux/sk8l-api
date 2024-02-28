@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+var metricsNamesMap = &sync.Map{}
+
 var (
 	namespace           = os.Getenv("K8_NAMESPACE")
 	optNamespace        = "sk8l"
@@ -64,18 +66,21 @@ var (
 func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 	conn, err := grpc.Dial(svr.Target, svr.Options...)
 	c := protos.NewCronjobClient(conn)
+	subSystem := svr.K8sClient.namespace
 
 	if err != nil {
 		panic(err)
 	}
 
 	go func() {
+		fmt.Println("here i am")
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("Shutdown: Stopping metrics collection")
+				log.Println("Metrics: Shutdown - Stopping metrics collection")
 				return
 			default:
+				log.Println("Metrics: Starting metrics collection")
 				req := &protos.CronjobsRequest{}
 				cronjobsClient, err := c.GetCronjobs(ctx, req)
 				if err != nil {
@@ -88,10 +93,22 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 				}
 				registeredCronjobs := len(cronjobsResponse.Cronjobs)
 				registeredCronjobsGauge.Set(float64(registeredCronjobs))
+				var metricNames []string
 
 				for _, cj := range cronjobsResponse.Cronjobs {
 					sanitizedCjName := sanitizeMetricName(cj.Name)
 					runningCronjobs += float64(len(cj.RunningJobs))
+
+					completionMetricName := fmt.Sprintf("%s_completion_total", sanitizedCjName)
+					failureMetricName := fmt.Sprintf("%s_failure_total", sanitizedCjName)
+					durationMetricName := fmt.Sprintf("%s_duration_seconds", sanitizedCjName)
+
+					metricNames = []string{
+						fmt.Sprintf("%s_%s", METRIC_PREFIX, completionMetricName),
+						fmt.Sprintf("%s_%s", METRIC_PREFIX, failureMetricName),
+						fmt.Sprintf("%s_%s", METRIC_PREFIX, durationMetricName),
+					}
+					metricsNamesMap.Store(sanitizedCjName, metricNames)
 
 					for _, job := range cj.Jobs {
 						if job.Failed {
@@ -106,9 +123,9 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 						labels := prometheus.Labels{}
 						labels["job_name"] = sanitizedJobName
 						cronjobDurationOpts = prometheus.GaugeOpts{
-							Name:        fmt.Sprintf("%s_duration_seconds", sanitizedCjName),
+							Name:        durationMetricName,
 							Namespace:   optNamespace,
-							Subsystem:   svr.K8sClient.namespace,
+							Subsystem:   subSystem,
 							Help:        fmt.Sprintf("Duration of %s in seconds", sanitizedCjName),
 							ConstLabels: labels,
 						}
@@ -136,9 +153,9 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 					}
 
 					cronjobCompletionsOpts = prometheus.GaugeOpts{
-						Name:      fmt.Sprintf("%s_completion_total", sanitizedCjName),
+						Name:      completionMetricName,
 						Namespace: optNamespace,
-						Subsystem: svr.K8sClient.namespace,
+						Subsystem: subSystem,
 						Help:      fmt.Sprintf("%s completion total", sanitizedCjName),
 					}
 
@@ -158,9 +175,9 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 					}
 
 					failingJobsOpts = prometheus.GaugeOpts{
-						Name:      fmt.Sprintf("%s_failure_total", sanitizedCjName),
+						Name:      failureMetricName,
 						Namespace: optNamespace,
-						Subsystem: svr.K8sClient.namespace,
+						Subsystem: subSystem,
 						Help:      fmt.Sprintf("%s failure total", sanitizedCjName),
 					}
 
