@@ -1,13 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"log"
-	"net/http"
 	"regexp"
-	"text/template"
 )
 
 type DataSource struct {
@@ -68,34 +63,6 @@ var (
 		failingCronjobsOpts.Name,
 	}
 )
-
-func dashboardsHandler(w http.ResponseWriter, r *http.Request) {
-	panels := generatePanels()
-
-	// Create a new template and parse the letter into it.
-	var tmplFile = "annotations.tmpl"
-	t := template.New(tmplFile)
-	// t = t.Funcs(template.FuncMap{"StringsJoin": strings.Join})
-	t = t.Funcs(template.FuncMap{"marshal": func(v interface{}) string {
-		a, _ := json.Marshal(v)
-		return string(a)
-	},
-	},
-	)
-	t = template.Must(t.ParseFiles(tmplFile))
-
-	var b bytes.Buffer
-	err := t.Execute(&b, panels)
-	if err != nil {
-		log.Println("executing template:", err)
-	}
-
-	// Set the "Content-Type: application/json" header on the response. If you forget to // this, Go will default to sending a "Content-Type: text/plain; charset=utf-8"
-	// header instead.
-	w.Header().Set("Content-Type", "application/json")
-	// Write the JSON as the HTTP response body.
-	w.Write(b.Bytes())
-}
 
 func generatePanels() []Panel {
 	var totalsMetrics = []*Target{}

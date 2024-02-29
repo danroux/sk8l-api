@@ -73,7 +73,6 @@ func main() {
 	sk8lServer.WatchPods()
 
 	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/dashboards", dashboardsHandler)
 
 	httpS := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%s", METRICS_PORT),
