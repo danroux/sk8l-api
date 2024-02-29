@@ -35,7 +35,7 @@ spec:
         - name: sk8l-api
           {{- template "securityContext.container" . }}
           {{- $apiImage := .Values.sk8lApi.image | default "danroux/sk8l-api" }}
-          {{- $apiTag := .Values.sk8lApi.imageTag | default "v0.6.0" }}
+          {{- $apiTag := .Values.sk8lApi.imageTag | default "v0.8.0" }}
           image: {{ printf "%s:%s" $apiImage $apiTag }}
           imagePullPolicy: {{ .Values.sk8lApi.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
