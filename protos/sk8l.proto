@@ -34,6 +34,7 @@ service Cronjob {
   rpc GetCronjobYAML(CronjobRequest) returns (CronjobYAMLResponse);
   rpc GetJobYAML(JobRequest) returns (JobYAMLResponse);
   rpc GetPodYAML(PodRequest) returns (PodYAMLResponse);
+  rpc GetDashboardAnnotations(DashboardAnnotationsRequest) returns (DashboardAnnotationsResponse);
 }
 
 message CronjobsRequest {};
@@ -57,6 +58,11 @@ message PodRequest {
   string podName = 1;
   string podNamespace = 2;
 }
+
+message DashboardAnnotationsRequest {};
+message DashboardAnnotationsResponse {
+  string annotations = 1;
+};
 
 message CronjobsResponse  {
   repeated CronjobResponse cronjobs = 5 [json_name="cronjobs"];

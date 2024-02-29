@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/danroux/sk8l/protos"
@@ -96,7 +97,6 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 
 		time.Sleep(time.Second * 10)
 	}
-	return nil
 }
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
@@ -112,8 +112,6 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 
 		time.Sleep(time.Second * 10)
 	}
-
-	return nil
 }
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
@@ -148,8 +146,6 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 
 		time.Sleep(time.Second * 10)
 	}
-
-	return nil
 }
 
 func (s *Sk8lServer) GetCronjobYAML(ctx context.Context, in *protos.CronjobRequest) (*protos.CronjobYAMLResponse, error) {
@@ -186,6 +182,33 @@ func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*pr
 
 	response := &protos.PodYAMLResponse{
 		Pod: string(y),
+	}
+
+	return response, nil
+}
+
+func (s *Sk8lServer) GetDashboardAnnotations(context.Context, *protos.DashboardAnnotationsRequest) (*protos.DashboardAnnotationsResponse, error) {
+	panels := generatePanels()
+
+	var tmplFile = "annotations.tmpl"
+	t := template.New(tmplFile)
+	// t = t.Funcs(template.FuncMap{"StringsJoin": strings.Join})
+	t = t.Funcs(template.FuncMap{"marshal": func(v interface{}) string {
+		a, _ := json.Marshal(v)
+		return string(a)
+	},
+	},
+	)
+	t = template.Must(t.ParseFiles(tmplFile))
+
+	var b bytes.Buffer
+	err := t.Execute(&b, panels)
+	if err != nil {
+		log.Println("executing template:", err)
+	}
+
+	response := &protos.DashboardAnnotationsResponse{
+		Annotations: b.String(),
 	}
 
 	return response, nil

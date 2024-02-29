@@ -24,6 +24,7 @@ type CronjobClient interface {
 	GetCronjobYAML(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (*CronjobYAMLResponse, error)
 	GetJobYAML(ctx context.Context, in *JobRequest, opts ...grpc.CallOption) (*JobYAMLResponse, error)
 	GetPodYAML(ctx context.Context, in *PodRequest, opts ...grpc.CallOption) (*PodYAMLResponse, error)
+	GetDashboardAnnotations(ctx context.Context, in *DashboardAnnotationsRequest, opts ...grpc.CallOption) (*DashboardAnnotationsResponse, error)
 }
 
 type cronjobClient struct {
@@ -157,6 +158,15 @@ func (c *cronjobClient) GetPodYAML(ctx context.Context, in *PodRequest, opts ...
 	return out, nil
 }
 
+func (c *cronjobClient) GetDashboardAnnotations(ctx context.Context, in *DashboardAnnotationsRequest, opts ...grpc.CallOption) (*DashboardAnnotationsResponse, error) {
+	out := new(DashboardAnnotationsResponse)
+	err := c.cc.Invoke(ctx, "/sk8l.Cronjob/GetDashboardAnnotations", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CronjobServer is the server API for Cronjob service.
 // All implementations must embed UnimplementedCronjobServer
 // for forward compatibility
@@ -167,6 +177,7 @@ type CronjobServer interface {
 	GetCronjobYAML(context.Context, *CronjobRequest) (*CronjobYAMLResponse, error)
 	GetJobYAML(context.Context, *JobRequest) (*JobYAMLResponse, error)
 	GetPodYAML(context.Context, *PodRequest) (*PodYAMLResponse, error)
+	GetDashboardAnnotations(context.Context, *DashboardAnnotationsRequest) (*DashboardAnnotationsResponse, error)
 	mustEmbedUnimplementedCronjobServer()
 }
 
@@ -191,6 +202,9 @@ func (UnimplementedCronjobServer) GetJobYAML(context.Context, *JobRequest) (*Job
 }
 func (UnimplementedCronjobServer) GetPodYAML(context.Context, *PodRequest) (*PodYAMLResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetPodYAML not implemented")
+}
+func (UnimplementedCronjobServer) GetDashboardAnnotations(context.Context, *DashboardAnnotationsRequest) (*DashboardAnnotationsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDashboardAnnotations not implemented")
 }
 func (UnimplementedCronjobServer) mustEmbedUnimplementedCronjobServer() {}
 
@@ -322,6 +336,24 @@ func _Cronjob_GetPodYAML_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cronjob_GetDashboardAnnotations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DashboardAnnotationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CronjobServer).GetDashboardAnnotations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/sk8l.Cronjob/GetDashboardAnnotations",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CronjobServer).GetDashboardAnnotations(ctx, req.(*DashboardAnnotationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cronjob_ServiceDesc is the grpc.ServiceDesc for Cronjob service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -340,6 +372,10 @@ var Cronjob_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPodYAML",
 			Handler:    _Cronjob_GetPodYAML_Handler,
+		},
+		{
+			MethodName: "GetDashboardAnnotations",
+			Handler:    _Cronjob_GetDashboardAnnotations_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

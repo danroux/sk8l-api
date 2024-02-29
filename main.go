@@ -22,12 +22,14 @@ import (
 )
 
 var (
+	K8_NAMESPACE    = os.Getenv("K8_NAMESPACE")
 	API_PORT        = os.Getenv("SK8L_SERVICE_PORT_SK8L_API")
 	API_HEALTH_PORT = os.Getenv("SK8L_SERVICE_PORT_SK8L_API_HEALTH")
 	METRICS_PORT    = os.Getenv("SK8L_SERVICE_PORT_SK8L_API_METRICS")
 	certFile        = filepath.Join("/etc", "sk8l-certs", "server-cert.pem")
 	certKeyFile     = filepath.Join("/etc", "sk8l-certs", "server-key.pem")
 	caFile          = filepath.Join("/etc", "sk8l-certs", "ca-cert.pem")
+	METRIC_PREFIX   = fmt.Sprintf("sk8l_%s", K8_NAMESPACE)
 )
 
 func main() {
@@ -52,7 +54,7 @@ func main() {
 	probeS := grpc.NewServer()
 
 	log.Printf("grpcS creds %v", creds)
-	k8sClient := NewK8sClient(WithNamespace(os.Getenv("K8_NAMESPACE")))
+	k8sClient := NewK8sClient(WithNamespace(K8_NAMESPACE))
 
 	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
 
