@@ -1,3 +1,19 @@
+## v0.8.0 (February 29, 2024)
+
+ENHANCEMENTS:
+
+* grafana: Generate annotations.json based on cronjob definitions that can be copy-pasted to create a base Grafana Dashboard. [[GH-12](https://github.com/danroux/sk8l-api/issues/12)]
+
+## v0.7.0 (February 17, 2024)
+
+IMPROVEMENTS:
+
+* chart: Update README && value field [[GH-10](https://github.com/danroux/sk8l-api/issues/10)]
+
+NOTES:
+
+* chart: Release chart v.0.8.0 [[GH-11](https://github.com/danroux/sk8l-api/issues/11)]
+
 ## v0.6.0 (February 16, 2024)
 
 ENHANCEMENTS:
