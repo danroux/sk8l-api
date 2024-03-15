@@ -58,19 +58,6 @@ func NewK8sClient(options ...ClientOption) *K8sClient {
 	return k8sClient
 }
 
-func (kc *K8sClient) GetCronjobs() *batchv1.CronJobList {
-	ctx := context.TODO()
-
-	cronJobs, err := kc.ClientSet.BatchV1().CronJobs(kc.namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
-
-	log.Printf("There are %d cronjobs in the cluster\n", len(cronJobs.Items))
-
-	return cronJobs
-}
-
 func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
 	ctx := context.TODO()
 	cronJob, err := kc.ClientSet.BatchV1().CronJobs(cronjobNamespace).Get(ctx, cronjobName, metav1.GetOptions{})
@@ -86,6 +73,14 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 	}
 
 	return cronJob
+}
+
+func (kc *K8sClient) WatchCronjobs() watch.Interface {
+	ctx := context.Background()
+
+	watcher, _ := kc.ClientSet.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
+
+	return watcher
 }
 
 func (kc *K8sClient) WatchPods() watch.Interface {

@@ -28,8 +28,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	jobPodsKeyFmt  = "jobs_pods_for_job_%s"
+	cronjobsKeyFmt = "sk8l_cronjob_%s_%s"
+)
+
 var (
-	jobPodsKeyFmt = "jobs_pods_for_job_%s"
+	cronjobsCacheKey = []byte("sk8l_cronjobs")
+	jobsCacheKey     = []byte("sk8l_jobs")
 )
 
 type Sk8lServer struct {
@@ -62,10 +68,6 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 	for {
 		cronJobList := s.findCronjobs()
 		jobsMapped := s.findJobs()
-
-		// cronJobList := getMocks()
-		// mocked := getMocks().Items
-		// cronJobList.Items = append(cronJobList.Items, mocked...)
 
 		n := len(cronJobList.Items)
 		cronjobs := make([]*protos.CronjobResponse, 0, n)
@@ -246,25 +248,41 @@ func (s *Sk8lServer) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
 	return nil, err
 }
 
-func (s *Sk8lServer) findCronjobs() *batchv1.CronJobList {
-	gCjsCall := func() []byte {
-		result := s.K8sClient.GetCronjobs()
-		value, _ := proto.Marshal(result)
-		return value
-	}
+func (s *Sk8lServer) get(key []byte) ([]byte, error) {
+	var valueResponse []byte
+	err := s.DB.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(key)
 
-	key := []byte("sk8l_cronjobs")
-	value, err := s.getAndStore(key, gCjsCall)
+		if err != nil {
+			return err
+		}
+
+		err = item.Value(func(val []byte) error {
+			valueResponse = append([]byte{}, val...)
+
+			return nil
+		})
+
+		return err
+	})
+
+	return valueResponse, err
+}
+
+func (s *Sk8lServer) findCronjobs() *batchv1.CronJobList {
+	value, err := s.get(cronjobsCacheKey)
 
 	if err != nil {
+		if errors.Is(err, badger.ErrKeyNotFound) {
 
+		}
 	}
 
 	cronJobList := &batchv1.CronJobList{}
 	err = proto.Unmarshal(value, cronJobList)
 
 	if err != nil {
-
+		log.Fatalln("findCronjobs", err)
 	}
 
 	return cronJobList
@@ -279,7 +297,7 @@ func (s *Sk8lServer) findCronjob(cronjobNamespace, cronjobName string) *batchv1.
 		return cronjobValue
 	}
 
-	key := []byte(fmt.Sprintf("sk8l_cronjob_%s_%s", cronjobNamespace, cronjobName))
+	key := []byte(fmt.Sprintf(cronjobsKeyFmt, cronjobNamespace, cronjobName))
 	cronjobValue, err := s.getAndStore(key, gCjCall)
 
 	if err != nil {
@@ -303,8 +321,7 @@ func (s *Sk8lServer) findJobs() *protos.MappedJobs {
 		return value
 	}
 
-	key := []byte("sk8l_jobs")
-	value, err := s.getAndStore(key, jobsCall)
+	value, err := s.getAndStore(jobsCacheKey, jobsCall)
 
 	if err != nil {
 
@@ -328,7 +345,6 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 
 	s.DB.View(func(txn *badger.Txn) error {
 		current, err := txn.Get(key)
-		// Your code here…
 
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return nil
@@ -443,6 +459,65 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 	return jobResponse
 }
 
+func (s *Sk8lServer) WatchCronjobs() {
+	x := s.K8sClient.WatchCronjobs()
+
+	go func() {
+		for {
+			event, more := <-x.ResultChan()
+			if more {
+				eventCronjob := event.Object.(*batchv1.CronJob)
+
+				err := s.DB.Update(func(txn *badger.Txn) error {
+					item, err := txn.Get(cronjobsCacheKey)
+					if err != nil {
+						rec := &batchv1.CronJobList{
+							Items: []batchv1.CronJob{*eventCronjob},
+						}
+
+						result, _ := proto.Marshal(rec)
+						entry := badger.NewEntry(cronjobsCacheKey, result)
+						err := txn.SetEntry(entry)
+						return err
+					}
+
+					err = item.Value(func(stored []byte) error {
+						storedCjList := &batchv1.CronJobList{}
+						proto.Unmarshal(stored, storedCjList)
+
+						switch event.Type {
+						case "ADDED":
+							updateStoredCronjobList(storedCjList, eventCronjob)
+							storedCjList.Items = append(storedCjList.Items, *eventCronjob)
+						case "MODIFIED":
+							updateStoredCronjobList(storedCjList, eventCronjob)
+							storedCjList.Items = append(storedCjList.Items, *eventCronjob)
+						case "DELETED":
+							updateStoredCronjobList(storedCjList, eventCronjob)
+						}
+
+						result, _ := proto.Marshal(storedCjList)
+
+						entry := badger.NewEntry(cronjobsCacheKey, result)
+						err := txn.SetEntry(entry)
+						return err
+					})
+
+					return err
+				})
+
+				if err != nil {
+					panic(err)
+				}
+
+			} else {
+				x = s.K8sClient.WatchCronjobs()
+				log.Println("Cronjob watching: Received all Cronjobs. Opening again")
+			}
+		}
+	}()
+}
+
 func (s *Sk8lServer) WatchPods() {
 	x := s.K8sClient.WatchPods()
 
@@ -450,16 +525,15 @@ func (s *Sk8lServer) WatchPods() {
 		for {
 			event, more := <-x.ResultChan()
 			if more {
-				podObject := event.Object.(*corev1.Pod)
-				log.Println("Job watching - received pod", event.Type, podObject.Name, podObject.ResourceVersion)
+				eventPod := event.Object.(*corev1.Pod)
 
-				fKey := fmt.Sprintf(jobPodsKeyFmt, podObject.Labels["job-name"])
+				fKey := fmt.Sprintf(jobPodsKeyFmt, eventPod.Labels["job-name"])
 				key := []byte(fKey)
 				err := s.DB.Update(func(txn *badger.Txn) error {
 					item, err := txn.Get(key)
 					if err != nil {
 						rec := &corev1.PodList{
-							Items: []corev1.Pod{*podObject},
+							Items: []corev1.Pod{*eventPod},
 						}
 
 						result, _ := proto.Marshal(rec)
@@ -472,7 +546,7 @@ func (s *Sk8lServer) WatchPods() {
 						rec := &corev1.PodList{}
 						proto.Unmarshal(val, rec)
 
-						rec.Items = append(rec.Items, *podObject)
+						rec.Items = append(rec.Items, *eventPod)
 						result, _ := proto.Marshal(rec)
 
 						entry := badger.NewEntry(key, result)
@@ -488,7 +562,7 @@ func (s *Sk8lServer) WatchPods() {
 				}
 			} else {
 				x = s.K8sClient.WatchPods()
-				log.Println("Job watching - Received all Pods. Opening again", x)
+				log.Println("Job watching: Received all Pods. Opening again", x)
 			}
 		}
 	}()
@@ -791,6 +865,19 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 	}
 
 	return commands
+}
+
+func updateStoredCronjobList(storedCjList *batchv1.CronJobList, eventCronjob *batchv1.CronJob) *batchv1.CronJobList {
+	cjList := &batchv1.CronJobList{}
+	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
+	for _, cronjob := range storedCjList.Items {
+		if cronjob.Name != eventCronjob.Name {
+			cjList.Items = append(cjList.Items, cronjob)
+		}
+	}
+	storedCjList.Items = cjList.Items
+
+	return storedCjList
 }
 
 func getCurrentDuration(runningJobsForCronJob []*protos.JobResponse) int64 {

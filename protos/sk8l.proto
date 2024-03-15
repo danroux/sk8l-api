@@ -169,5 +169,4 @@ message JobList {
 message MappedJobs {
   // google.protobuf.ListValue Jobs = 1;
   map<string, JobList> JobLists = 1;
-
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"regexp"
@@ -72,25 +73,31 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 		panic(err)
 	}
 
+	log.Println("Metrics: Starting metrics collection")
+	req := &protos.CronjobsRequest{}
+	cronjobsClient, err := c.GetCronjobs(ctx, req)
+
+	if err != nil {
+		panic(err)
+	}
+
 	go func() {
-		fmt.Println("here i am")
 		for {
 			select {
 			case <-ctx.Done():
 				log.Println("Metrics: Shutdown - Stopping metrics collection")
 				return
 			default:
-				log.Println("Metrics: Starting metrics collection")
-				req := &protos.CronjobsRequest{}
-				cronjobsClient, err := c.GetCronjobs(ctx, req)
-				if err != nil {
-					panic(err)
-				}
-
 				cronjobsResponse, err := cronjobsClient.Recv()
 
-				if err != nil {
+				if err == io.EOF {
+					break
 				}
+
+				if err != nil {
+					log.Fatalf("%v.GetCronjobs(_) = _, %v", cronjobsClient, err)
+				}
+
 				registeredCronjobs := len(cronjobsResponse.Cronjobs)
 				registeredCronjobsGauge.Set(float64(registeredCronjobs))
 				var metricNames []string
