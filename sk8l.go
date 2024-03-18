@@ -17,8 +17,9 @@ import (
 	"github.com/danroux/sk8l/protos"
 	badger "github.com/dgraph-io/badger/v4"
 	gyaml "github.com/ghodss/yaml"
-	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/protoadapt"
 
 	// structpb "google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/grpc"
@@ -278,14 +279,15 @@ func (s *Sk8lServer) findCronjobs() *batchv1.CronJobList {
 		}
 	}
 
-	cronJobList := &batchv1.CronJobList{}
-	err = proto.Unmarshal(value, cronJobList)
+	cronjobList := &batchv1.CronJobList{}
+	cronjobListV2 := protoadapt.MessageV2Of(cronjobList)
 
+	err = proto.Unmarshal(value, cronjobListV2)
 	if err != nil {
 		log.Fatalln("findCronjobs", err)
 	}
 
-	return cronJobList
+	return cronjobList
 }
 
 func (s *Sk8lServer) findCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
@@ -293,7 +295,8 @@ func (s *Sk8lServer) findCronjob(cronjobNamespace, cronjobName string) *batchv1.
 		cronjobName := cronjobName
 		cronjobNamespace := cronjobNamespace
 		cronjob := s.K8sClient.GetCronjob(cronjobNamespace, cronjobName)
-		cronjobValue, _ := proto.Marshal(cronjob)
+		cronjobV2 := protoadapt.MessageV2Of(cronjob)
+		cronjobValue, _ := proto.Marshal(cronjobV2)
 		return cronjobValue
 	}
 
@@ -305,7 +308,8 @@ func (s *Sk8lServer) findCronjob(cronjobNamespace, cronjobName string) *batchv1.
 	}
 
 	cronjob := &batchv1.CronJob{}
-	err = proto.Unmarshal(cronjobValue, cronjob)
+	cronjobV2 := protoadapt.MessageV2Of(cronjob)
+	err = proto.Unmarshal(cronjobValue, cronjobV2)
 
 	if err != nil {
 
@@ -342,6 +346,7 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 	fKey := fmt.Sprintf(jobPodsKeyFmt, job.Name)
 	key := []byte(fKey)
 	collection := &corev1.PodList{}
+	collectionV2 := protoadapt.MessageV2Of(collection)
 
 	s.DB.View(func(txn *badger.Txn) error {
 		current, err := txn.Get(key)
@@ -351,7 +356,7 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 		}
 
 		current.Value(func(val []byte) error {
-			proto.Unmarshal(val, collection)
+			proto.Unmarshal(val, collectionV2)
 
 			return nil
 		})
@@ -471,11 +476,12 @@ func (s *Sk8lServer) WatchCronjobs() {
 				err := s.DB.Update(func(txn *badger.Txn) error {
 					item, err := txn.Get(cronjobsCacheKey)
 					if err != nil {
-						rec := &batchv1.CronJobList{
+						cjList := &batchv1.CronJobList{
 							Items: []batchv1.CronJob{*eventCronjob},
 						}
 
-						result, _ := proto.Marshal(rec)
+						cjListV2 := protoadapt.MessageV2Of(cjList)
+						result, _ := proto.Marshal(cjListV2)
 						entry := badger.NewEntry(cronjobsCacheKey, result)
 						err := txn.SetEntry(entry)
 						return err
@@ -483,7 +489,9 @@ func (s *Sk8lServer) WatchCronjobs() {
 
 					err = item.Value(func(stored []byte) error {
 						storedCjList := &batchv1.CronJobList{}
-						proto.Unmarshal(stored, storedCjList)
+
+						storedCjListV2 := protoadapt.MessageV2Of(storedCjList)
+						proto.Unmarshal(stored, storedCjListV2)
 
 						switch event.Type {
 						case "ADDED":
@@ -496,7 +504,7 @@ func (s *Sk8lServer) WatchCronjobs() {
 							updateStoredCronjobList(storedCjList, eventCronjob)
 						}
 
-						result, _ := proto.Marshal(storedCjList)
+						result, _ := proto.Marshal(storedCjListV2)
 
 						entry := badger.NewEntry(cronjobsCacheKey, result)
 						err := txn.SetEntry(entry)
@@ -532,22 +540,24 @@ func (s *Sk8lServer) WatchPods() {
 				err := s.DB.Update(func(txn *badger.Txn) error {
 					item, err := txn.Get(key)
 					if err != nil {
-						rec := &corev1.PodList{
+						podList := &corev1.PodList{
 							Items: []corev1.Pod{*eventPod},
 						}
 
-						result, _ := proto.Marshal(rec)
+						podListV2 := protoadapt.MessageV2Of(podList)
+						result, _ := proto.Marshal(podListV2)
 						entry := badger.NewEntry(key, result)
 						err := txn.SetEntry(entry)
 						return err
 					}
 
 					err = item.Value(func(val []byte) error {
-						rec := &corev1.PodList{}
-						proto.Unmarshal(val, rec)
+						podList := &corev1.PodList{}
+						podListV2 := protoadapt.MessageV2Of(podList)
+						proto.Unmarshal(val, podListV2)
 
-						rec.Items = append(rec.Items, *eventPod)
-						result, _ := proto.Marshal(rec)
+						podList.Items = append(podList.Items, *eventPod)
+						result, _ := proto.Marshal(podListV2)
 
 						entry := badger.NewEntry(key, result)
 						err := txn.SetEntry(entry)
