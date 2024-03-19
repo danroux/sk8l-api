@@ -1,3 +1,23 @@
+## v0.9.0 (March 19, 2024)
+
+SECURITY:
+
+* Upgrade `google.golang.org/protobuf` => `v1.33.0` to remove [CWE-835](https://cwe.mitre.org/data/definitions/835.html) / [CVE-2024-24786](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-24786) vulnerability. [[GH-14](https://github.com/danroux/sk8l-api/issues/14)]
+
+IMPROVEMENTS:
+
+* Reduce calls to the k8s api by improving how cronjobs are collected [[GH-14](https://github.com/danroux/sk8l-api/issues/14)]
+
+DEPENDENCIES:
+
+* - Update `k8s.io/apimachinery` submodule => `v0.27.12` [[GH-14](https://github.com/danroux/sk8l-api/issues/14)]
+* - Update go dependencies:
+  - `google.golang.org/protobuf` => `v1.33.0`
+  - `k8s.io/api` => `v0.27.12`
+  - `k8s.io/apimachinery` => `v0.27.12`
+  - `k8s.io/client-go` => `v0.27.12`
+* - Remove `github.com/golang/protobuf` [[GH-14](https://github.com/danroux/sk8l-api/issues/14)]
+
 ## v0.8.0 (February 29, 2024)
 
 ENHANCEMENTS:

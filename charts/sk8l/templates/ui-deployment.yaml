@@ -43,7 +43,7 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           {{- $uiImage := .Values.sk8lUi.image | default "danroux/sk8l-ui" }}
-          {{- $uiTag := .Values.sk8lUi.imageTag | default "v0.8.0" }}
+          {{- $uiTag := .Values.sk8lUi.imageTag | default "v0.9.0" }}
           image: {{ printf "%s:%s" $uiImage $uiTag }}
           imagePullPolicy: {{ .Values.sk8lUi.imagePullPolicy | default "IfNotPresent" | quote }}
           command:
@@ -85,7 +85,7 @@ spec:
         - name: sk8l-ui
           {{- template "securityContext.container" . }}
           {{- $uiImage := .Values.sk8lUi.image | default "danroux/sk8l-ui" }}
-          {{- $uiTag := .Values.sk8lUi.imageTag | default "v0.8.0" }}
+          {{- $uiTag := .Values.sk8lUi.imageTag | default "v0.9.0" }}
           image: {{ printf "%s:%s" $uiImage $uiTag }}
           imagePullPolicy: {{ .Values.sk8lUi.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
