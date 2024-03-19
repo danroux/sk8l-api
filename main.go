@@ -70,8 +70,6 @@ func main() {
 	healthgrpc.RegisterHealthServer(probeS, sk8lServer)
 	protos.RegisterCronjobServer(grpcS, sk8lServer)
 
-	sk8lServer.WatchPods()
-
 	http.Handle("/metrics", promhttp.Handler())
 
 	httpS := &http.Server{
@@ -111,7 +109,7 @@ func main() {
 
 	x := context.Background()
 	metricsCxt, metricsCancel := context.WithCancel(x)
-	recordMetrics(metricsCxt, sk8lServer)
+	sk8lServer.Run(metricsCxt)
 
 	// Servers shutdown
 	log.Printf("Shutdown: setting up")
@@ -120,7 +118,7 @@ func main() {
 
 	sig := <-c
 
-	log.Printf("Shutdown: Got %v signal. sk8l will shut down in x seconds\n", sig)
+	log.Printf("Shutdown: Got %v signal. sk8l will shut down shortly\n", sig)
 
 	ctx, cancel := context.WithTimeout(x, 5*time.Second)
 	defer cancel()

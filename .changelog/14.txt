@@ -1,0 +1,20 @@
+```release-note:improvement
+Reduce calls to the k8s api by improving how cronjobs are collected
+```
+
+```release-note:security
+Upgrade `google.golang.org/protobuf` => `v1.33.0` to remove [CWE-835](https://cwe.mitre.org/data/definitions/835.html) / [CVE-2024-24786](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-24786) vulnerability.
+```
+
+```release-note:dependency
+- Update go dependencies:
+  - `google.golang.org/protobuf` => `v1.33.0`
+  - `k8s.io/api` => `v0.27.12`
+  - `k8s.io/apimachinery` => `v0.27.12`
+  - `k8s.io/client-go` => `v0.27.12`
+- Remove `github.com/golang/protobuf`
+```
+
+```release-note:dependency
+- Update `k8s.io/apimachinery` submodule => `v0.27.12`
+```
