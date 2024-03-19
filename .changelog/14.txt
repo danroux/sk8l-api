@@ -12,7 +12,7 @@ Upgrade `google.golang.org/protobuf` => `v1.33.0` to remove [CWE-835](https://cw
   - `k8s.io/api` => `v0.27.12`
   - `k8s.io/apimachinery` => `v0.27.12`
   - `k8s.io/client-go` => `v0.27.12`
-- Remove github.com/golang/protobuf
+- Remove `github.com/golang/protobuf`
 ```
 
 ```release-note:dependency

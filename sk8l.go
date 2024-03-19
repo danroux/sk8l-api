@@ -50,12 +50,12 @@ type Sk8lServer struct {
 
 type APICall (func() []byte)
 
-func (h Sk8lServer) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+func (s Sk8lServer) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
 	log.Default().Println("serving health")
 	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
 }
 
-func (h Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
+func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
 	response := &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}
 
 	if err := stream.Send(response); err != nil {
@@ -63,6 +63,12 @@ func (h Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 	}
 
 	return nil
+}
+
+func (s *Sk8lServer) Run(metricsCxt context.Context) {
+	s.collectCronjobs()
+	s.collectPods()
+	recordMetrics(metricsCxt, s)
 }
 
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
@@ -464,7 +470,7 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 	return jobResponse
 }
 
-func (s *Sk8lServer) WatchCronjobs() {
+func (s *Sk8lServer) collectCronjobs() {
 	x := s.K8sClient.WatchCronjobs()
 
 	go func() {
@@ -526,7 +532,7 @@ func (s *Sk8lServer) WatchCronjobs() {
 	}()
 }
 
-func (s *Sk8lServer) WatchPods() {
+func (s *Sk8lServer) collectPods() {
 	x := s.K8sClient.WatchPods()
 
 	go func() {
