@@ -38,11 +38,20 @@ helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
 --set serviceAccount.metadata.namespace.name=[NAMESPACE]
 ```
 
-### ROADMAP
+### Prometheus metrics
 
-- Support making HTTP configurable
-- Make caching configurable
-  - When adding replicas, each instance sends metrics and have their own cache
-- Make intervals configurable(metrics, refresh timer on UI)
-  - Stream responses instead of js timers
-- Fix edge cases when cronjob executions overlap
+sk8l collects and publishes aggregated metrics for all the configured cronjobs on a namespace and also metrics per each single cronjob.
+
+|                       Name                       |              Description              |
+|:------------------------------------------------:|:-------------------------------------:|
+| sk8l_[NAMESPACE]_registered_cronjobs_total       | Total registered cronjobs             |
+| sk8l_[NAMESPACE]_completed_cronjobs_total        | Total completed cronjobs              |
+| sk8l_[NAMESPACE]_failing_cronjobs_total          | Total cronjobs failures               |
+| sk8l_[NAMESPACE]_running_cronjobs_total          | Amount of current running cronjobs    |
+| sk8l_[NAMESPACE]_[CRONJOB_NAME]_completion_total | Total completions of a cronjobs       |
+| sk8l_[NAMESPACE]_[CRONJOB_NAME]_duration_seconds | Current duration of a running cronjob |
+| sk8l_[NAMESPACE]_[CRONJOB_NAME]_failure_total    | Total failures of a cronjob           |
+
+### Grafana Dashboard
+
+sk8l can generate an annotations json configuration based on the current configured cronjobs on kubernetes that can be copy/pasted and imported into Grafana to create a dashboard.
