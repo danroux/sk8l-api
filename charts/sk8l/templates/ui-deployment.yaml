@@ -29,7 +29,6 @@ spec:
       automountServiceAccountToken: false
       serviceAccountName: {{ .Values.serviceAccount.metadata.name | default "sk8l" }}
       {{- template "securityContext.pod" . }}
-        runAsNonRoot: true
         runAsGroup: {{ .Values.envoyGid | default 101 }}
         runAsUser: {{ .Values.envoyUid | default 101 }}
       initContainers:
