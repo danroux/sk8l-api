@@ -95,7 +95,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 				}
 
 				if err != nil {
-					log.Fatalf("%v.GetCronjobs(_) = _, %v", cronjobsClient, err)
+					log.Printf("Error: %v.GetCronjobs(_) = _, %v\n", cronjobsClient, err)
 				}
 
 				registeredCronjobs := len(cronjobsResponse.Cronjobs)
@@ -111,9 +111,9 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 					durationMetricName := fmt.Sprintf("%s_duration_seconds", sanitizedCjName)
 
 					metricNames = []string{
-						fmt.Sprintf("%s_%s", METRIC_PREFIX, completionMetricName),
-						fmt.Sprintf("%s_%s", METRIC_PREFIX, failureMetricName),
-						fmt.Sprintf("%s_%s", METRIC_PREFIX, durationMetricName),
+						fmt.Sprintf("%s_%s", MetricPrefix, completionMetricName),
+						fmt.Sprintf("%s_%s", MetricPrefix, failureMetricName),
+						fmt.Sprintf("%s_%s", MetricPrefix, durationMetricName),
 					}
 					metricsNamesMap.Store(sanitizedCjName, metricNames)
 

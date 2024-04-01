@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"log"
 	"net"
@@ -21,27 +22,39 @@ import (
 	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
 )
 
+const (
+	ReadTimeoutSeconds  = 10
+	WriteTimeoutSeconds = 30
+	ReadTimeout         = time.Duration(ReadTimeoutSeconds)
+	WriteTimeout        = time.Duration(WriteTimeoutSeconds)
+)
+
 var (
-	K8_NAMESPACE    = os.Getenv("K8_NAMESPACE")
-	API_PORT        = os.Getenv("SK8L_SERVICE_PORT_SK8L_API")
-	API_HEALTH_PORT = os.Getenv("SK8L_SERVICE_PORT_SK8L_API_HEALTH")
-	METRICS_PORT    = os.Getenv("SK8L_SERVICE_PORT_SK8L_API_METRICS")
-	certFile        = filepath.Join("/etc", "sk8l-certs", "server-cert.pem")
-	certKeyFile     = filepath.Join("/etc", "sk8l-certs", "server-key.pem")
-	caFile          = filepath.Join("/etc", "sk8l-certs", "ca-cert.pem")
-	METRIC_PREFIX   = fmt.Sprintf("sk8l_%s", K8_NAMESPACE)
+	K8Namespace   = os.Getenv("K8_NAMESPACE")
+	APIPort       = os.Getenv("SK8L_SERVICE_PORT_SK8L_API")
+	APIHealthPort = os.Getenv("SK8L_SERVICE_PORT_SK8L_API_HEALTH")
+	MetricsPort   = os.Getenv("SK8L_SERVICE_PORT_SK8L_API_METRICS")
+	certFile      = filepath.Join("/etc", "sk8l-certs", "server-cert.pem")
+	certKeyFile   = filepath.Join("/etc", "sk8l-certs", "server-key.pem")
+	caFile        = filepath.Join("/etc", "sk8l-certs", "ca-cert.pem")
+	MetricPrefix  = fmt.Sprintf("sk8l_%s", K8Namespace)
 )
 
 func main() {
-	serverTLSConfig, err := setupTLS(certFile, certKeyFile, caFile)
-	target := fmt.Sprintf("0.0.0.0:%s", API_PORT)
+	certPool := x509.NewCertPool()
+	serverTLSConfig, err := setupTLS(certFile, certKeyFile, caFile, certPool)
+	if err != nil {
+		log.Fatal("Error: setupTLS:", err)
+	}
+
+	target := fmt.Sprintf("0.0.0.0:%s", APIPort)
 	conn, err := net.Listen("tcp", target)
 
 	if err != nil {
 		log.Fatal("tlsListen error:", err)
 	}
 
-	healthConn, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", API_HEALTH_PORT))
+	healthConn, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", APIHealthPort))
 
 	if err != nil {
 		log.Fatal("Health Probe Listen error:", err)
@@ -54,7 +67,7 @@ func main() {
 	probeS := grpc.NewServer()
 
 	log.Printf("grpcS creds %v", creds)
-	k8sClient := NewK8sClient(WithNamespace(K8_NAMESPACE))
+	k8sClient := NewK8sClient(WithNamespace(K8Namespace))
 
 	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
 
@@ -73,10 +86,10 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 
 	httpS := &http.Server{
-		Addr:         fmt.Sprintf("0.0.0.0:%s", METRICS_PORT),
+		Addr:         fmt.Sprintf("0.0.0.0:%s", MetricsPort),
 		IdleTimeout:  time.Minute,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  ReadTimeout * time.Second,
+		WriteTimeout: WriteTimeout * time.Second,
 		TLSConfig:    serverTLSConfig,
 	}
 	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
@@ -97,7 +110,6 @@ func main() {
 		if err != nil {
 			log.Fatal("httpS error", err)
 		}
-
 	}()
 
 	go func() {

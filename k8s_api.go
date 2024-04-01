@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"slices"
@@ -18,8 +17,8 @@ import (
 )
 
 type K8sClient struct {
-	namespace string
 	ClientSet *kubernetes.Clientset
+	namespace string
 }
 
 // A ClientOption is used to configure a Client.
@@ -63,13 +62,13 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 	cronJob, err := kc.ClientSet.BatchV1().CronJobs(cronjobNamespace).Get(ctx, cronjobName, metav1.GetOptions{})
 
 	if errors.IsNotFound(err) {
-		log.Printf("Cronjob %s found in default namespace\n", cronjobName)
+		log.Printf("Cronjob not %s found in default namespace\n", cronjobName)
 	} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
 		log.Printf("Error getting cronjob %v\n", statusError.ErrStatus.Message)
 	} else if err != nil {
 		panic(err.Error())
 	} else {
-		log.Printf("Found example-xxxxx cronjob in default namespace\n")
+		log.Printf("Found %s cronjob in %s namespace\n", cronjobName, cronjobNamespace)
 	}
 
 	return cronJob
@@ -91,26 +90,6 @@ func (kc *K8sClient) WatchPods() watch.Interface {
 	return watcher
 }
 
-func (kc *K8sClient) GetJobPodsForJob(job *batchv1.Job) *corev1.PodList {
-	ctx := context.TODO()
-
-	jobPods, err := kc.ClientSet.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("job-name=%s", job.Name),
-	})
-
-	if errors.IsNotFound(err) {
-		log.Printf("Pods found in default namespace\n")
-	} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
-		log.Printf("Error getting pod %v\n", statusError.ErrStatus.Message)
-	} else if err != nil {
-		panic(err.Error())
-	} else {
-		log.Printf("There are %d jobPods in the cluster for job %s - %s\n", len(jobPods.Items), job.UID, job.Name)
-	}
-
-	return jobPods
-}
-
 func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 	ctx := context.TODO()
 	pod, err := kc.ClientSet.CoreV1().Pods(jobNamespace).Get(ctx, podName, metav1.GetOptions{})
@@ -125,7 +104,7 @@ func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 	} else if err != nil {
 		panic(err.Error())
 	} else {
-		log.Printf("Found example-xxxxx pod in default namespace\n")
+		log.Printf("Found %s pod in %s namespace\n", podName, jobNamespace)
 	}
 
 	return pod
