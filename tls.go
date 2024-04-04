@@ -3,12 +3,41 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
+	"path/filepath"
 )
 
-func setupTLS(certFile, certKeyFile, caFile string) (*tls.Config, error) {
-	tlsConfig := &tls.Config{}
+type CertPool interface {
+	AppendCertsFromPEM(caBytes []byte) bool
+}
+
+var (
+	ErrFailedToAppend = errors.New("failed to append Root certificate")
+	ErrTLS            = errors.New("TLS Error")
+	ErrCertPool       = errors.New("certPool Error")
+	ErrCACertFile     = errors.New("caCertFile Error")
+)
+
+type CertError struct {
+	Err      error
+	CertFile string
+	Msg      string
+}
+
+func (ce *CertError) Error() string {
+	return fmt.Sprintf("CertError: %s - %s (%s)", ce.Err.Error(), ce.Msg, ce.CertFile)
+}
+
+func (ce *CertError) Unwrap() error {
+	return fmt.Errorf(" %w: %s", ce.Err, ce.Msg)
+}
+
+func setupTLS(certFile, certKeyFile, caFile string, certPool CertPool) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+	}
 	var err error
 
 	tlsConfig.Certificates = make([]tls.Certificate, 1)
@@ -18,22 +47,47 @@ func setupTLS(certFile, certKeyFile, caFile string) (*tls.Config, error) {
 	)
 
 	if err != nil {
-		return nil, err
+		cErr := &CertError{
+			CertFile: certFile,
+			Msg:      err.Error(),
+			Err:      ErrTLS,
+		}
+		return nil, cErr
 	}
 
-	caBytes, err := ioutil.ReadFile(caFile)
+	caBytes, err := os.ReadFile(filepath.Clean(caFile))
 
-	certPool := x509.NewCertPool()
-	ok := certPool.AppendCertsFromPEM([]byte(caBytes))
+	if err != nil {
+		cErr := &CertError{
+			CertFile: certFile,
+			Msg:      err.Error(),
+			Err:      ErrCACertFile,
+		}
+		return nil, cErr
+	}
+
+	ok := certPool.AppendCertsFromPEM(caBytes)
 
 	if !ok {
-		return nil, fmt.Errorf(
-			"failed to parse root certificate: %q", certFile,
-		)
+		cErr := &CertError{
+			CertFile: certFile,
+			Err:      ErrFailedToAppend,
+		}
+		return nil, cErr
 	}
 
-	tlsConfig.ClientCAs = certPool
-	tlsConfig.RootCAs = certPool
+	certPoolAsX509CertPool, ok := certPool.(*x509.CertPool)
+
+	if !ok {
+		cErr := &CertError{
+			CertFile: certFile,
+			Err:      ErrCertPool,
+		}
+		return nil, cErr
+	}
+
+	tlsConfig.ClientCAs = certPoolAsX509CertPool
+	tlsConfig.RootCAs = certPoolAsX509CertPool
 	tlsConfig.ServerName = "0.0.0.0"
 
 	return tlsConfig, nil

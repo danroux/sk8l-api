@@ -1,17 +1,19 @@
+// Sk8l
 package main
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 )
 
 type DataSource struct {
-	Type, Uid string
+	UID, Type string
 }
 
 type Target struct {
-	Expr, LegendFormat string
 	DataSource         *DataSource
+	Expr, LegendFormat string
 }
 
 type GridPos struct {
@@ -26,24 +28,24 @@ type Option struct {
 }
 
 type Override struct {
-	Id      string `json:"id"`
+	ID      string `json:"id"`
 	Options string `json:"options"`
 }
 
 type Panel struct {
-	Title      string
-	Targets    []*Target
-	DataSource *DataSource
-	Type       string
 	GridPos    *GridPos `json:"gridPos"`
+	DataSource *DataSource
 	Options    *Option
 	Override   *Override
+	Title      string
+	Type       string
+	Targets    []*Target
 }
 
 var (
 	dataSource = &DataSource{
 		Type: "prometheus",
-		Uid:  "${DS_PROMETHEUS}",
+		UID:  "${DS_PROMETHEUS}",
 	}
 
 	durationRe              = regexp.MustCompile(`duration_seconds$`)
@@ -69,7 +71,7 @@ func generatePanels() []Panel {
 	var totalsStats = []*Target{}
 	for _, totalMetricName := range totalMetricNames {
 		t := &Target{
-			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, totalMetricName),
+			Expr:         fmt.Sprintf("%s_%s", MetricPrefix, totalMetricName),
 			LegendFormat: "{{__name__}}",
 			DataSource:   dataSource,
 		}
@@ -83,7 +85,7 @@ func generatePanels() []Panel {
 		}
 
 		t := &Target{
-			Expr:         fmt.Sprintf("%s_%s", METRIC_PREFIX, totalStatName),
+			Expr:         fmt.Sprintf("%s_%s", MetricPrefix, totalStatName),
 			LegendFormat: legendFmt,
 			DataSource:   dataSource,
 		}
@@ -91,9 +93,9 @@ func generatePanels() []Panel {
 	}
 
 	var panels = []Panel{
-		Panel{
+		{
 			Type:       "row",
-			Title:      fmt.Sprintf("sk8l: %s overview", K8_NAMESPACE),
+			Title:      fmt.Sprintf("sk8l: %s overview", K8Namespace),
 			DataSource: dataSource,
 			GridPos: &GridPos{
 				H: 1,
@@ -103,7 +105,7 @@ func generatePanels() []Panel {
 			},
 			Targets: make([]*Target, 0),
 		},
-		Panel{
+		{
 			Title:      "completed / registered / failed cronjobs totals",
 			DataSource: dataSource,
 			GridPos: &GridPos{
@@ -117,9 +119,9 @@ func generatePanels() []Panel {
 				Calcs: "last",
 			},
 		},
-		Panel{
+		{
 			Type:       "stat",
-			Title:      fmt.Sprintf("sk8l: %s totals", K8_NAMESPACE),
+			Title:      fmt.Sprintf("sk8l: %s totals", K8Namespace),
 			DataSource: dataSource,
 			GridPos: &GridPos{
 				H: 8,
@@ -132,7 +134,7 @@ func generatePanels() []Panel {
 				Calcs: "lastNotNull",
 			},
 			Override: &Override{
-				Id:      "byName",
+				ID:      "byName",
 				Options: "failing cronjobs",
 			},
 		},
@@ -142,21 +144,29 @@ func generatePanels() []Panel {
 
 	individualPanelsGenerator := func(key, value any) bool {
 		var row Panel
-		var target = &Target{}
+		var target *Target
 		var failureMetricName string
 		var cronjobDurations = make([]*Target, 0)
 		var cronjobTotals = make([]*Target, 0)
-		metricNames := value.([]string)
+		metricNames, ok := value.([]string)
 
-		keyName := key.(string)
+		if !ok {
+			log.Println("Error: value.([]string)")
+		}
+
+		keyName, ok := key.(string)
+
+		if !ok {
+			log.Println("Error: key.(string)")
+		}
 
 		i := len(individualPanels)
 
 		var rowI, rowM, failureY uint16
 
 		rowI = uint16((i + 1) * 9)
-		rowM = uint16(rowI + 1)
-		failureY = uint16(rowM + 8)
+		rowM = rowI + 1
+		failureY = rowM + 8
 
 		row = Panel{
 			Type:  "row",

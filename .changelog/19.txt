@@ -1,0 +1,3 @@
+```release-note:enhancement
+golang: Setup checks related to golang in gha/ci
+```
