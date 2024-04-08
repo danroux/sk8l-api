@@ -1,0 +1,75 @@
+name: k8s
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.22.2"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        k8s:
+          - image: "kindest/node:v1.26.14@sha256:5d548739ddef37b9318c70cb977f57bf3e5015e4552be4e27e57280a8cbb8e4f"
+            version: v1.26.14
+          - image: "kindest/node:v1.27.11@sha256:681253009e68069b8e01aad36a1e0fa8cf18bb0ab3e5c4069b2e65cafdd70843"
+            version: v1.27.11
+          - image: "kindest/node:v1.28.7@sha256:9bc6c451a289cf96ad0bbaf33d416901de6fd632415b076ab05f5fa7e4f65c58"
+            version: v1.28.7
+          - image: "kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245"
+            version: v1.29.2
+        kind:
+          - version: "v0.22.0"
+    name: k8s ${{ matrix.k8s.version }} tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+      # - name: Set up Go ${{ env.GO_VERSION }}
+      #   uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+      #   with:
+      #     go-version: ${{ env.GO_VERSION }}
+      #     check-latest: false
+      #     cache: false
+      #   id: go
+      - name: Setup Kubernetes cluster ${{ matrix.kind.version }}/${{ matrix.k8s.version }}
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          name: sk8l
+          version: ${{ matrix.kind.version }}
+          image: ${{ matrix.k8s.image }}
+          config: testdata/sk8l-kind.yml
+      - name: Test connection
+        run: |
+          kubectl cluster-info
+          kubectl describe node
+      - name: Install Helm
+        uses: azure/setup-helm@v4.1.0
+        with:
+          version: 'v3.13.3'
+      - name: Setup certs
+        run: |
+          make setup-certs
+      - name: Install Chart
+        run: |
+          make install-chart-ci
+      - name: /metrics smoke tests
+        id: metrics_smoke_tests
+        run: |
+          make metrics-smoke-tests
+      - name: smoke tests error output
+        if: ${{ failure() && steps.metrics_smoke_tests.conclusion == 'failure' }}
+        run: |
+          echo "----------------------------"
+          cat current_state.txt
+          echo "----------------------------"
+          cat expected_output.txt
+          echo "----------------------------"
+          cat job_output.txt
+          exit 1

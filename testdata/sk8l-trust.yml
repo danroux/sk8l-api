@@ -1,0 +1,13 @@
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: sk8l
+spec:
+  sources:
+  - useDefaultCAs: true
+  - secret:
+      name: "root-secret"
+      key: "tls.crt"
+  target:
+    configMap:
+      key: "trust-bundle.crt"
