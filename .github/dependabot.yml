@@ -13,6 +13,8 @@ updates:
       prefix: "go deps:"
       include: "scope"
     open-pull-requests-limit: 10
+    assignees:
+      - "danroux"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -26,6 +28,8 @@ updates:
       prefix: "gha deps:"
       include: "scope"
     open-pull-requests-limit: 10
+    assignees:
+      - "danroux"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
@@ -39,3 +43,5 @@ updates:
       prefix: "docker deps:"
       include: "scope"
     open-pull-requests-limit: 10
+    assignees:
+      - "danroux"

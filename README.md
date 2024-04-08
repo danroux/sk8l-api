@@ -23,7 +23,7 @@ Monitor your cronjobs activity. Use the exported prometheus metrics to get alert
 
 https://sk8l.io/
 
-### HELM Chart
+## HELM Chart
 
 https://artifacthub.io/packages/helm/sk8l/sk8l
 
@@ -38,7 +38,18 @@ helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
 --set serviceAccount.metadata.namespace.name=[NAMESPACE]
 ```
 
-### Prometheus metrics
+## Supported Kubernetes versions
+
+The Kubernetes community releases minor versions roughly every three months. These are the versions currently supported and tested against.
+
+| Version       | Tested Version |
+| ------------- | ----------------- |
+| v1.29         | v1.29.2           |
+| v1.28         | v1.28.7           |
+| v1.27         | v1.27.11          |
+| v1.26         | v1.26.14          |
+
+## Prometheus metrics
 
 sk8l collects and publishes aggregated metrics for all the configured cronjobs on a namespace and also metrics per each single cronjob.
 
@@ -52,6 +63,6 @@ sk8l collects and publishes aggregated metrics for all the configured cronjobs o
 | sk8l_[NAMESPACE]_[CRONJOB_NAME]_duration_seconds | Current duration of a running cronjob |
 | sk8l_[NAMESPACE]_[CRONJOB_NAME]_failure_total    | Total failures of a cronjob           |
 
-### Grafana Dashboard
+## Grafana Dashboard
 
 sk8l can generate an annotations json configuration based on the current configured cronjobs on kubernetes that can be copy/pasted and imported into Grafana to create a dashboard.
