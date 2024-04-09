@@ -1,4 +1,4 @@
-FROM golang:1.22.0 AS build
+FROM golang:1.22.2 AS build
 
 WORKDIR /src/
 
@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/gocache make go-out
 
 COPY . .
 
-FROM alpine:3.18.3
+FROM alpine:3.19.1
 
 WORKDIR /app/
 
