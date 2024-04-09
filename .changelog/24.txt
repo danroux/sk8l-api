@@ -1,0 +1,7 @@
+```release-note:enhancement
+ci/dependabot: go deps:(deps): bump k8s.io/client-go from 0.27.12 to 0.29.3
+
+go deps:(deps): bump k8s.io/client-go from 0.27.12 to 0.29.3
+
+Dependabot couldn't find the original pull request head commit, 78d0628ee106d894dbdf7136d52cd348f2054f02.
+```
