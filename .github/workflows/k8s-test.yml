@@ -1,0 +1,91 @@
+name: k8s-rwkld
+
+on:
+  workflow_call:
+    inputs:
+      pull_request_number:
+        required: true
+        type: number
+      image_tag:
+        required: true
+        type: string
+      kind_version:
+        required: true
+        type: string
+      k8s_version:
+        required: true
+        type: string
+      k8s_image:
+        required: true
+        type: string
+jobs:
+  k8s-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+      # - name: Set up Go ${{ env.GO_VERSION }}
+      #   uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+      #   with:
+      #     go-version: ${{ env.GO_VERSION }}
+      #     check-latest: false
+      #     cache: false
+      #   id: go
+      - name: Update config files with dev docker image tag
+        if:
+        run: |
+          pr_image_tag=${{ inputs.image_tag }}
+          current_version=$(awk -F'"' '/\.Values\.sk8lApi\.imageTag/ {print $2}' charts/sk8l/templates/deployment.yaml)
+          sed -i.bak -E "s/.Values.sk8lApi.imageTag \| default \"$current_version\"/.Values.sk8lApi.imageTag | default \"$pr_image_tag\"/" charts/sk8l/templates/deployment.yaml
+          cp charts/sk8l/values.yaml charts/sk8l/values.yaml.bak
+          yq e -i ".sk8lApi.imageTag = \"$current_version\"" charts/sk8l/values.yaml
+          set +e
+          echo "after"
+          diff -C3 charts/sk8l/templates/deployment.yaml.bak charts/sk8l/templates/deployment.yaml
+          diff -C3 charts/sk8l/values.yaml.bak charts/sk8l/values.yaml
+          diff_status=$?
+          set -e
+          if [ $diff_status -eq 0 ]; then
+            echo "No differences found between the files."
+            exit 1
+          fi
+      - name: Setup Kubernetes cluster ${{ inputs.kind_version }}/${{ inputs.k8s_version }}
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          name: sk8l
+          version: ${{ inputs.kind_version }}
+          image: ${{ inputs.k8s_image }}
+          config: testdata/sk8l-kind.yml
+      - name: Test connection
+        run: |
+          kubectl cluster-info
+          kubectl describe node
+      - name: Install Helm
+        uses: azure/setup-helm@v4.1.0
+        with:
+          version: 'v3.13.3'
+      - name: Setup certs
+        run: |
+          make setup-certs
+      - name: Install Chart
+        run: |
+          make install-chart-ci
+      - name: /metrics smoke tests
+        id: metrics_smoke_tests
+        run: |
+          make metrics-smoke-tests
+      - name: smoke tests error output
+        if: ${{ failure() && steps.metrics_smoke_tests.conclusion == 'failure' }}
+        run: |
+          echo "----------------------------"
+          kubectl get pods -n sk8l
+          kubectl get cronjobs -n sk8l
+          echo "----------------------------"
+          cat current_state.txt
+          echo "----------------------------"
+          cat expected_output.txt
+          echo "----------------------------"
+          cat job_output.txt
+          exit 1
