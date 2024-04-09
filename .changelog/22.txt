@@ -1,0 +1,16 @@
+```release-note:enhancement
+ci/dependabot: docker deps:(deps): bump alpine from 3.18.3 to 3.19.1
+
+docker deps:(deps): bump alpine from 3.18.3 to 3.19.1
+
+Bumps alpine from 3.18.3 to 3.19.1.
+
+---
+updated-dependencies:
+- dependency-name: alpine
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
