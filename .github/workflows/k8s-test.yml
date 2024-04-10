@@ -26,6 +26,7 @@ jobs:
         uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
         with:
           fetch-depth: 0
+          submodules: recursive
       # - name: Set up Go ${{ env.GO_VERSION }}
       #   uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
       #   with:
@@ -76,7 +77,7 @@ jobs:
         id: metrics_smoke_tests
         run: |
           make metrics-smoke-tests
-      - name: smoke tests error output
+      - name: /metrics smoke tests error output
         if: ${{ failure() && steps.metrics_smoke_tests.conclusion == 'failure' }}
         run: |
           echo "----------------------------"

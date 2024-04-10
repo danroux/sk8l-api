@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
         with:
           fetch-depth: 0
+          submodules: recursive
       - name: Checkout - set env
         run: echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
       - name: Set up QEMU
@@ -36,6 +37,8 @@ jobs:
           context: .
           file: Dockerfile
           push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             ${{ vars.DOCKERHUB_SK8L_API_IMAGE_NAME }}:latest
             ${{ vars.DOCKERHUB_SK8L_API_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
@@ -45,6 +48,8 @@ jobs:
         with:
           context: .
           file: Dockerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           push: true
           tags: |
             ${{ vars.DOCKERHUB_SK8L_API_IMAGE_NAME }}:${{ inputs.image_tag }}

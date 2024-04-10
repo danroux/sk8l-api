@@ -14,6 +14,7 @@ COPY go.sum .
 COPY *.go .
 COPY protos/ ./protos
 COPY Makefile .
+COPY annotations.tmpl .
 
 RUN --mount=type=cache,target=/gomodcache go mod download -x
 RUN --mount=type=cache,target=/gocache make go-out

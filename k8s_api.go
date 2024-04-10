@@ -77,7 +77,11 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 func (kc *K8sClient) WatchCronjobs() watch.Interface {
 	ctx := context.Background()
 
-	watcher, _ := kc.ClientSet.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
+	watcher, err := kc.ClientSet.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
+
+	if err != nil {
+		panic(err.Error())
+	}
 
 	return watcher
 }

@@ -26,6 +26,7 @@ func TestSetupTLS(t *testing.T) {
 		caFile         string
 		expectedSN     string
 		expectedMinVer uint16
+		expectedMaxVer uint16
 		expectedCAs    bool
 	}{
 		{
@@ -36,7 +37,8 @@ func TestSetupTLS(t *testing.T) {
 			certPool:       x509.NewCertPool(),
 			expectedError:  nil,
 			expectedErrMsg: "",
-			expectedMinVer: tls.VersionTLS13,
+			expectedMinVer: tls.VersionTLS12,
+			expectedMaxVer: tls.VersionTLS13,
 			expectedCAs:    true,
 			expectedSN:     "0.0.0.0",
 		},
@@ -105,6 +107,10 @@ func TestSetupTLS(t *testing.T) {
 			} else {
 				if tlsConfig.MinVersion != tc.expectedMinVer {
 					t.Error("Unexpected MinVersion value")
+				}
+
+				if tlsConfig.MaxVersion != tc.expectedMaxVer {
+					t.Error("Unexpected MaxVersion value")
 				}
 
 				if tlsConfig.ClientCAs == nil || tlsConfig.RootCAs == nil {

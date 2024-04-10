@@ -760,7 +760,7 @@ issues:
         - errcheck
         - dupl
         - gosec
-
+        - revive
     # Exclude known linters from partially hard-vendored code,
     # these patterns will apply to all components.
     - path: vendor/github.com/stretchr/testify/
