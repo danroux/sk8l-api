@@ -36,7 +36,8 @@ func (ce *CertError) Unwrap() error {
 
 func setupTLS(certFile, certKeyFile, caFile string, certPool CertPool) (*tls.Config, error) {
 	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS13,
+		MinVersion: tls.VersionTLS12,
+		MaxVersion: tls.VersionTLS13,
 	}
 	var err error
 

@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: sk8l-ui
   labels:
-    app: sk8l-app
+    app: sk8l
   namespace: {{ .Values.namespace.name | default "sk8l" | quote }}
 spec:
   {{- if .Values.sk8lApi.autoscaling.enabled }}

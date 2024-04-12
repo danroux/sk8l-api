@@ -23,8 +23,18 @@ nodes:
     hostPort: 8590
     listenAddress: "0.0.0.0"
     protocol: TCP
+  - containerPort: 31337
+    # app-port: sk8l-web-proxy
+    hostPort: 1337
+    listenAddress: "0.0.0.0"
+    protocol: TCP
   - containerPort: 30960
     # app-port: envoy
     hostPort: 9080
+    listenAddress: "0.0.0.0"
+    protocol: TCP
+  - containerPort: 30965
+    # app-port: envoy-admin
+    hostPort: 9901
     listenAddress: "0.0.0.0"
     protocol: TCP

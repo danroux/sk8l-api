@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
+
+//go:embed annotations.tmpl
+var content embed.FS
 
 const (
 	jobPodsKeyFmt    = "jobs_pods_for_job_%s"
@@ -222,7 +226,7 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	},
 	},
 	)
-	t = template.Must(t.ParseFiles(tmplFile))
+	t = template.Must(t.ParseFS(content, tmplFile))
 
 	var b bytes.Buffer
 	err := t.Execute(&b, panels)
