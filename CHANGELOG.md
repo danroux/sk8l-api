@@ -1,3 +1,28 @@
+## v0.10.0 (April 12, 2024)
+
+IMPROVEMENTS:
+
+* ci/k8s: Build and test againts matching apimachinery protos during testing on CI [[GH-33](https://github.com/danroux/sk8l-api/issues/33)]
+* go: Improved go and envoy tls{MinVersion, MaxVersion} [[GH-33](https://github.com/danroux/sk8l-api/issues/33)]
+
+BUG FIXES:
+
+* Chart: [Remove a duplicate runAsNonRoot from the UI Deployment #17](https://github.com/danroux/sk8l-api/pull/17) by dbirks [[GH-18](https://github.com/danroux/sk8l-api/issues/18)]
+* go: Fixed a bug on DashboardAnnotations when annotations.tmpl was missing [[GH-33](https://github.com/danroux/sk8l-api/issues/33)]
+
+DEPENDENCIES:
+
+* ci/dependabot: Configure dependabot version updates [[GH-20](https://github.com/danroux/sk8l-api/issues/20)]
+* ci/dependabot: docker deps:(deps): bump alpine from 3.18.3 to 3.19.1 [[GH-22](https://github.com/danroux/sk8l-api/issues/22)]
+* ci/dependabot: docker deps:(deps): bump golang from 1.22.0 to 1.22.2 [[GH-21](https://github.com/danroux/sk8l-api/issues/21)]
+* ci/dependabot: gha deps:(deps): bump actions/checkout from 4.1.1 to 4.1.2 [[GH-30](https://github.com/danroux/sk8l-api/issues/30)]
+* ci/dependabot: go deps:(deps): bump github.com/prometheus/client_golang from 1.17.0 to 1.19.0 [[GH-26](https://github.com/danroux/sk8l-api/issues/26)]
+* gha/dependabot: Create .changelog entry on dependabot PRs [[GH-27](https://github.com/danroux/sk8l-api/issues/27)]
+* gha/k8s: Build && push Docker dev image for testing on CI [[GH-29](https://github.com/danroux/sk8l-api/issues/29)]
+* gha/k8s: Setup K8s pipeline in GHA [[GH-28](https://github.com/danroux/sk8l-api/issues/28)]
+* golang: Setup checks related to golang in gha/ci [[GH-19](https://github.com/danroux/sk8l-api/issues/19)]
+* deps/go: Update go dependencies: grpc 1.59.0 => 1.63.2 && client-go, apimachinery 0.27.12 => 0.29.3 [[GH-32](https://github.com/danroux/sk8l-api/issues/32)]
+
 ## v0.9.0 (March 19, 2024)
 
 SECURITY:

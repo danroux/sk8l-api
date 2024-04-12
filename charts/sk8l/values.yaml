@@ -22,7 +22,7 @@ serviceAccount:
     annotations: {}
 sk8lApi:
   image: "danroux/sk8l-api"
-  imageTag: "v0.9.0"
+  imageTag: "v0.10.0"
   imagePullPolicy: ""
   autoscaling:
     enabled: true
@@ -37,19 +37,25 @@ sk8lApi:
   #   projected:
   #     sources:
   #     - secret:
-  #         name: tls-server-cert
+  #         name: sk8l-tls-server-cert
   #         items:
   #           - key: tls.crt
   #             path: server-cert.pem
   #           - key: tls.key
   #             path: server-key.pem
-  #     - secret:
-  #         name: tls-ca-cert
-  #         items:
-  #           - key: tls.crt
+  #           - key: ca.crt
   #             path: ca-cert.pem
-  #           - key: tls.key
-  #             path: ca-key.pem
+  # - name: ca-certificate-only
+  #   projected:
+  #     sources:
+  #     - configMap:
+  #         name: sk8l
+  #         # defaultMode: 0644
+  #         # optional: false
+  #         items:
+  #           - key: trust-bundle.crt
+  #             path: ca-certificates.crt
+
 sk8lUi:
   image: "danroux/sk8l-ui"
   imageTag: "v0.9.0"
@@ -81,20 +87,24 @@ sk8lUi:
   #   projected:
   #     sources:
   #     - secret:
-  #         name: tls-server-cert
+  #         name: sk8l-tls-server-cert
   #         items:
   #           - key: tls.crt
   #             path: server-cert.pem
   #           - key: tls.key
   #             path: server-key.pem
-  #     - secret:
-  #         name: tls-ca-cert
-  #         items:
-  #           - key: tls.crt
+  #           - key: ca.crt
   #             path: ca-cert.pem
-  #           - key: tls.key
-  #             path: ca-key.pem
-
+  # - name: ca-certificate-only
+  #   projected:
+  #     sources:
+  #     - configMap:
+  #         name: sk8l
+  #         # defaultMode: 0644
+  #         # optional: false
+  #         items:
+  #           - key: trust-bundle.crt
+  #             path: ca-certificates.crt
 envoy:
   image: ""
   volumeMounts:
@@ -104,6 +114,7 @@ envoy:
   # You can mount a volume with a secret with the keys:
   # - tls.crt.
   # - tls.key.
+  # - ca.crt.
   #
   # Eg.:
   # - name: tls-certs
