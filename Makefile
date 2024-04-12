@@ -76,3 +76,8 @@ metrics-smoke-tests: # metrics-smoke-tests
 	curl -k https://localhost:8590/metrics > current_state.txt
 	./ci/check_strings_in_file.sh > job_output.txt
 
+api-smoke-tests: # api-smoke-tests
+	./ci/api_smoke_tests.sh
+
+
+
