@@ -1,0 +1,18 @@
+```release-note:enhancement
+ci/dependabot: gha deps:(deps): bump actions/upload-artifact from 4.3.1 to 4.3.2
+
+gha deps:(deps): bump actions/upload-artifact from 4.3.1 to 4.3.2
+
+Bumps [actions/upload-artifact](https://github.com/actions/upload-artifact) from 4.3.1 to 4.3.2.
+- [Release notes](https://github.com/actions/upload-artifact/releases)
+- [Commits](https://github.com/actions/upload-artifact/compare/5d5d22a31266ced268874388b861e4b58bb5c2f3...1746f4ab65b179e0ea60a494b83293b640dd5bba)
+
+---
+updated-dependencies:
+- dependency-name: actions/upload-artifact
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
