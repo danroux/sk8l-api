@@ -79,5 +79,9 @@ metrics-smoke-tests: # metrics-smoke-tests
 api-smoke-tests: # api-smoke-tests
 	./ci/api_smoke_tests.sh
 
+GITHUB_PR_IMAGE_TAG ?=''
+update-config-files: # update-config-files
+	./ci/update_config_files.sh $(GITHUB_PR_IMAGE_TAG)
+
 
 

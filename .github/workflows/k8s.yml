@@ -1,18 +1,19 @@
 name: k8s
 on:
   pull_request:
-  workflow_dispatch:
 
 env:
   GO_VERSION: "1.22.2"
+
+permissions:
+  packages: write
 
 jobs:
   docker-img:
     name: Build Docker image dev-${{ github.event.pull_request.number }}
     uses: ./.github/workflows/docker.yml
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
     with:
-      image_tag: dev-${{ github.event.pull_request.number }}
+      image_tag: ${{ github.event.pull_request.number }}
     secrets: inherit
   k8s-tests:
     name: k8s ${{ matrix.k8s.version }}/pr#${{ github.event.pull_request.number }} tests
@@ -32,7 +33,7 @@ jobs:
           - version: "v0.22.0"
     uses: ./.github/workflows/k8s-test.yml
     with:
-      image_tag: dev-${{ github.event.pull_request.number }}
+      image_tag: ${{ github.event.pull_request.number }}
       pull_request_number: ${{ github.event.pull_request.number }}
       kind_version: ${{ matrix.kind.version }}
       k8s_version: ${{ matrix.k8s.version }}
