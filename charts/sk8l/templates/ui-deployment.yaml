@@ -144,31 +144,11 @@ spec:
                     path: server-cert.pem
                   - key: tls.key
                     path: server-key.pem
-                  # - key: ca.crt
-                  #   path: ca-cert.pem
             - secret:
                 name: sk8l-ca-root-cert-secret
                 items:
                   - key: tls.crt
                     path: ca-cert.pem
-        # - name: ca-certificate
-        #   projected:
-        #     sources:
-        #       - secret:
-        #           name: sk8l-tls-server-cert
-        #           items:
-        #             - key: ca.crt
-        #               path: ca-cert.pem
-        # - name: ca-certificate
-        #   projected:
-        #     sources:
-        #     - configMap:
-        #         name: sk8l
-        #         # defaultMode: 0644
-        #         # optional: false
-        #         items:
-        #           - key: trust-bundle.crt
-        #             path: ca-certificates.crt
         {{- if .Values.sk8lUi.volumes }}
         {{- toYaml .Values.sk8lUi.volumes | nindent 8 }}
         {{ end }}
