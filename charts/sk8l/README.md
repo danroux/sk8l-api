@@ -14,7 +14,9 @@ helm search repo sk8l
 
 ```
 helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
---set namespace=[NAMESPACE] \
+--namespace sk8l \
+--create-namespace=true \
+--set namespace.name=[NAMESPACE] \
 --set serviceAccount.metadata.namespace=[NAMESPACE]
 ```
 

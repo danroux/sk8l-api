@@ -62,7 +62,7 @@ install-chart-ci: # install-chart-ci
 	kubectl get ns sk8l --ignore-not-found -o name | xargs -r kubectl wait --for=delete namespace/sk8l  --timeout=120s; \
 	set -e
 	helm upgrade --install sk8l -f testdata/sk8l-values.yml --namespace sk8l \
-	  --create-namespace=false \
+	  --create-namespace=true \
 	  --set namespace.create=false \
 	  --set namespace.name=sk8l \
 	  charts/sk8l
