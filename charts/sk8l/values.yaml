@@ -4,11 +4,10 @@ namespace:
   create: true
   name: ""
   labels: {}
-    # pod-security.kubernetes.io/enforce: baseline
-    # pod-security.kubernetes.io/enforce-version: latest
-    # pod-security.kubernetes.io/warn: restricted
-    # pod-security.kubernetes.io/warn-version: latest
-
+  # pod-security.kubernetes.io/enforce: baseline
+  # pod-security.kubernetes.io/enforce-version: latest
+  # pod-security.kubernetes.io/warn: restricted
+  # pod-security.kubernetes.io/warn-version: latest
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
@@ -37,24 +36,17 @@ sk8lApi:
   #   projected:
   #     sources:
   #     - secret:
-  #         name: sk8l-tls-server-cert
+  #         name: sk8l-server-cert-secret
   #         items:
   #           - key: tls.crt
   #             path: server-cert.pem
   #           - key: tls.key
   #             path: server-key.pem
-  #           - key: ca.crt
-  #             path: ca-cert.pem
-  # - name: ca-certificate-only
-  #   projected:
-  #     sources:
-  #     - configMap:
-  #         name: sk8l
-  #         # defaultMode: 0644
-  #         # optional: false
+  #     - secret:
+  #         name: sk8l-ca-root-cert-secret
   #         items:
-  #           - key: trust-bundle.crt
-  #             path: ca-certificates.crt
+  #           - key: tls.crt
+  #             path: ca-cert.pem
 
 sk8lUi:
   image: "danroux/sk8l-ui"
@@ -79,7 +71,7 @@ sk8lUi:
       emptyDir: {}
     - name: tmp
       emptyDir: {}
-  # If you need to conifure the nginx instance serving the ui
+  # If you need to configure the nginx instance serving the ui
   # you can do it by replacing the mounted nginx-configmap.
   #
   # nginx also needs the TLS certificates
@@ -87,24 +79,17 @@ sk8lUi:
   #   projected:
   #     sources:
   #     - secret:
-  #         name: sk8l-tls-server-cert
+  #         name: sk8l-server-cert-secret
   #         items:
   #           - key: tls.crt
   #             path: server-cert.pem
   #           - key: tls.key
   #             path: server-key.pem
-  #           - key: ca.crt
-  #             path: ca-cert.pem
-  # - name: ca-certificate-only
-  #   projected:
-  #     sources:
-  #     - configMap:
-  #         name: sk8l
-  #         # defaultMode: 0644
-  #         # optional: false
+  #     - secret:
+  #         name: sk8l-ca-root-cert-secret
   #         items:
-  #           - key: trust-bundle.crt
-  #             path: ca-certificates.crt
+  #           - key: tls.crt
+  #             path: ca-cert.pem
 envoy:
   image: ""
   volumeMounts:
@@ -185,41 +170,38 @@ uiService:
       protocol: TCP
       port: 9901
       targetPort: envoy-adm-port
-
 # Enables network policy for sk8l pods
 networkPolicy:
   enabled: true
   apiserverPolicy:
     ingress:
       - from:
-        - ipBlock:
-            cidr: 0.0.0.0/8
+          - ipBlock:
+              cidr: 0.0.0.0/8
     egress:
       - to:
-        - ipBlock:
-            cidr: 0.0.0.0/8
-
+          - ipBlock:
+              cidr: 0.0.0.0/8
 configMaps:
   ui:
     # You can change the URL used on the frontend if needed.
     vite_sk8l_api_url: "https://localhost:9080"
 resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
+# We usually recommend not to specify default resources and to leave this as a conscious
+# choice for the user. This also increases chances charts run on environments with little
+# resources, such as Minikube. If you do want to specify resources, uncomment the following
+# lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+# limits:
+#   cpu: 100m
+#   memory: 128Mi
+# requests:
+#   cpu: 100m
+#   memory: 128Mi
 nodeSelector: {}
 tolerations: []
 affinity: {}
-
 updateStrategy: {}
-  # type: RollingUpdate
-  # rollingUpdate:
-  #   maxSurge: 1
-  #   maxUnavailable: 1
+# type: RollingUpdate
+# rollingUpdate:
+#   maxSurge: 1
+#   maxUnavailable: 1

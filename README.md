@@ -34,8 +34,23 @@ helm repo update
 helm search repo sk8l
 
 helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
+--namespace sk8l \
+--create-namespace=true \
 --set namespace.name=[NAMESPACE] \
 --set serviceAccount.metadata.namespace.name=[NAMESPACE]
+```
+
+### Secrets
+
+#### TLS
+
+The commmunication between apps is encrypted.
+
+To manually configure TLS, first create/retrieve a key & certificate pair. Then create TLS secrets in the namespace:
+
+```
+kubectl create secret tls -n NAMESPACE sk8l-server-cert-secret --cert=path/to/tls.cert --key=path/to/tls.key
+kubectl create secret tls -n NAMESPACE sk8l-ca-root-cert-secret --cert=ca-cert.pem --key=ca-key.pem
 ```
 
 ## Supported Kubernetes versions

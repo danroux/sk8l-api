@@ -8,7 +8,7 @@ EXPECTED_CRONJOBS_COUNT=3
 
 echo "Running test..."
 
-kubectl get secrets -n sk8l sk8l-tls-server-cert -o "jsonpath={.data['ca\.crt']}" | base64 --decode > $CA_CERT_FILE
+kubectl get secrets -n sk8l sk8l-ca-root-cert-secret -o "jsonpath={.data['ca\.crt']}" | base64 --decode > $CA_CERT_FILE
 
 ann=$(grpcurl -cacert $CA_CERT_FILE -import-path protos -proto sk8l.proto -d '{}' localhost:9080 sk8l.Cronjob/GetDashboardAnnotations | jq -rc '.annotations' | jq '[.panels[] | select(.targets != null) | .targets[].expr]')
 ann_length=$(echo "$ann" | jq 'length')

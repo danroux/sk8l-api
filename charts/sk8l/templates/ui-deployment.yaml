@@ -78,8 +78,8 @@ spec:
             - name: tls-certs
               mountPath: /etc/sk8l-certs
               readOnly: true
-            - mountPath: /etc/ssl/certs/
-              name: ca-certificate-only
+            # - mountPath: /etc/ssl/certs/
+            #   name: ca-certificate
               readOnly: true
             {{- if .Values.envoy.volumeMounts }}
             {{- toYaml .Values.envoy.volumeMounts | nindent 12 }}
@@ -118,8 +118,8 @@ spec:
             - name: tls-certs
               mountPath: /etc/sk8l-certs
               readOnly: true
-            - mountPath: /etc/ssl/certs/
-              name: ca-certificate-only
+            # - mountPath: /etc/ssl/certs/
+            #   name: ca-certificate
               readOnly: true
             {{- if .Values.sk8lUi.volumeMounts }}
             {{- toYaml .Values.sk8lUi.volumeMounts | nindent 12 }}
@@ -138,24 +138,17 @@ spec:
           projected:
             sources:
             - secret:
-                name: sk8l-tls-server-cert
+                name: sk8l-server-cert-secret
                 items:
                   - key: tls.crt
                     path: server-cert.pem
                   - key: tls.key
                     path: server-key.pem
-                  - key: ca.crt
-                    path: ca-cert.pem
-        - name: ca-certificate-only
-          projected:
-            sources:
-            - configMap:
-                name: sk8l
-                # defaultMode: 0644
-                # optional: false
+            - secret:
+                name: sk8l-ca-root-cert-secret
                 items:
-                  - key: trust-bundle.crt
-                    path: ca-certificates.crt
+                  - key: tls.crt
+                    path: ca-cert.pem
         {{- if .Values.sk8lUi.volumes }}
         {{- toYaml .Values.sk8lUi.volumes | nindent 8 }}
         {{ end }}
