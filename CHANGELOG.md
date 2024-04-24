@@ -1,3 +1,15 @@
+## v0.11.0 (April 24, 2024)
+
+ENHANCEMENTS:
+
+* ci/dependabot: gha deps:(deps): bump actions/upload-artifact from 4.3.1 to 4.3.3 [[GH-47](https://github.com/danroux/sk8l-api/issues/47)]
+* docker/gha: Publish sk8l-api image to ghcr.io [[GH-46](https://github.com/danroux/sk8l-api/issues/46)]
+
+IMPROVEMENTS:
+
+* chart: Update README && Certificate secrets configuration [[GH-48](https://github.com/danroux/sk8l-api/issues/48)]
+* gha/ci: Extend smoke tests [[GH-35](https://github.com/danroux/sk8l-api/issues/35)]
+
 ## v0.10.0 (April 12, 2024)
 
 IMPROVEMENTS:
