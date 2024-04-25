@@ -1,0 +1,18 @@
+```release-note:enhancement
+ci/dependabot: gha deps:(deps): bump golangci/golangci-lint-action from 4.0.0 to 5.0.0
+
+gha deps:(deps): bump golangci/golangci-lint-action from 4.0.0 to 5.0.0
+
+Bumps [golangci/golangci-lint-action](https://github.com/golangci/golangci-lint-action) from 4.0.0 to 5.0.0.
+- [Release notes](https://github.com/golangci/golangci-lint-action/releases)
+- [Commits](https://github.com/golangci/golangci-lint-action/compare/3cfe3a4abbb849e10058ce4af15d205b6da42804...82d40c283aeb1f2b6595839195e95c2d6a49081b)
+
+---
+updated-dependencies:
+- dependency-name: golangci/golangci-lint-action
+  dependency-type: direct:production
+  update-type: version-update:semver-major
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
