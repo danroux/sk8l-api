@@ -57,10 +57,6 @@ setup-certs: # setup-certs
 
 install-chart-ci: # install-chart-ci
 	helm repo add sk8l https://sk8l.io/charts
-	set +e; \
-	helm uninstall sk8l -n sk8l; \
-	kubectl get ns sk8l --ignore-not-found -o name | xargs -r kubectl wait --for=delete namespace/sk8l  --timeout=120s; \
-	set -e
 	helm upgrade --install sk8l -f testdata/sk8l-values.yml --namespace sk8l \
 	  --create-namespace=true \
 	  --set namespace.create=false \
@@ -69,6 +65,7 @@ install-chart-ci: # install-chart-ci
 
 metrics-smoke-tests: # metrics-smoke-tests
 	kubectl apply -f testdata/sk8l-cronjobs.yml -n sk8l > /dev/null
+	kubectl apply -f testdata/sk8l-demo-job.yml -n sk8l > /dev/null
 	kubectl wait -n sk8l --for=condition=ready pod -l app.kubernetes.io/pod=sk8l-ui --timeout=300s
 	sleep 60
 	./ci/collect_workload_info.sh sk8l > expected_output.txt

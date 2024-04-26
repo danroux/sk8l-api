@@ -21,6 +21,7 @@ type CronjobClient interface {
 	GetCronjobs(ctx context.Context, in *CronjobsRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobsClient, error)
 	GetCronjob(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobClient, error)
 	GetCronjobPods(ctx context.Context, in *CronjobPodsRequest, opts ...grpc.CallOption) (Cronjob_GetCronjobPodsClient, error)
+	GetJobs(ctx context.Context, in *JobsRequest, opts ...grpc.CallOption) (Cronjob_GetJobsClient, error)
 	GetCronjobYAML(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (*CronjobYAMLResponse, error)
 	GetJobYAML(ctx context.Context, in *JobRequest, opts ...grpc.CallOption) (*JobYAMLResponse, error)
 	GetPodYAML(ctx context.Context, in *PodRequest, opts ...grpc.CallOption) (*PodYAMLResponse, error)
@@ -131,6 +132,38 @@ func (x *cronjobGetCronjobPodsClient) Recv() (*CronjobPodsResponse, error) {
 	return m, nil
 }
 
+func (c *cronjobClient) GetJobs(ctx context.Context, in *JobsRequest, opts ...grpc.CallOption) (Cronjob_GetJobsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Cronjob_ServiceDesc.Streams[3], "/sk8l.Cronjob/GetJobs", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &cronjobGetJobsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Cronjob_GetJobsClient interface {
+	Recv() (*JobsResponse, error)
+	grpc.ClientStream
+}
+
+type cronjobGetJobsClient struct {
+	grpc.ClientStream
+}
+
+func (x *cronjobGetJobsClient) Recv() (*JobsResponse, error) {
+	m := new(JobsResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (c *cronjobClient) GetCronjobYAML(ctx context.Context, in *CronjobRequest, opts ...grpc.CallOption) (*CronjobYAMLResponse, error) {
 	out := new(CronjobYAMLResponse)
 	err := c.cc.Invoke(ctx, "/sk8l.Cronjob/GetCronjobYAML", in, out, opts...)
@@ -174,6 +207,7 @@ type CronjobServer interface {
 	GetCronjobs(*CronjobsRequest, Cronjob_GetCronjobsServer) error
 	GetCronjob(*CronjobRequest, Cronjob_GetCronjobServer) error
 	GetCronjobPods(*CronjobPodsRequest, Cronjob_GetCronjobPodsServer) error
+	GetJobs(*JobsRequest, Cronjob_GetJobsServer) error
 	GetCronjobYAML(context.Context, *CronjobRequest) (*CronjobYAMLResponse, error)
 	GetJobYAML(context.Context, *JobRequest) (*JobYAMLResponse, error)
 	GetPodYAML(context.Context, *PodRequest) (*PodYAMLResponse, error)
@@ -193,6 +227,9 @@ func (UnimplementedCronjobServer) GetCronjob(*CronjobRequest, Cronjob_GetCronjob
 }
 func (UnimplementedCronjobServer) GetCronjobPods(*CronjobPodsRequest, Cronjob_GetCronjobPodsServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetCronjobPods not implemented")
+}
+func (UnimplementedCronjobServer) GetJobs(*JobsRequest, Cronjob_GetJobsServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetJobs not implemented")
 }
 func (UnimplementedCronjobServer) GetCronjobYAML(context.Context, *CronjobRequest) (*CronjobYAMLResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCronjobYAML not implemented")
@@ -279,6 +316,27 @@ type cronjobGetCronjobPodsServer struct {
 }
 
 func (x *cronjobGetCronjobPodsServer) Send(m *CronjobPodsResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Cronjob_GetJobs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(JobsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(CronjobServer).GetJobs(m, &cronjobGetJobsServer{stream})
+}
+
+type Cronjob_GetJobsServer interface {
+	Send(*JobsResponse) error
+	grpc.ServerStream
+}
+
+type cronjobGetJobsServer struct {
+	grpc.ServerStream
+}
+
+func (x *cronjobGetJobsServer) Send(m *JobsResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
@@ -392,6 +450,11 @@ var Cronjob_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "GetCronjobPods",
 			Handler:       _Cronjob_GetCronjobPods_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "GetJobs",
+			Handler:       _Cronjob_GetJobs_Handler,
 			ServerStreams: true,
 		},
 	},

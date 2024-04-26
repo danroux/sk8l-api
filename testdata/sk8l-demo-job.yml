@@ -1,0 +1,13 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sk8l-demo-job
+spec:
+  completions: 1
+  template:
+    spec:
+      containers:
+        - name: demo-job
+          image: busybox:latest
+          command: ["/bin/sh", "-c", "echo 'Running job'; sleep 60;"]
+      restartPolicy: OnFailure

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 namespace=$1
-jobs=$(kubectl get jobs -n "$namespace" -o json)
+jobs=$(kubectl get jobs -n "$namespace" -o jsonpath='{range .items[?(@.metadata.ownerReferences[*])]}{}{"\n"}{end}' | jq -n -c '[inputs]')
 cronjobs=$(kubectl get cronjobs -n "$namespace" -o json)
 
 while read -r cronjob_json; do
@@ -35,4 +35,4 @@ while read -r job_json; do
   cronjob_name=$(echo "$job_json" | jq -r '.metadata.ownerReferences[0].name' | tr "-" "_")
 
   echo "sk8l_${namespace}_${cronjob_name}_duration_seconds{job_name=\"${job_name}\"}"
-done < <(echo "$jobs" | jq -c '.items[]')
+done < <(echo "$jobs" | jq -c '.[]')
