@@ -1,0 +1,3 @@
+[submodule "protos/k8s.io/apimachinery"]
+	path = protos/k8s.io/apimachinery
+	url = git@github.com:kubernetes/apimachinery.git

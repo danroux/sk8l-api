@@ -1,0 +1,179 @@
+ // Copyright 2023 DR
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package sk8l;
+
+// https://github.com/kubernetes/api/blob/master/batch/v1/generated.proto
+// https://github.com/kubernetes/api/blob/master/core/v1/generated.proto
+// import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
+// import "k8s.io/apimachinery/pkg/apis/core/v1/generated.proto";
+import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
+// https://github.com/protocolbuffers/protobuf/issues/2388
+// import "google/protobuf/struct.proto";
+import "k8s.io/api/batch/v1/generated.proto";
+import "k8s.io/api/core/v1/generated.proto";
+import "sk8l_custom.proto";
+
+service Cronjob {
+  rpc GetCronjobs(CronjobsRequest) returns (stream CronjobsResponse);
+  rpc GetCronjob(CronjobRequest) returns (stream CronjobResponse);
+  rpc GetCronjobPods(CronjobPodsRequest) returns (stream CronjobPodsResponse);
+  rpc GetJobs(JobsRequest) returns (stream JobsResponse);
+  rpc GetCronjobYAML(CronjobRequest) returns (CronjobYAMLResponse);
+  rpc GetJobYAML(JobRequest) returns (JobYAMLResponse);
+  rpc GetPodYAML(PodRequest) returns (PodYAMLResponse);
+  rpc GetDashboardAnnotations(DashboardAnnotationsRequest) returns (DashboardAnnotationsResponse);
+}
+
+message CronjobsRequest {};
+
+message CronjobRequest {
+  string cronjobName = 1;
+  string cronjobNamespace = 2;
+}
+
+message CronjobPodsRequest {
+  string cronjobName = 1;
+  string cronjobNamespace = 2;
+}
+
+message JobsRequest {};
+
+message JobRequest {
+  string jobName = 1;
+  string jobNamespace = 2;
+}
+
+message PodRequest {
+  string podName = 1;
+  string podNamespace = 2;
+}
+
+message DashboardAnnotationsRequest {};
+message DashboardAnnotationsResponse {
+  string annotations = 1;
+};
+
+message CronjobsResponse  {
+  repeated CronjobResponse cronjobs = 5 [json_name="cronjobs"];
+  repeated JobResponse activeJobs = 4 [json_name="active_jobs"];
+  repeated PodResponse jobsPods = 3 [json_name="jobs_pods"];
+}
+
+message JobResponse {
+  k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
+  k8s.io.api.batch.v1.JobSpec spec = 2;
+  k8s.io.api.batch.v1.JobStatus jobStatus = 3; // remove?
+  string name = 4 [json_name="name"];
+  string namespace = 5 [json_name="namespace"];
+  string creationTimestamp = 6 [json_name="creation_timestamp"];
+  // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#uids
+  string Uuid = 7 [json_name="uid"];
+  int64 generation = 8 [json_name="generation"];
+  string duration = 9 [json_name="duration"];
+  int64 durationInS = 10 [json_name="duration_in_s"];
+  sk8l_custom.JobStatus status = 11 [json_name="status"];
+  bool succeeded = 12 [json_name="succeeded"];
+  bool failed = 13 [json_name="failure"];
+  k8s.io.api.batch.v1.JobCondition failureCondition = 14 [json_name="failure_condition"];
+  repeated PodResponse pods = 15 [json_name="pods"];
+  repeated TerminationReason terminationReasons = 16 [json_name="termination_reasons"];
+}
+
+message JobsResponse  {
+  repeated JobResponse jobs = 1 [json_name="jobs"];
+}
+
+message CronjobYAMLResponse {
+  string cronjob = 1;
+}
+
+message JobYAMLResponse {
+  string job = 1;
+}
+
+message PodYAMLResponse {
+  string pod = 1;
+}
+
+message PodResponse {
+  k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
+  k8s.io.api.core.v1.PodSpec spec = 2;
+  k8s.io.api.core.v1.PodStatus status = 3;
+  string phase = 4;
+  TerminatedContainers terminatedContainers= 5 [json_name="terminated_containers"];
+  TerminatedContainers failedContainers = 6 [json_name="failed_containers"];
+  bool failed = 7;
+  repeated TerminationReason terminationReasons = 8 [json_name="termination_reasons"];
+  k8s.io.apimachinery.pkg.apis.meta.v1.Time FinishedAt = 9 [json_name="finished_at"];
+}
+
+message ContainerCommands {
+  repeated string commands = 1;
+}
+
+message ContainerResponse {
+  k8s.io.api.core.v1.ContainerStatus status = 1;
+  string phase = 2;
+  repeated k8s.io.api.core.v1.PodCondition conditions = 3;
+  TerminationReason terminatedReason = 4;
+}
+
+message TerminationReason {
+  k8s.io.api.core.v1.ContainerStateTerminated terminationDetails = 1;
+  string containerName = 2 [json_name="container_name"];
+}
+
+message TerminatedContainers {
+  repeated ContainerResponse initContainers = 1 [json_name="init_containers"];
+  repeated ContainerResponse containers = 2 [json_name="containers"];
+  repeated ContainerResponse ephemeralContainers = 3 [json_name="ephemeral_containers"];
+  repeated TerminationReason terminationReasons = 4 [json_name="termination_reasons"];
+}
+
+message CronjobResponse {
+  string name = 1;
+  string namespace = 2;
+  string uid = 3;
+  map<string, ContainerCommands> containerCommands = 4 [json_name="container_commands"];
+  string creationTimestamp = 5 [json_name="creation_timestamp"];
+  string definition = 6;
+  string lastSuccessfulTime = 7 [json_name="last_successful_time"];
+  string lastScheduleTime = 8 [json_name="last_schedule_time"];
+  bool active = 10;
+  repeated JobResponse jobs = 11 [json_name="jobs"];
+  repeated JobResponse runningJobs = 12 [json_name="running_jobs"];
+  repeated PodResponse runningJobsPods = 13 [json_name="running_jobs_pods"];
+  repeated PodResponse jobsPods = 14 [json_name="jobs_pods"];
+  int64 lastDuration = 15 [json_name="last_duration"];
+  int64 currentDuration = 16 [json_name="current_duration"];
+  k8s.io.api.batch.v1.CronJobSpec spec = 17 [json_name="spec"];
+  bool failed = 18  [json_name="failed"];
+}
+
+message CronjobPodsResponse {
+  repeated PodResponse pods = 1 [json_name="pods"];
+  CronjobResponse cronjob = 2 [json_name="cronjob"];
+}
+
+message JobList {
+  repeated k8s.io.api.batch.v1.Job Items = 1;
+}
+
+message MappedJobs {
+  // google.protobuf.ListValue Jobs = 1;
+  map<string, JobList> JobLists = 1;
+}

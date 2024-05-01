@@ -1,0 +1,11 @@
+```release-note:improvement
+ci/k8s: Build and test againts matching apimachinery protos during testing on CI
+```
+
+```release-note:improvement
+go: Improved go and envoy tls{MinVersion, MaxVersion}
+```
+
+```release-note:bug
+go: Fixed a bug on DashboardAnnotations when annotations.tmpl was missing
+```

@@ -1,0 +1,34 @@
+service:
+  type: NodePort
+  labels:
+    app: "sk8l"
+  ports:
+    - name: sk8l-api
+      port: 8585
+      protocol: TCP
+      nodePort: 30951
+    - name: sk8l-api-health
+      port: 8588
+      protocol: TCP
+      nodePort: 30955
+    - name: sk8l-api-metrics
+      port: 8590
+      protocol: TCP
+      nodePort: 30958
+uiService:
+  type: NodePort
+  labels:
+    app: "sk8l"
+  ports:
+    - name: sk8l-ui
+      port: 8001
+      protocol: TCP
+      nodePort: 30950
+    - name: envoy
+      port: 9080
+      protocol: TCP
+      nodePort: 30960
+    - name: envoy-admin
+      protocol: TCP
+      port: 9901
+      nodePort: 30965
