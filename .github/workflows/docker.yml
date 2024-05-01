@@ -22,9 +22,9 @@ jobs:
     name: sk8l-api:dev-${{ inputs.image_tag }}
     if: ${{ github.event_name == 'pull_request' && inputs.image_tag || github.event_name == 'workflow_call' }}
     steps:
-      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           submodules: recursive
       - name: Checkout - set env
         run: echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
@@ -69,9 +69,9 @@ jobs:
     name: sk8l-api:tag | sk8l-api:latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           submodules: recursive
       - name: Checkout - set env
         run: echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
@@ -100,9 +100,9 @@ jobs:
     name: sk8l-api:pre-${{ github.sha }}
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           submodules: recursive
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

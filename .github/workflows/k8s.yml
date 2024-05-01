@@ -1,6 +1,7 @@
 name: k8s
 on:
   pull_request:
+    types: [opened, synchronize, labeled, reopened]
 
 env:
   GO_VERSION: "1.22.2"
