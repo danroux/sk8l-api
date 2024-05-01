@@ -31,6 +31,7 @@ service Cronjob {
   rpc GetCronjobs(CronjobsRequest) returns (stream CronjobsResponse);
   rpc GetCronjob(CronjobRequest) returns (stream CronjobResponse);
   rpc GetCronjobPods(CronjobPodsRequest) returns (stream CronjobPodsResponse);
+  rpc GetJobs(JobsRequest) returns (stream JobsResponse);
   rpc GetCronjobYAML(CronjobRequest) returns (CronjobYAMLResponse);
   rpc GetJobYAML(JobRequest) returns (JobYAMLResponse);
   rpc GetPodYAML(PodRequest) returns (PodYAMLResponse);
@@ -48,6 +49,8 @@ message CronjobPodsRequest {
   string cronjobName = 1;
   string cronjobNamespace = 2;
 }
+
+message JobsRequest {};
 
 message JobRequest {
   string jobName = 1;
@@ -88,6 +91,10 @@ message JobResponse {
   k8s.io.api.batch.v1.JobCondition failureCondition = 14 [json_name="failure_condition"];
   repeated PodResponse pods = 15 [json_name="pods"];
   repeated TerminationReason terminationReasons = 16 [json_name="termination_reasons"];
+}
+
+message JobsResponse  {
+  repeated JobResponse jobs = 1 [json_name="jobs"];
 }
 
 message CronjobYAMLResponse {

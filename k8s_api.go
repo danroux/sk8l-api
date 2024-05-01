@@ -86,6 +86,18 @@ func (kc *K8sClient) WatchCronjobs() watch.Interface {
 	return watcher
 }
 
+func (kc *K8sClient) WatchJobs() watch.Interface {
+	ctx := context.Background()
+
+	watcher, err := kc.ClientSet.BatchV1().Jobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return watcher
+}
+
 func (kc *K8sClient) WatchPods() watch.Interface {
 	ctx := context.Background()
 
