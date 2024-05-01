@@ -1,0 +1,41 @@
+name: k8s
+on:
+  pull_request:
+    types: [opened, synchronize, labeled, reopened]
+
+env:
+  GO_VERSION: "1.22.2"
+
+permissions:
+  packages: write
+
+jobs:
+  docker-img:
+    name: Build Docker image dev-${{ github.event.pull_request.number }}
+    uses: ./.github/workflows/docker.yml
+    with:
+      image_tag: ${{ github.event.pull_request.number }}
+    secrets: inherit
+  k8s-tests:
+    name: k8s ${{ matrix.k8s.version }}/pr#${{ github.event.pull_request.number }} tests
+    needs: [docker-img]
+    strategy:
+      matrix:
+        k8s:
+          - image: "kindest/node:v1.26.14@sha256:5d548739ddef37b9318c70cb977f57bf3e5015e4552be4e27e57280a8cbb8e4f"
+            version: v1.26.14
+          - image: "kindest/node:v1.27.11@sha256:681253009e68069b8e01aad36a1e0fa8cf18bb0ab3e5c4069b2e65cafdd70843"
+            version: v1.27.11
+          - image: "kindest/node:v1.28.7@sha256:9bc6c451a289cf96ad0bbaf33d416901de6fd632415b076ab05f5fa7e4f65c58"
+            version: v1.28.7
+          - image: "kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245"
+            version: v1.29.2
+        kind:
+          - version: "v0.22.0"
+    uses: ./.github/workflows/k8s-test.yml
+    with:
+      image_tag: ${{ github.event.pull_request.number }}
+      pull_request_number: ${{ github.event.pull_request.number }}
+      kind_version: ${{ matrix.kind.version }}
+      k8s_version: ${{ matrix.k8s.version }}
+      k8s_image: ${{ matrix.k8s.image }}

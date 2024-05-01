@@ -1,0 +1,7 @@
+```release-note:enhancement
+ci/dependabot: gha deps:(deps): bump azure/setup-helm from 4.1.0 to 4.2.0
+
+gha deps:(deps): bump azure/setup-helm from 4.1.0 to 4.2.0
+
+Dependabot couldn't find the original pull request head commit, c64f25813fb1bcce5632fa3ee2adcf832d1d3150.
+```

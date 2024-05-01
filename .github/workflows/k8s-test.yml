@@ -1,0 +1,85 @@
+name: k8s-rwkld
+
+on:
+  workflow_call:
+    inputs:
+      pull_request_number:
+        required: true
+        type: number
+      image_tag:
+        required: true
+        type: string
+      kind_version:
+        required: true
+        type: string
+      k8s_version:
+        required: true
+        type: string
+      k8s_image:
+        required: true
+        type: string
+jobs:
+  k8s-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+      # - name: Set up Go ${{ env.GO_VERSION }}
+      #   uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+      #   with:
+      #     go-version: ${{ env.GO_VERSION }}
+      #     check-latest: false
+      #     cache: false
+      #   id: go
+      - name: Update config files with dev image tag
+        if:
+        run: |
+          make update-config-files GITHUB_PR_IMAGE_TAG=dev-${{ inputs.image_tag }}
+      - name: Setup Kubernetes cluster ${{ inputs.kind_version }}/${{ inputs.k8s_version }}
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          name: sk8l
+          version: ${{ inputs.kind_version }}
+          image: ${{ inputs.k8s_image }}
+          config: testdata/sk8l-kind.yml
+      - name: Test connection
+        run: |
+          kubectl cluster-info > /dev/null
+          kubectl describe node > /dev/null
+      - name: Install Helm
+        uses: azure/setup-helm@v4.2.0
+        with:
+          version: 'v3.13.3'
+      - name: Setup certs
+        run: |
+          make setup-certs > /dev/null
+      - name: Install Chart
+        run: |
+          make install-chart-ci > /dev/null
+      - name: /metrics smoke tests
+        id: metrics_smoke_tests
+        run: |
+          make metrics-smoke-tests
+      - name: /metrics smoke tests error output
+        if: ${{ failure() && steps.metrics_smoke_tests.conclusion == 'failure' }}
+        run: |
+          echo "----------------------------"
+          kubectl get pods -n sk8l
+          kubectl get cronjobs -n sk8l
+          echo "----------------------------"
+          cat current_state.txt
+          echo "----------------------------"
+          cat expected_output.txt
+          echo "----------------------------"
+          cat job_output.txt
+          exit 1
+      - name: Download deps
+        run: |
+          wget https://github.com/fullstorydev/grpcurl/releases/download/v1.9.1/grpcurl_1.9.1_linux_amd64.deb
+          sudo apt install -y ./grpcurl_1.9.1_linux_amd64.deb
+      - name: smoke tests
+        run: |
+          make api-smoke-tests

@@ -1,0 +1,3 @@
+```release-note:enhancement
+chart: Rename env variables in sk8l-ui-configmap to work with vite
+```

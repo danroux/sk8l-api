@@ -1,0 +1,3 @@
+```release-note:dependency
+deps/go: Update go dependencies: grpc 1.59.0 => 1.63.2 && client-go, apimachinery 0.27.12 => 0.29.3
+```

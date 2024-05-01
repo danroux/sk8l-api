@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: gha deps:(deps): bump actions/checkout from 4.1.2 to 4.1.4
+
+gha deps:(deps): bump actions/checkout from 4.1.2 to 4.1.4
+
+Bumps [actions/checkout](https://github.com/actions/checkout) from 4.1.2 to 4.1.4.
+- [Release notes](https://github.com/actions/checkout/releases)
+- [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)
+- [Commits](https://github.com/actions/checkout/compare/9bb56186c3b09b4f86b1c65136769dd318469633...0ad4b8fadaa221de15dcec353f45205ec38ea70b)
+
+---
+updated-dependencies:
+- dependency-name: actions/checkout
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```

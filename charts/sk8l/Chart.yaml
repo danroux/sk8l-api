@@ -1,0 +1,22 @@
+apiVersion: v2
+name: sk8l
+version: 0.12.0
+appVersion: 0.11.0
+description: |
+  sk8l collects Cronjob activity, displays it visually in the UI and publishes cronjob metrics to prometheus
+keywords:
+  - Cronjob
+  - Monitoring
+  - Observability
+  - Metrics
+  - Prometheus
+home: https://sk8l.io
+type: application
+kubeVersion: ">=1.26.0-0"
+sources:
+  - "https://github.com/danroux/sk8l-api"
+  - "https://github.com/danroux/sk8l-ui"
+maintainers:
+  - name: danroux
+    email: dan@sk8l.io
+    url: https://sk8l.io
