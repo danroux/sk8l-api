@@ -1,0 +1,6 @@
+charts/repo
+charts/sk8l/values-local.yaml
+charts/sk8l/templates/secrets.yaml
+charts/sk8l/templates/ConfigMap-prometheus.yaml
+*.test
+*.out

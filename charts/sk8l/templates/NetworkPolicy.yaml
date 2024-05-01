@@ -1,0 +1,63 @@
+{{- if eq (.Values.networkPolicy.enabled | toString) "true"  }}
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace.name }}
+  name: sk8l-default-deny
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/pod: sk8l-api
+  ingress: []
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace.name }}
+  name: sk8l-egress-allow-internal-only
+spec:
+  policyTypes:
+  - Egress
+  podSelector: {}
+  egress:
+  - to:
+    - namespaceSelector: {}
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace.name }}
+  name: sk8l-api-allow-apiserver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/pod: sk8l-api
+  {{- toYaml .Values.networkPolicy.apiserverPolicy | nindent 2 }}
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace.name }}
+  name: sk8l-api-ui
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/pod: sk8l-api
+  ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/pod: sk8l-ui
+      ports:
+        - protocol: TCP
+          port: 8585
+  egress:
+    - to:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/pod: sk8l-ui
+      ports:
+        - protocol: TCP
+          port: 8585
+
+{{ end }}

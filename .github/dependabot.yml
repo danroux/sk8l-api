@@ -1,0 +1,47 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "08:00"
+      timezone: "America/Vancouver"
+    labels:
+      - "dependencies"
+      - "dependencies/go"
+    commit-message:
+      prefix: "go:"
+      include: "scope"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "danroux"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "08:00"
+      timezone: "America/Vancouver"
+    labels:
+      - "dependencies"
+      - "dependencies/gha"
+    commit-message:
+      prefix: "gha:"
+      include: "scope"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "danroux"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "08:00"
+      timezone: "America/Vancouver"
+    labels:
+      - "dependencies"
+      - "dependencies/docker"
+    commit-message:
+      prefix: "docker:"
+      include: "scope"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "danroux"

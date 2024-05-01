@@ -1,0 +1,7 @@
+```release-note:enhancement
+ci/dependabot: go deps:(deps): bump google.golang.org/protobuf from 1.33.0 to 1.34.0
+
+go deps:(deps): bump google.golang.org/protobuf from 1.33.0 to 1.34.0
+
+Dependabot couldn't find the original pull request head commit, 3c7846cb4cb129790bef284004562db6d04c5180.
+```

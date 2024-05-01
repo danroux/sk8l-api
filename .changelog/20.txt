@@ -1,0 +1,3 @@
+```release-note:enhancement
+ci/dependabot: Configure dependabot version updates
+```

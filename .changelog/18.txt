@@ -1,0 +1,3 @@
+```release-note:bug
+Chart: [Remove a duplicate runAsNonRoot from the UI Deployment #17](https://github.com/danroux/sk8l-api/pull/17) by dbirks
+```

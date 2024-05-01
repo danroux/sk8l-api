@@ -1,0 +1,392 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.2.2"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "state-timeline",
+      "name": "State timeline",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 2,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {{- range $panelIndex, $panel := . }}
+    {{- if $panelIndex}},{{end}}
+    {{- if (eq .Type "row") }}
+    {
+      "gridPos": {{ marshal .GridPos }},
+      "id": {{ $panelIndex }},
+      "panels": [],
+      "title": "{{ .Title }}",
+      "type": "row"
+    }
+    {{- else if (eq .Type "state-timeline") }}
+    {
+      "datasource": {
+        "type": "{{ .DataSource.Type }}",
+        "uid": "{{ .DataSource.UID }}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 65,
+            "spanNulls": false,
+            "insertNulls": false,
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              },
+              {
+                "color": "semi-dark-red",
+                "value": 5
+              },
+              {
+                "color": "dark-red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {{ marshal .GridPos }},
+      "id": 14,
+      "options": {
+        "mergeValues": false,
+        "showValue": "auto",
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {{- range $targetIndex, $target := .Targets }}
+        {{- if $targetIndex}},{{end}}
+        {
+          "datasource": {
+            "type": "{{ .DataSource.Type }}",
+            "uid": "{{ .DataSource.UID }}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "{{ .Expr }}",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "{{ .LegendFormat }}",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+        {{- end }}
+      ],
+      "title": "{{ .Title }}",
+      "type": "state-timeline"
+    }
+    {{- else if (eq .Type "stat") }}
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {{ marshal .Override }},
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "blue",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {{ marshal .GridPos }},
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": false
+      },
+      "pluginVersion": "10.2.2",
+      "targets": [
+        {{- range $targetIndex, $target := .Targets }}
+        {{- if $targetIndex}},{{end}}
+        {
+          "datasource": {
+            "type": "{{ .DataSource.Type }}",
+            "uid": "{{ .DataSource.UID }}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "{{ .Expr }}",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "{{ .LegendFormat }}",
+          "range": true,
+          "refId": "A{{ $targetIndex }}",
+          "useBackend": false
+        }
+        {{- end }}
+      ],
+      "title": "{{ .Title }}",
+      "type": "stat"
+    }
+    {{- else}}
+    {
+      "datasource": {
+        "type": "{{ .DataSource.Type }}",
+        "uid": "{{ .DataSource.UID }}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 50,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      {{- if .GridPos }}
+      "gridPos": {{ marshal .GridPos }},
+      {{- else }}
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      {{- end }}
+      "id": {{ $panelIndex }},
+      "options": {
+        "legend": {
+          "calcs": [
+            "{{ .Options.Calcs }}"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {{- range $targetIndex, $target := .Targets }}
+        {{- if $targetIndex}},{{end}}
+        {
+          "datasource": {
+            "type": "{{ .DataSource.Type }}",
+            "uid": "{{ .DataSource.UID }}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "{{ .Expr }}",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "{{ .LegendFormat }}",
+          "range": true,
+          "refId": "A{{ $targetIndex }}",
+          "useBackend": false
+        }
+        {{- end }}
+      ],
+      "title": "{{ .Title }}",
+      "type": "timeseries"
+    }
+    {{- end }}
+    {{- end }}
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "sk8l - dashboard",
+  "uid": "e0478d83-97df-43f2-9ed4-22abd0d05090",
+  "version": 1,
+  "weekStart": ""
+}
