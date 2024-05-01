@@ -10,10 +10,10 @@ updates:
       - "dependencies"
       - "dependencies/go"
     commit-message:
-      prefix: "go deps:"
+      prefix: "go:"
       include: "scope"
     open-pull-requests-limit: 10
-    assignees:
+    reviewers:
       - "danroux"
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -25,10 +25,10 @@ updates:
       - "dependencies"
       - "dependencies/gha"
     commit-message:
-      prefix: "gha deps:"
+      prefix: "gha:"
       include: "scope"
     open-pull-requests-limit: 10
-    assignees:
+    reviewers:
       - "danroux"
   - package-ecosystem: "docker"
     directory: "/"
@@ -40,8 +40,8 @@ updates:
       - "dependencies"
       - "dependencies/docker"
     commit-message:
-      prefix: "docker deps:"
+      prefix: "docker:"
       include: "scope"
     open-pull-requests-limit: 10
-    assignees:
+    reviewers:
       - "danroux"
