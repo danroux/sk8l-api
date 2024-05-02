@@ -1,6 +1,6 @@
 # sk8l
 
-This chart installs sk8l/skål(https://sk8l.io)
+This chart installs sk8l(skål)(https://sk8l.io). A cronjob/job monitoring and visualization web application in Kubernetes.
 
 ## Get Repository
 

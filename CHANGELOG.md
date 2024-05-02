@@ -1,3 +1,15 @@
+## v0.12.0 (May 02, 2024)
+
+ENHANCEMENTS:
+
+* api: Add sk8l.Cronjob/GetJobs to list jobs in the namespacee [[GH-52](https://github.com/danroux/sk8l-api/issues/52)]
+* ci/dependabot: gha deps:(deps): bump actions/checkout from 4.1.2 to 4.1.4 [[GH-50](https://github.com/danroux/sk8l-api/issues/50)]
+* ci/dependabot: gha:(deps): bump golangci/golangci-lint-action from 4.0.0 to 5.1.0 [[GH-57](https://github.com/danroux/sk8l-api/issues/57)]
+* ci/dependabot: go deps:(deps): bump google.golang.org/protobuf from 1.33.0 to 1.34.0
+
+go deps:(deps): bump google.golang.org/protobuf from 1.33.0 to 1.34.0 [[GH-56](https://github.com/danroux/sk8l-api/issues/56)]
+* ci/dependabot: go deps:(deps): bump k8s.io/client-go from 0.29.3 to 0.30.0 [[GH-55](https://github.com/danroux/sk8l-api/issues/55)]
+
 ## v0.11.0 (April 24, 2024)
 
 ENHANCEMENTS:

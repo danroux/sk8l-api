@@ -21,7 +21,7 @@ serviceAccount:
     annotations: {}
 sk8lApi:
   image: "danroux/sk8l-api"
-  imageTag: "v0.11.0"
+  imageTag: "v0.12.0"
   imagePullPolicy: ""
   autoscaling:
     enabled: true
@@ -49,7 +49,7 @@ sk8lApi:
   #             path: ca-cert.pem
 sk8lUi:
   image: "danroux/sk8l-ui"
-  imageTag: "v0.10.0"
+  imageTag: "v0.11.0"
   imagePullPolicy: ""
   volumeMounts:
     - name: nginx-cache
@@ -70,41 +70,40 @@ sk8lUi:
       emptyDir: {}
     - name: tmp
       emptyDir: {}
-  # If you need to configure the nginx instance serving the ui
-  # you can do it by replacing the mounted nginx-configmap.
-  #
-  # nginx also needs the TLS certificates
-  # - name: tls-certs
-  #   projected:
-  #     sources:
-  #     - secret:
-  #         name: sk8l-server-cert-secret
-  #         items:
-  #           - key: tls.crt
-  #             path: server-cert.pem
-  #           - key: tls.key
-  #             path: server-key.pem
-  #     - secret:
-  #         name: sk8l-ca-root-cert-secret
-  #         items:
-  #           - key: tls.crt
-  #             path: ca-cert.pem
+      # If you need to configure the nginx instance serving the ui
+      # you can do it by replacing the mounted nginx-configmap.
+      #
+      # nginx also needs the TLS certificates
+      # - name: tls-certs
+      #   projected:
+      #     sources:
+      #     - secret:
+      #         name: sk8l-server-cert-secret
+      #         items:
+      #           - key: tls.crt
+      #             path: server-cert.pem
+      #           - key: tls.key
+      #             path: server-key.pem
+      #     - secret:
+      #         name: sk8l-ca-root-cert-secret
+      #         items:
+      #           - key: tls.crt
+      #             path: ca-cert.pem
 envoy:
   image: ""
   volumeMounts:
     - name: tmp
       mountPath: /tmp
-  # Envoy needs a TLS certificate.
-  # You can mount a volume with a secret with the keys:
-  # - tls.crt.
-  # - tls.key.
-  # - ca.crt.
-  #
-  # Eg.:
-  # - name: tls-certs
-  #   mountPath: /etc/sk8l-certs
-  #   readOnly: true
-
+      # Envoy needs a TLS certificate.
+      # You can mount a volume with a secret with the keys:
+      # - tls.crt.
+      # - tls.key.
+      # - ca.crt.
+      #
+      # Eg.:
+      # - name: tls-certs
+      #   mountPath: /etc/sk8l-certs
+      #   readOnly: true
 # Security context for the pod template and containers
 # The default securityContexts are:
 # securityContext:
@@ -131,7 +130,6 @@ securityContext:
       drop: ['ALL']
     seccompProfile:
       type: RuntimeDefault
-
 service:
   annotations: []
   type: LoadBalancer

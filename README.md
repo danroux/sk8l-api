@@ -1,8 +1,8 @@
 # sk8l
 
-sk8l/skål
+sk8l(skål)
 
-Monitor your cronjobs activity. Use the exported prometheus metrics to get alerts when your cronjob fails, takes longer than expected or does not start when it should.
+Monitor and view your cronjobs/job activity. Use the exported prometheus metrics to get alerts when your cronjob fails, takes longer than expected or does not start when it should.
 
 - Get an overview of your cronjobs running in a namespace
 - See which cronjobs run more often
