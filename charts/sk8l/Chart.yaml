@@ -1,9 +1,10 @@
 apiVersion: v2
 name: sk8l
-version: 0.13.0
-appVersion: 0.12.0
+version: 0.14.0
+appVersion: 0.13.0
 description: |
-  sk8l collects Cronjob activity, displays it visually in the UI and publishes cronjob metrics to prometheus
+  sk8l is a Cronjob/Job monitoring and visualization tool in Kubernetes. It enables users to monitor Cronjob/Job status by collecting metrics from the configured targets and publish them to prometheus.
+icon: https://sk8l.io/charts/logo.png
 keywords:
   - Cronjob
   - Monitoring
@@ -20,3 +21,11 @@ maintainers:
   - name: danroux
     email: dan@sk8l.io
     url: https://sk8l.io
+annotations:
+  artifacthub.io/images: |
+    - name: sk8l-api
+      image: danroux/sk8l-api:v0.13.0
+    - name: sk8l-ui
+      image: danroux/sk8l-ui:v0.12.0
+    - name: envoy
+      image: envoyproxy/envoy:v1.30-latest
