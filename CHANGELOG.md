@@ -1,3 +1,10 @@
+## v0.13.0 (May 07, 2024)
+
+ENHANCEMENTS:
+
+* ci/dependabot: gha:(deps): bump actions/setup-go from 5.0.0 to 5.0.1 [[GH-59](https://github.com/danroux/sk8l-api/issues/59)]
+* Update envoyproxy/envoy image to v1.30-latest
+
 ## v0.12.0 (May 02, 2024)
 
 ENHANCEMENTS:
