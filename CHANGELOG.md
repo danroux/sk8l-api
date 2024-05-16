@@ -1,3 +1,20 @@
+## v0.14.0 (May 16, 2024)
+
+ENHANCEMENTS:
+
+* ci/dependabot: docker:(deps): bump golang from 1.22.2 to 1.22.3 [[GH-65](https://github.com/danroux/sk8l-api/issues/65)]
+* ci/dependabot: gha:(deps): bump golangci/golangci-lint-action from 5.1.0 to 6.0.0 [[GH-63](https://github.com/danroux/sk8l-api/issues/63)]
+* ci/dependabot: go:(deps): bump github.com/prometheus/client_golang from 1.19.0 to 1.19.1 [[GH-67](https://github.com/danroux/sk8l-api/issues/67)]
+* ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.63.2 to 1.64.0 [[GH-72](https://github.com/danroux/sk8l-api/issues/72)]
+* ci/dependabot: go:(deps): bump google.golang.org/protobuf from 1.34.0 to 1.34.1 [[GH-61](https://github.com/danroux/sk8l-api/issues/61)]
+* ci/dependabot: go:(deps): bump k8s.io/api from 0.30.0 to 0.30.1 [[GH-70](https://github.com/danroux/sk8l-api/issues/70)]
+* ci/dependabot: go:(deps): bump k8s.io/apimachinery from 0.30.0 to 0.30.1 [[GH-68](https://github.com/danroux/sk8l-api/issues/68)]
+* ci/dependabot: go:(deps): bump k8s.io/client-go from 0.30.0 to 0.30.1 [[GH-71](https://github.com/danroux/sk8l-api/issues/71)]
+
+DEPENDENCIES:
+
+* Update `k8s.io/apimachinery` submodule => `v0.30.1` [[GH-72](https://github.com/danroux/sk8l-api/issues/72)]
+
 ## v0.13.0 (May 07, 2024)
 
 ENHANCEMENTS:
