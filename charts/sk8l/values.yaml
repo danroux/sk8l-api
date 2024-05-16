@@ -21,7 +21,7 @@ serviceAccount:
     annotations: {}
 sk8lApi:
   image: "danroux/sk8l-api"
-  imageTag: "v0.13.0"
+  imageTag: "v0.14.0"
   imagePullPolicy: ""
   autoscaling:
     enabled: true
@@ -49,7 +49,7 @@ sk8lApi:
   #             path: ca-cert.pem
 sk8lUi:
   image: "danroux/sk8l-ui"
-  imageTag: "v0.12.0"
+  imageTag: "v0.13.0"
   imagePullPolicy: ""
   volumeMounts:
     - name: nginx-cache
