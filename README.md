@@ -1,6 +1,18 @@
-# sk8l
+# sk8l(skål)
 
-sk8l(skål)
+<p align="center">
+  <picture>
+    <img src="https://sk8l.io/charts/logo.png" alt="sk8l Icon" width="200" />
+  </picture>
+</p>
+
+<h3 align="center">
+  Easy Cronjob and Job workload visualization and monitoring in kubernetes
+</h3>
+
+<p align="center">
+| <a href="https://sk8l.io"><b>Documentation & screenshots</b></a> | <a href="https://artifacthub.io/packages/helm/sk8l/sk8l"><b>helm chart</b></a> |
+</p>
 
 Monitor and view your cronjobs/job activity. Use the exported prometheus metrics to get alerts when your cronjob fails, takes longer than expected or does not start when it should.
 
@@ -18,10 +30,6 @@ Monitor and view your cronjobs/job activity. Use the exported prometheus metrics
 - Familiar UI, based on the open source Primer framework by github.
   - https://primer.style/
   - https://github.com/primer
-
-## Screenshots
-
-https://sk8l.io/
 
 ## HELM Chart
 
