@@ -29,7 +29,7 @@ GO_LDFLAGS += -w -s # Drop debugging symbols.
 GO_LDFLAGS += '
 
 go-out:
-	CGO_ENABLED=0 GOEXPERIMENT=loopvar GOOS=linux go build -ldflags $(GO_LDFLAGS) -o ./sk8l .
+	CGO_ENABLED=0 GOEXPERIMENT=loopvar GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags $(GO_LDFLAGS) -o ./sk8l .
 
 version:
 	@echo $(VERSION)

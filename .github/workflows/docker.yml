@@ -44,6 +44,7 @@ jobs:
           file: Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ vars.DOCKERHUB_SK8L_API_IMAGE_NAME }}:dev-${{ inputs.image_tag }}
@@ -60,6 +61,7 @@ jobs:
           file: Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:dev-${{ github.sha }}
@@ -121,6 +123,7 @@ jobs:
           file: Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: |
             ${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:pre
