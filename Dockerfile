@@ -6,6 +6,7 @@ LABEL org.opencontainers.image.licenses=MIT
 
 WORKDIR /src/
 
+ARG TARGETOS TARGETARCH
 RUN go env GOCACHE
 ENV GOCACHE /gocache
 ENV GOMODCACHE /gomodcache
