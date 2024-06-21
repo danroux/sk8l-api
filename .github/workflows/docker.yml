@@ -93,6 +93,7 @@ jobs:
           file: Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: |
             ${{ vars.DOCKERHUB_SK8L_API_IMAGE_NAME }}:latest
