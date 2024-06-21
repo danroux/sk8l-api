@@ -1,3 +1,16 @@
+## v0.15.0 (June 21, 2024)
+
+ENHANCEMENTS:
+
+* Docker: Build Docker multi-platform images: linux/amd64,linux/arm{64,v7}
+* ci/dependabot: docker:(deps): bump alpine from 3.19.1 to 3.20.0 [[GH-75](https://github.com/danroux/sk8l-api/issues/75)]
+* ci/dependabot: docker:(deps): bump golang from 1.22.3 to 1.22.4 [[GH-77](https://github.com/danroux/sk8l-api/issues/77)]
+* ci/dependabot: gha:(deps): bump actions/checkout from 4.1.4 to 4.1.6 [[GH-74](https://github.com/danroux/sk8l-api/issues/74)]
+* ci/dependabot: gha:(deps): bump actions/checkout from 4.1.6 to 4.1.7 [[GH-81](https://github.com/danroux/sk8l-api/issues/81)]
+* ci/dependabot: gha:(deps): bump docker/build-push-action from 5.3.0 to 6.0.2 [[GH-87](https://github.com/danroux/sk8l-api/issues/87)]
+* ci/dependabot: gha:(deps): bump docker/login-action from 3.1.0 to 3.2.0 [[GH-76](https://github.com/danroux/sk8l-api/issues/76)]
+* ci/dependabot: gha:(deps): bump golangci/golangci-lint-action from 6.0.0 to 6.0.1 [[GH-66](https://github.com/danroux/sk8l-api/issues/66)]
+
 ## v0.14.0 (May 16, 2024)
 
 ENHANCEMENTS:
