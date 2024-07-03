@@ -1,0 +1,15 @@
+```release-note:enhancement
+ci/dependabot: docker:(deps): bump golang from 1.22.4 to 1.23rc1
+
+docker:(deps): bump golang from 1.22.4 to 1.23rc1
+
+Bumps golang from 1.22.4 to 1.23rc1.
+
+---
+updated-dependencies:
+- dependency-name: golang
+  dependency-type: direct:production
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
