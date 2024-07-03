@@ -1,4 +1,4 @@
-FROM golang:1.22.4 AS build
+FROM golang:1.23rc1 AS build
 
 LABEL org.opencontainers.image.source=https://github.com/danroux/sk8l-api
 LABEL org.opencontainers.image.description="sk8l-api image"
