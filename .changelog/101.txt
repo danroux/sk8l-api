@@ -1,0 +1,17 @@
+```release-note:enhancement
+ci/dependabot: go:(deps): bump k8s.io/apimachinery from 0.30.1 to 0.30.3
+
+go:(deps): bump k8s.io/apimachinery from 0.30.1 to 0.30.3
+
+Bumps [k8s.io/apimachinery](https://github.com/kubernetes/apimachinery) from 0.30.1 to 0.30.3.
+- [Commits](https://github.com/kubernetes/apimachinery/compare/v0.30.1...v0.30.3)
+
+---
+updated-dependencies:
+- dependency-name: k8s.io/apimachinery
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
