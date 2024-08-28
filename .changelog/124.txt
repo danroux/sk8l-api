@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: go:(deps): bump github.com/dgraph-io/badger/v4 from 4.2.0 to 4.3.0
+
+go:(deps): bump github.com/dgraph-io/badger/v4 from 4.2.0 to 4.3.0
+
+Bumps [github.com/dgraph-io/badger/v4](https://github.com/dgraph-io/badger) from 4.2.0 to 4.3.0.
+- [Release notes](https://github.com/dgraph-io/badger/releases)
+- [Changelog](https://github.com/dgraph-io/badger/blob/main/CHANGELOG.md)
+- [Commits](https://github.com/dgraph-io/badger/compare/v4.2.0...v4.3.0)
+
+---
+updated-dependencies:
+- dependency-name: github.com/dgraph-io/badger/v4
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
