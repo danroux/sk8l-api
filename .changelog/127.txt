@@ -1,0 +1,16 @@
+```release-note:enhancement
+ci/dependabot: docker:(deps): bump golang from 1.22.5 to 1.23.1
+
+docker:(deps): bump golang from 1.22.5 to 1.23.1
+
+Bumps golang from 1.22.5 to 1.23.1.
+
+---
+updated-dependencies:
+- dependency-name: golang
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
