@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/gocache make go-out
 
 COPY . .
 
-FROM alpine:3.20.2
+FROM alpine:3.20.3
 
 WORKDIR /app/
 
