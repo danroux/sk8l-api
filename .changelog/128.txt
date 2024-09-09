@@ -1,0 +1,16 @@
+```release-note:enhancement
+ci/dependabot: docker:(deps): bump alpine from 3.20.2 to 3.20.3
+
+docker:(deps): bump alpine from 3.20.2 to 3.20.3
+
+Bumps alpine from 3.20.2 to 3.20.3.
+
+---
+updated-dependencies:
+- dependency-name: alpine
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
