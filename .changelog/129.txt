@@ -1,0 +1,18 @@
+```release-note:enhancement
+ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.64.0 to 1.66.1
+
+go:(deps): bump google.golang.org/grpc from 1.64.0 to 1.66.1
+
+Bumps [google.golang.org/grpc](https://github.com/grpc/grpc-go) from 1.64.0 to 1.66.1.
+- [Release notes](https://github.com/grpc/grpc-go/releases)
+- [Commits](https://github.com/grpc/grpc-go/commits)
+
+---
+updated-dependencies:
+- dependency-name: google.golang.org/grpc
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
