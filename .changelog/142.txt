@@ -1,0 +1,18 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump docker/setup-buildx-action from 3.5.0 to 3.7.1
+
+gha:(deps): bump docker/setup-buildx-action from 3.5.0 to 3.7.1
+
+Bumps [docker/setup-buildx-action](https://github.com/docker/setup-buildx-action) from 3.5.0 to 3.7.1.
+- [Release notes](https://github.com/docker/setup-buildx-action/releases)
+- [Commits](https://github.com/docker/setup-buildx-action/compare/aa33708b10e362ff993539393ff100fa93ed6a27...c47758b77c9736f4b2ef4073d4d51994fabfe349)
+
+---
+updated-dependencies:
+- dependency-name: docker/setup-buildx-action
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
