@@ -1,0 +1,18 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump engineerd/setup-kind from 0.5.0 to 0.6.1
+
+gha:(deps): bump engineerd/setup-kind from 0.5.0 to 0.6.1
+
+Bumps [engineerd/setup-kind](https://github.com/engineerd/setup-kind) from 0.5.0 to 0.6.1.
+- [Release notes](https://github.com/engineerd/setup-kind/releases)
+- [Commits](https://github.com/engineerd/setup-kind/compare/v0.5.0...v0.6.1)
+
+---
+updated-dependencies:
+- dependency-name: engineerd/setup-kind
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
