@@ -1,0 +1,18 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump actions/setup-go from 5.0.2 to 5.4.0
+
+gha:(deps): bump actions/setup-go from 5.0.2 to 5.4.0
+
+Bumps [actions/setup-go](https://github.com/actions/setup-go) from 5.0.2 to 5.4.0.
+- [Release notes](https://github.com/actions/setup-go/releases)
+- [Commits](https://github.com/actions/setup-go/compare/0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32...0aaccfd150d50ccaeb58ebd88d36e91967a5f35b)
+
+---
+updated-dependencies:
+- dependency-name: actions/setup-go
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
