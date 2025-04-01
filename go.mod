@@ -2,14 +2,14 @@ module github.com/danroux/sk8l
 
 go 1.22.0
 
-toolchain go1.22.2
+toolchain go1.24.1
 
 require (
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/prometheus/client_golang v1.19.1
 	google.golang.org/grpc v1.64.0
-	google.golang.org/protobuf v1.34.1
+	google.golang.org/protobuf v1.36.6
 	k8s.io/api v0.30.1
 	k8s.io/apimachinery v0.30.1
 	k8s.io/client-go v0.30.1
