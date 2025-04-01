@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump azure/setup-helm from 4.1.0 to 4.3.0
+
+gha:(deps): bump azure/setup-helm from 4.1.0 to 4.3.0
+
+Bumps [azure/setup-helm](https://github.com/azure/setup-helm) from 4.1.0 to 4.3.0.
+- [Release notes](https://github.com/azure/setup-helm/releases)
+- [Changelog](https://github.com/Azure/setup-helm/blob/main/CHANGELOG.md)
+- [Commits](https://github.com/azure/setup-helm/compare/v4.1.0...v4.3.0)
+
+---
+updated-dependencies:
+- dependency-name: azure/setup-helm
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
