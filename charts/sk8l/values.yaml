@@ -49,7 +49,7 @@ sk8lApi:
   #             path: ca-cert.pem
 sk8lUi:
   image: "danroux/sk8l-ui"
-  imageTag: "v0.14.0"
+  imageTag: "v0.15.0"
   imagePullPolicy: ""
   volumeMounts:
     - name: nginx-cache
@@ -148,7 +148,6 @@ service:
       protocol: TCP
       port: 8590
       targetPort: metrics-port
-
 uiService:
   annotations: []
   type: LoadBalancer
