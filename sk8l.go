@@ -911,11 +911,9 @@ func collectTerminatedAndFailedContainers(
 		// if container.State.Waiting != nil && container.State.Waiting.Reason == "Error" {
 		//      failedEphContainers = append(failedEphContainers, &container)
 		// }
-		containerStatus := containerStatus
 
 		podConditions := []*corev1.PodCondition{}
 		for _, pc := range pod.Status.Conditions {
-			pc := pc
 			podConditions = append(podConditions, &pc)
 		}
 
@@ -1007,7 +1005,6 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 
 	// ephStates := make([]corev1.ContainerState, 0)
 	for _, pod := range gJobPods.Items {
-		pod := pod
 		// jobPodsForJob.Items[0].Status.ContainerStatuses
 		// jobPodsForJob.Items[0].Status.InitContainerStatuses
 		terminatedContainers, failedContainers := terminatedAndFailedContainersResponses(&pod)
