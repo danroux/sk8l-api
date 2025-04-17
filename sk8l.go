@@ -898,13 +898,14 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 
 	return cjr
 }
+
 func collectTerminatedAndFailedContainers(
 	pod *corev1.Pod,
 	statuses []corev1.ContainerStatus,
 	terminationReasons *[]*protos.TerminationReason,
-) ([]*protos.ContainerResponse, []*protos.ContainerResponse) {
-	terminatedContainers := make([]*protos.ContainerResponse, 0)
-	failedContainers := make([]*protos.ContainerResponse, 0)
+) (terminatedContainers []*protos.ContainerResponse, failedContainers []*protos.ContainerResponse) {
+	terminatedContainers = make([]*protos.ContainerResponse, 0)
+	failedContainers = make([]*protos.ContainerResponse, 0)
 
 	for _, containerStatus := range statuses {
 		// ephStates = append(ephStates, container.State)
@@ -964,7 +965,7 @@ func collectTerminatedAndFailedContainers(
 
 func terminatedAndFailedContainersResponses(
 	pod *corev1.Pod,
-) (*protos.TerminatedContainers, *protos.TerminatedContainers) {
+) (terminatedContainersResponse *protos.TerminatedContainers, failedContainersResponse *protos.TerminatedContainers) {
 	terminatedReasons := make([]*protos.TerminationReason, 0)
 
 	terminatedEphContainers, failedEphContainers := collectTerminatedAndFailedContainers(
@@ -983,13 +984,13 @@ func terminatedAndFailedContainersResponses(
 		&terminatedReasons,
 	)
 
-	terminatedContainersResponse := &protos.TerminatedContainers{
+	terminatedContainersResponse = &protos.TerminatedContainers{
 		InitContainers:      terminatedInitContainers,
 		EphemeralContainers: terminatedEphContainers,
 		Containers:          terminatedContainers,
 	}
 
-	failedContainersResponse := &protos.TerminatedContainers{
+	failedContainersResponse = &protos.TerminatedContainers{
 		InitContainers:      failedInitContainers,
 		EphemeralContainers: failedEphContainers,
 		Containers:          failedContainers,
