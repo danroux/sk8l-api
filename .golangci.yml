@@ -44,10 +44,10 @@ linters:
     - gocyclo
     - godot
     - godox
-    - goerr113
+    - err113
     - gofmt
     - goimports
-    - gomnd
+    - mnd
     - goprintffuncname
     - gosec
     - gosimple
@@ -59,7 +59,7 @@ linters:
     - nolintlint
     - revive
     - rowserrcheck
-    - exportloopref
+    - copyloopvar
     - staticcheck
     - stylecheck
     - typecheck
@@ -150,7 +150,7 @@ linters-settings:
     # Default false
     ignore-comments: true
 
-  gomnd:
+  mnd:
     # List of enabled checks, see https://github.com/tommy-muehle/go-mnd/#checks for description.
     # Default: ["argument", "case", "condition", "operation", "return", "assign"]
     checks:
