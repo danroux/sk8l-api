@@ -50,7 +50,7 @@ jobs:
           kubectl cluster-info > /dev/null
           kubectl describe node > /dev/null
       - name: Install Helm
-        uses: azure/setup-helm@v4.1.0
+        uses: azure/setup-helm@v4.3.0
         with:
           version: 'v3.13.3'
       - name: Setup certs
