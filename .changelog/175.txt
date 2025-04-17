@@ -1,0 +1,3 @@
+```release-note:improvement
+ci: Fix golangci-lint configuration, increase golangci version to 1.64.8. Rename deprecated linters and address issues raised now that the linters work again.
+```
