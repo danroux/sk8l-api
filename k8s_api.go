@@ -173,7 +173,6 @@ func (kc *K8sClient) GetAllJobsMapped() *protos.MappedJobs {
 
 	jobsMapped := make(map[string][]*batchv1.Job)
 	for _, job := range jobs.Items {
-		job := job
 		for _, owr := range job.ObjectMeta.OwnerReferences {
 			target := jobsMapped[owr.Name]
 			jobsMapped[owr.Name] = append(target, &job)

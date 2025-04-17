@@ -35,9 +35,10 @@ jobs:
           cache: false
         id: go
       - name: golangci-lint
+        # v7.0.0 supports golangci-lint v2 only.
         uses: golangci/golangci-lint-action@a4f60bb28d35aeee14e6880718e0c85ff1882e64 # v6.0.1
         with:
-          version: v1.57
+          version: v1.64.8
           # Optional: golangci-lint command line arguments.
           #
           # Note: By default, the `.golangci.yml` file should be at the root of the repository.

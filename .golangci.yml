@@ -44,10 +44,10 @@ linters:
     - gocyclo
     - godot
     - godox
-    - goerr113
+    - err113
     - gofmt
     - goimports
-    - gomnd
+    - mnd
     - goprintffuncname
     - gosec
     - gosimple
@@ -59,7 +59,7 @@ linters:
     - nolintlint
     - revive
     - rowserrcheck
-    - exportloopref
+    - copyloopvar
     - staticcheck
     - stylecheck
     - typecheck
@@ -150,7 +150,7 @@ linters-settings:
     # Default false
     ignore-comments: true
 
-  gomnd:
+  mnd:
     # List of enabled checks, see https://github.com/tommy-muehle/go-mnd/#checks for description.
     # Default: ["argument", "case", "condition", "operation", "return", "assign"]
     checks:
@@ -178,6 +178,10 @@ linters-settings:
     # Available rules: https://github.com/securego/gosec#available-rules
     # Default: [] - means include all rules
     includes: []
+    excludes:
+      # https://github.com/moby/moby/issues/48358
+      # https://github.com/influxdata/telegraf/issues/15798
+      - G115 # Potential integer overflow when converting between integer types
 
   govet:
     enable-all: true
