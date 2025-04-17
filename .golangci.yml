@@ -178,9 +178,9 @@ linters-settings:
     # Available rules: https://github.com/securego/gosec#available-rules
     # Default: [] - means include all rules
     includes: []
-    # https://github.com/moby/moby/issues/48358
-    # https://github.com/influxdata/telegraf/issues/15798
     excludes:
+      # https://github.com/moby/moby/issues/48358
+      # https://github.com/influxdata/telegraf/issues/15798
       - G115 # Potential integer overflow when converting between integer types
 
   govet:
