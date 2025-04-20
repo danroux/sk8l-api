@@ -32,3 +32,15 @@ uiService:
       protocol: TCP
       port: 9901
       nodePort: 30965
+# Enables network policy for sk8l pods
+networkPolicy:
+  enabled: false
+  apiserverPolicy:
+    ingress:
+      - from:
+          - ipBlock:
+              cidr: 0.0.0.0/8
+    egress:
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/8
