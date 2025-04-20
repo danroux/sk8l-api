@@ -56,7 +56,7 @@ jobs:
           # - image: "kindest/node:v1.29.8@sha256:d46b7aa29567e93b27f7531d258c372e829d7224b25e3fc6ffdefed12476d3aa"
           #   version: v1.29.8
         kind:
-          - version: "v0.22.0"
+          - version: "v0.24.0"
     uses: ./.github/workflows/k8s-test.yml
     with:
       image_tag: ${{ github.event.pull_request.number }}
