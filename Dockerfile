@@ -8,8 +8,8 @@ WORKDIR /src/
 
 ARG TARGETOS TARGETARCH
 RUN go env GOCACHE
-ENV GOCACHE /gocache
-ENV GOMODCACHE /gomodcache
+ENV GOCACHE=/gocache
+ENV GOMODCACHE=/gomodcache
 RUN mkdir /gocache /gomodcache
 RUN go env GOCACHE
 
