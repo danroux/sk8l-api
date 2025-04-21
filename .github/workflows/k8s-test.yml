@@ -41,7 +41,7 @@ jobs:
       - name: Setup Kubernetes cluster ${{ inputs.kind_version }}/${{ inputs.k8s_version }}
         uses: engineerd/setup-kind@v0.6.2
         with:
-          name: "sk8l-${{ inputs.kind_version }}-${{ inputs.k8s_version }}"
+          name: "sk8l-${{ inputs.kind_version }}-${{ inputs.k8s_version }}-${{ inputs.image_tag }}"
           version: ${{ inputs.kind_version }}
           image: ${{ inputs.k8s_image }}
           config: testdata/sk8l-kind.yml
