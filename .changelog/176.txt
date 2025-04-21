@@ -1,3 +1,11 @@
 ```release-note:enhancement
 ci/k8s: Increase kind version, update supported versions and test against them.
+
+* Add support && tests for k8s v1.30.4 && v1.31.0
+* Removed tests && end our support for no longer supported k8s versions
+  - v1.26.x
+  - v1.27.x
+  - v1.28.x
+* kind: Add networkPolicy:false to sk8l-values. kind v0.24.0 ships with Out-of-the-box support for network policy via sigs.k8s.io/kube-network-policies.
+* Update README.md
 ```
