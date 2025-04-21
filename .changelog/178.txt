@@ -1,0 +1,7 @@
+```release-note:enhancement
+go:(deps): Update k8s.io packages && k8s.io/apimachinery to v0.30.11
+
+- k8s.io/api
+- k8s.io/apimachinery
+- k8s.io/client-go
+```
