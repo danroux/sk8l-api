@@ -54,7 +54,7 @@ jobs:
         # git commit --amend --no-edit
         echo "---"
         git log -1
-        git commit -m "Add .changelog/$PR_NUMBER.txt"
+        git commit -m "Add .changelog/$PR_NUMBER.txt\n\n[skip ci]"
         git push
         # git push --force "https://x-access-token:$GITHUB_TOKEN@github.com/${{ github.repository }}.git" HEAD:${{ github.event.pull_request.head.ref }}
         # echo '{"pull_request_number": "${{ github.event.pull_request.number }}"}' | gh workflow run k8s.yml  --ref ${{ github.event.pull_request.head.ref }} --json -
