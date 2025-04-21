@@ -71,7 +71,7 @@ metrics-smoke-tests: # metrics-smoke-tests
 	kubectl wait -n sk8l --for=condition=ready pod -l app.kubernetes.io/pod=sk8l-ui --timeout=300s
 	sleep 60
 	./ci/collect_workload_info.sh sk8l > expected_output.txt
-	sleep 15
+	sleep 18
 	curl -k https://localhost:8590/metrics > current_state.txt
 	./ci/check_strings_in_file.sh > job_output.txt
 
