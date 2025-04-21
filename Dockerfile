@@ -8,8 +8,8 @@ WORKDIR /src/
 
 ARG TARGETOS TARGETARCH
 RUN go env GOCACHE
-ENV GOCACHE /gocache
-ENV GOMODCACHE /gomodcache
+ENV GOCACHE=/gocache
+ENV GOMODCACHE=/gomodcache
 RUN mkdir /gocache /gomodcache
 RUN go env GOCACHE
 
@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/gocache make go-out
 
 COPY . .
 
-FROM alpine:3.20.2
+FROM alpine:3.21.3
 
 WORKDIR /app/
 
