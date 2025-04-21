@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: go:(deps): bump github.com/prometheus/client_golang from 1.19.1 to 1.22.0
+
+go:(deps): bump github.com/prometheus/client_golang
+
+Bumps [github.com/prometheus/client_golang](https://github.com/prometheus/client_golang) from 1.19.1 to 1.21.1.
+- [Release notes](https://github.com/prometheus/client_golang/releases)
+- [Changelog](https://github.com/prometheus/client_golang/blob/main/CHANGELOG.md)
+- [Commits](https://github.com/prometheus/client_golang/compare/v1.19.1...v1.21.1)
+
+---
+updated-dependencies:
+- dependency-name: github.com/prometheus/client_golang
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
