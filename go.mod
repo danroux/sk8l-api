@@ -1,8 +1,8 @@
 module github.com/danroux/sk8l
 
-go 1.22.0
+go 1.23
 
-toolchain go1.22.2
+toolchain go1.23.8
 
 require (
 	github.com/dgraph-io/badger/v4 v4.2.0
