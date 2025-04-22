@@ -76,10 +76,18 @@ jobs:
           echo "----------------------------"
           cat job_output.txt
           exit 1
+      - name: Fetch grpcurl
+        id: grpcurl-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ./grpcurl_1.9.1_linux_amd64.deb
+          # The cache key a combination of the current PR number and the commit SHA
+          key: grpcurl_1_9_1_linux_amd64
       - name: Download deps
+        if: steps.grpcurl-cache.outputs.cache-hit != 'true'
         run: |
           wget https://github.com/fullstorydev/grpcurl/releases/download/v1.9.1/grpcurl_1.9.1_linux_amd64.deb
-          sudo apt install -y ./grpcurl_1.9.1_linux_amd64.deb
       - name: smoke tests
         run: |
+          sudo apt install -y ./grpcurl_1.9.1_linux_amd64.deb
           make api-smoke-tests
