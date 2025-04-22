@@ -1,3 +1,3 @@
 ```release-note:improvement
-gha/docker: Load dev-pr image instead of pushing/pulling to docker hub
+gha/docker: No longer build/push/pull dev-pr version to/from Docker hub, instead export it in the OCI image layout format and load it into kind directly.
 ```
