@@ -67,10 +67,10 @@ The Kubernetes community releases minor versions roughly every three months. The
 
 | Version       | Tested Version |
 | ------------- | ----------------- |
-| v1.32         | v1.32.0           |
-| v1.31         | v1.31.4           |
-| v1.30         | v1.30.8           |
-| v1.29         | v1.29.12          |
+| v1.32         | v1.32.6           |
+| v1.31         | v1.31.6           |
+| v1.30         | v1.30.10          |
+| v1.29         | v1.29.14          |
 
 ## Prometheus metrics
 
