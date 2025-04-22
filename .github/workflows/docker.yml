@@ -43,7 +43,8 @@ jobs:
         with:
           path: ./sk8l-api:dev-${{ inputs.image_tag }}.tar
           key: dev-${{ inputs.image_tag }}-${{ github.sha }}
-      - name: Build dev version
+      - name: Build sk8l-api:dev-${{ inputs.image_tag }} version
+        if: steps.image-cache.outputs.cache-hit != 'true'
         uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
         with:
           context: .
@@ -52,14 +53,10 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
           push: false
-          load: true
+          load: false
+          outputs: type=docker,dest=sk8l-api:dev-${{ inputs.image_tag }}.tar
           tags: |
             ${{ vars.DOCKERHUB_SK8L_API_IMAGE_NAME }}:dev-${{ inputs.image_tag }}
-      - name: Save amd64 image
-        run: |
-          #     docker buildx build --platform linux/amd64 -t danroux/sk8l-api:dev-${{ inputs.image_tag }} --load .
-          docker images
-          docker save danroux/sk8l-api:dev-${{ inputs.image_tag }} -o ./sk8l-api:dev-${{ inputs.image_tag }}.tar
       - name: Login to ghcr.io
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
