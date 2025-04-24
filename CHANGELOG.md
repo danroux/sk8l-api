@@ -1,3 +1,51 @@
+## v0.16.0 (April 24, 2025)
+
+ENHANCEMENTS:
+
+* ci/dependabot: docker:(deps): bump alpine from 3.20.0 to 3.20.2 [[GH-107](https://github.com/danroux/sk8l-api/issues/107)]
+* ci/dependabot: docker:(deps): bump alpine from 3.20.2 to 3.21.3 [[GH-157](https://github.com/danroux/sk8l-api/issues/157)]
+* ci/dependabot: docker:(deps): bump golang from 1.22.4 to 1.22.5 [[GH-96](https://github.com/danroux/sk8l-api/issues/96)]
+* ci/dependabot: docker:(deps): bump golang from 1.22.5 to 1.24.1 [[GH-156](https://github.com/danroux/sk8l-api/issues/156)]
+* ci/dependabot: gha:(deps): bump actions/checkout from 4.1.7 to 4.2.2 [[GH-151](https://github.com/danroux/sk8l-api/issues/151)]
+* ci/dependabot: gha:(deps): bump actions/setup-go from 5.0.1 to 5.0.2 [[GH-98](https://github.com/danroux/sk8l-api/issues/98)]
+* ci/dependabot: gha:(deps): bump actions/setup-go from 5.0.2 to 5.4.0 [[GH-165](https://github.com/danroux/sk8l-api/issues/165)]
+* ci/dependabot: gha:(deps): bump actions/upload-artifact from 4.3.3 to 4.3.4 [[GH-97](https://github.com/danroux/sk8l-api/issues/97)]
+* ci/dependabot: gha:(deps): bump actions/upload-artifact from 4.3.4 to 4.6.2 [[GH-164](https://github.com/danroux/sk8l-api/issues/164)]
+* ci/dependabot: gha:(deps): bump azure/setup-helm from 4.1.0 to 4.3.0 [[GH-159](https://github.com/danroux/sk8l-api/issues/159)]
+* ci/dependabot: gha:(deps): bump docker/build-push-action from 6.0.2 to 6.5.0 [[GH-105](https://github.com/danroux/sk8l-api/issues/105)]
+* ci/dependabot: gha:(deps): bump docker/build-push-action from 6.5.0 to 6.15.0 [[GH-160](https://github.com/danroux/sk8l-api/issues/160)]
+* ci/dependabot: gha:(deps): bump docker/login-action from 3.2.0 to 3.3.0 [[GH-104](https://github.com/danroux/sk8l-api/issues/104)]
+* ci/dependabot: gha:(deps): bump docker/login-action from 3.3.0 to 3.4.0 [[GH-158](https://github.com/danroux/sk8l-api/issues/158)]
+* ci/dependabot: gha:(deps): bump docker/setup-buildx-action from 3.3.0 to 3.5.0 [[GH-106](https://github.com/danroux/sk8l-api/issues/106)]
+* ci/dependabot: gha:(deps): bump docker/setup-buildx-action from 3.5.0 to 3.10.0 [[GH-163](https://github.com/danroux/sk8l-api/issues/163)]
+* ci/dependabot: gha:(deps): bump engineerd/setup-kind from 0.5.0 to 0.6.2 [[GH-162](https://github.com/danroux/sk8l-api/issues/162)]
+* ci/dependabot: go:(deps): bump github.com/dgraph-io/badger/v4 from 4.2.0 to 4.7.0 [[GH-180](https://github.com/danroux/sk8l-api/issues/180)]
+* ci/dependabot: go:(deps): bump github.com/prometheus/client_golang from 1.19.1 to 1.22.0 [[GH-171](https://github.com/danroux/sk8l-api/issues/171)]
+* ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.64.0 to 1.72.0 [[GH-181](https://github.com/danroux/sk8l-api/issues/181)]
+* ci/dependabot: go:(deps): bump google.golang.org/protobuf from 1.34.1 to 1.36.6 [[GH-169](https://github.com/danroux/sk8l-api/issues/169)]
+* ci/dependabot: go:(deps): bump k8s.io/client-go from 0.30.1 to 0.32.3 [[GH-170](https://github.com/danroux/sk8l-api/issues/170)]
+* ci/k8s: Increase kind version, update supported versions and test against them.
+* Add support && tests for k8s v1.30.4 && v1.31.0
+  * Removed tests && end our support for no longer supported k8s versions
+    - v1.26.x
+    - v1.27.x
+    - v1.28.x
+[[GH-176](https://github.com/danroux/sk8l-api/issues/176)]
+* go/deps: go:(deps): bump k8s.io/api from 0.30.1 to 0.30.3 [[GH-177](https://github.com/danroux/sk8l-api/issues/177)]
+* go: Update go version && toolchain to 1.23.8 [[GH-179](https://github.com/danroux/sk8l-api/issues/179)]
+* go:(deps): Update k8s.io packages && k8s.io/apimachinery to v0.30.11
+
+- k8s.io/api
+- k8s.io/apimachinery
+- k8s.io/client-go [[GH-178](https://github.com/danroux/sk8l-api/issues/178)]
+* k8s: Add support for k8s v1.32.x [[GH-182](https://github.com/danroux/sk8l-api/issues/182)]
+
+IMPROVEMENTS:
+
+* ci: Fix golangci-lint configuration, increase golangci version to 1.64.8. Rename deprecated linters and address issues raised now that the linters work again. [[GH-175](https://github.com/danroux/sk8l-api/issues/175)]
+* gha/docker: No longer build/push/pull dev-pr version to/from Docker hub, instead export it in the OCI image layout format and load it into kind directly. [[GH-184](https://github.com/danroux/sk8l-api/issues/184)]
+* gha: Improve grpcurl dependency caching [[GH-183](https://github.com/danroux/sk8l-api/issues/183)]
+
 ## v0.15.0 (June 21, 2024)
 
 ENHANCEMENTS:
