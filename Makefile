@@ -9,14 +9,14 @@ help: ## This help.
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # Bump these on release
-APP_VERSION ?= 0.18.0
+APP_VERSION ?= 0.19.0
 
 API_VERSION_MAJOR ?= 0
-API_VERSION_MINOR ?= 15
+API_VERSION_MINOR ?= 16
 API_VERSION_PATCH ?= 0
 
 CHART_VERSION_MAJOR ?= 0
-CHART_VERSION_MINOR ?= 19
+CHART_VERSION_MINOR ?= 20
 CHART_VERSION_PATCH ?= 0
 
 API_WITHOUT ?= $(API_VERSION_MAJOR).$(API_VERSION_MINOR).$(API_VERSION_PATCH)
@@ -34,7 +34,7 @@ go-out:
 	CGO_ENABLED=0 GOEXPERIMENT=loopvar GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags $(GO_LDFLAGS) -o ./sk8l .
 
 version:
-	@echo $(VERSION)
+	@echo $(API_VERSION)
 
 
 setup-certs: # setup-certs

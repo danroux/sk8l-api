@@ -21,7 +21,7 @@ serviceAccount:
     annotations: {}
 sk8lApi:
   image: "danroux/sk8l-api"
-  imageTag: "v0.15.0"
+  imageTag: "v0.16.0"
   imagePullPolicy: ""
   autoscaling:
     enabled: true
