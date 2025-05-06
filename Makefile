@@ -34,7 +34,20 @@ go-out:
 	CGO_ENABLED=0 GOEXPERIMENT=loopvar GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags $(GO_LDFLAGS) -o ./sk8l .
 
 version:
-	@echo $(VERSION)
+	@echo $(API_VERSION)
+
+chart-version:
+	@echo $(CHART_VERSION)
+
+chart-version-wo:
+	@echo $(CHART_VERSION_WITHOUT)
+
+
+.PHONY: package-app-ci
+package-app-ci: ## Package helm chart and upload
+	helm package charts/sk8l \
+        && mv sk8l*tgz charts/repo \
+        && helm repo index charts/repo --url https://sk8l.io/charts
 
 
 setup-certs: # setup-certs
