@@ -128,8 +128,8 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 
 		jobsMapped := s.findJobsMapped()
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
-		cronjobPodsResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
-		if err := stream.Send(cronjobPodsResponse); err != nil {
+		cronJobResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
+		if err := stream.Send(cronJobResponse); err != nil {
 			return err
 		}
 
@@ -521,6 +521,16 @@ func jobFailed(
 	return jobFailed, failureCondition, jobConditions
 }
 
+func (s *Sk8lServer) jobWithSidecarContainer(batchJob *batchv1.Job) bool {
+	for _, container := range batchJob.Spec.Template.Spec.InitContainers {
+		if container.RestartPolicy != nil && corev1.RestartPolicy(*container.RestartPolicy) == corev1.RestartPolicyAlways {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse {
 	jobPodsForJob := s.findJobPodsForJob(batchJob)
 	jobPodsResponses := buildJobPodsResponses(jobPodsForJob)
@@ -536,6 +546,8 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 	for _, podResponse := range jobPodsResponses {
 		terminationReasons = append(terminationReasons, podResponse.TerminationReasons...)
 	}
+
+	jobWithSidecar := s.jobWithSidecarContainer(batchJob)
 
 	jobResponse := &protos.JobResponse{
 		Name:              batchJob.Name,
@@ -557,11 +569,12 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 			Succeeded:         &batchJob.Status.Succeeded,
 			Conditions:        jobConditions,
 		},
-		Succeeded:          jobSucceded(batchJob),
-		Failed:             jobFailed,
-		FailureCondition:   failureCondition,
-		Pods:               jobPodsResponses,
-		TerminationReasons: terminationReasons,
+		Succeeded:             jobSucceeded(batchJob),
+		Failed:                jobFailed,
+		FailureCondition:      failureCondition,
+		Pods:                  jobPodsResponses,
+		TerminationReasons:    terminationReasons,
+		WithSidecarContainers: jobWithSidecar,
 	}
 
 	return jobResponse
@@ -1030,7 +1043,7 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 			finishedAt = containerFinishedAtTimes[len(containerFinishedAtTimes)-1]
 		}
 
-		jobResponse := &protos.PodResponse{
+		podResponse := &protos.PodResponse{
 			Metadata:             &pod.ObjectMeta,
 			Spec:                 &pod.Spec,
 			Status:               &pod.Status,
@@ -1041,13 +1054,13 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 			TerminationReasons:   failedContainers.TerminationReasons,
 			FinishedAt:           finishedAt,
 		}
-		jobPodsResponses = append(jobPodsResponses, jobResponse)
+		jobPodsResponses = append(jobPodsResponses, podResponse)
 	}
 
 	return jobPodsResponses
 }
 
-func jobSucceded(job *batchv1.Job) bool {
+func jobSucceeded(job *batchv1.Job) bool {
 	// The completion time is only set when the job finishes successfully.
 	return job.Status.CompletionTime != nil
 }
