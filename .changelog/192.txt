@@ -1,0 +1,3 @@
+```release-note:improvement
+gha/chart: Automate helm chart release with GHA
+```
