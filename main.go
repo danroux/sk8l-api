@@ -77,8 +77,8 @@ func main() {
 	}
 
 	sk8lServer := &Sk8lServer{
-		Target: target,
-		Store:  cronjobDBStore,
+		Target:         target,
+		CronjobDBStore: cronjobDBStore,
 		Options: []grpc.DialOption{
 			grpc.WithTransportCredentials(serverCreds),
 		},

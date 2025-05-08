@@ -129,8 +129,8 @@ func TestMeh(t *testing.T) {
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.Store = store
-	putCronjobsToBadger(t, sk8lServer.Store.DB, cronjobList)
+	sk8lServer.CronjobDBStore = store
+	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -162,7 +162,7 @@ func TestMeh(t *testing.T) {
 		}
 
 		if status.Code(err) == codes.Canceled {
-			log.Println("stream cancelled", err)
+			log.Println("stream canceled", err)
 			break
 		}
 

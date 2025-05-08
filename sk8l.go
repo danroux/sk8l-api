@@ -53,7 +53,7 @@ type Sk8lServer struct {
 	protos.UnimplementedCronjobServer
 	Target  string
 	Options []grpc.DialOption
-	Store   *CronjobDBStore
+	*CronjobDBStore
 }
 
 type APICall (func() []byte)
@@ -86,7 +86,7 @@ func (s *Sk8lServer) Run(metricsCxt context.Context) {
 
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
 	for {
-		cronJobList := s.Store.findCronjobs()
+		cronJobList := s.findCronjobs()
 		jobsMapped := s.findJobsMapped()
 
 		n := len(cronJobList.Items)
@@ -118,7 +118,7 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		// https://learn.microsoft.com/en-us/aspnet/core/grpc/performance?view=aspnetcore-9.0
 		case <-stream.Context().Done():
 			err := stream.Context().Err()
-			log.Printf("stream context done: client cancelled or deadline exceeded: %v", err)
+			log.Printf("stream context done: client canceled or deadline exceeded: %v", err)
 			return err
 		default:
 			if err := stream.Send(y); err != nil {
@@ -131,7 +131,7 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
 	for {
-		cronjob := s.Store.findCronjob(in.CronjobNamespace, in.CronjobName)
+		cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
 
 		jobsMapped := s.findJobsMapped()
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
@@ -146,7 +146,7 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
 	for {
-		cronjob := s.Store.findCronjob(in.CronjobNamespace, in.CronjobName)
+		cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
 
 		jobsMapped := s.findJobsMapped()
 		jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
@@ -180,7 +180,7 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 
 func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJobsServer) error {
 	for {
-		jobList := s.Store.findJobs()
+		jobList := s.findJobs()
 
 		n := len(jobList.Items)
 		jobs := make([]*protos.JobResponse, 0, n)
@@ -206,7 +206,7 @@ func (s *Sk8lServer) GetCronjobYAML(
 	ctx context.Context,
 	in *protos.CronjobRequest,
 ) (*protos.CronjobYAMLResponse, error) {
-	cronjob := s.Store.K8sClient.GetCronjob(in.CronjobNamespace, in.CronjobName)
+	cronjob := s.K8sClient.GetCronjob(in.CronjobNamespace, in.CronjobName)
 	prettyJSON, _ := json.MarshalIndent(cronjob, "", "  ")
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
@@ -219,7 +219,7 @@ func (s *Sk8lServer) GetCronjobYAML(
 }
 
 func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*protos.JobYAMLResponse, error) {
-	job := s.Store.K8sClient.GetJob(in.JobNamespace, in.JobName)
+	job := s.K8sClient.GetJob(in.JobNamespace, in.JobName)
 	prettyJSON, _ := json.MarshalIndent(job, "", "  ")
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
@@ -232,7 +232,7 @@ func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*pr
 }
 
 func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*protos.PodYAMLResponse, error) {
-	pod := s.Store.K8sClient.GetPod(in.PodNamespace, in.PodName)
+	pod := s.K8sClient.GetPod(in.PodNamespace, in.PodName)
 	prettyJSON, _ := json.MarshalIndent(pod, "", "  ")
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
@@ -276,12 +276,12 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 
 func (s *Sk8lServer) findJobsMapped() *protos.MappedJobs {
 	jobsCall := func() []byte {
-		result := s.Store.K8sClient.GetAllJobsMapped()
+		result := s.K8sClient.GetAllJobsMapped()
 		value, _ := proto.Marshal(result)
 		return value
 	}
 
-	jobs, err := s.Store.getAndStore(jobsMappedCacheKey, jobsCall)
+	jobs, err := s.getAndStore(jobsMappedCacheKey, jobsCall)
 
 	if err != nil {
 		log.Println("Error: findJobsMapped#s.getAndStore", err)
@@ -304,7 +304,7 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 	collection := &corev1.PodList{}
 	collectionV2 := protoadapt.MessageV2Of(collection)
 
-	err := s.Store.DB.View(func(txn *badger.Txn) error {
+	err := s.DB.View(func(txn *badger.Txn) error {
 		current, err := txn.Get(key)
 
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -453,7 +453,7 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 }
 
 func (s *Sk8lServer) collectCronjobs() {
-	x := s.Store.K8sClient.WatchCronjobs()
+	x := s.K8sClient.WatchCronjobs()
 
 	go func() {
 		for {
@@ -465,7 +465,7 @@ func (s *Sk8lServer) collectCronjobs() {
 					log.Println("Error: event.Object.(*batchv1.CronJob)")
 				}
 
-				err := s.Store.DB.Update(func(txn *badger.Txn) error {
+				err := s.DB.Update(func(txn *badger.Txn) error {
 					item, err := txn.Get(cronjobsCacheKey)
 					if err != nil {
 						cjList := &batchv1.CronJobList{
@@ -524,7 +524,7 @@ func (s *Sk8lServer) collectCronjobs() {
 					panic(err)
 				}
 			} else {
-				x = s.Store.K8sClient.WatchCronjobs()
+				x = s.K8sClient.WatchCronjobs()
 				log.Println("Cronjob watching: Received all Cronjobs. Opening again")
 			}
 		}
@@ -532,7 +532,7 @@ func (s *Sk8lServer) collectCronjobs() {
 }
 
 func (s *Sk8lServer) collectJobs() {
-	x := s.Store.K8sClient.WatchJobs()
+	x := s.K8sClient.WatchJobs()
 
 	go func() {
 		for {
@@ -544,7 +544,7 @@ func (s *Sk8lServer) collectJobs() {
 					log.Println("Error: event.Object.(*batchv1.Job)")
 				}
 
-				err := s.Store.DB.Update(func(txn *badger.Txn) error {
+				err := s.DB.Update(func(txn *badger.Txn) error {
 					item, err := txn.Get(jobsCacheKey)
 					if err != nil {
 						jList := &batchv1.JobList{
@@ -603,7 +603,7 @@ func (s *Sk8lServer) collectJobs() {
 					panic(err)
 				}
 			} else {
-				x = s.Store.K8sClient.WatchJobs()
+				x = s.K8sClient.WatchJobs()
 				log.Println("Job watching: Received all Jobs. Opening again")
 			}
 		}
@@ -611,7 +611,7 @@ func (s *Sk8lServer) collectJobs() {
 }
 
 func (s *Sk8lServer) collectPods() {
-	x := s.Store.K8sClient.WatchPods()
+	x := s.K8sClient.WatchPods()
 
 	go func() {
 		for {
@@ -625,7 +625,7 @@ func (s *Sk8lServer) collectPods() {
 
 				fKey := fmt.Sprintf(jobPodsKeyFmt, eventPod.Labels["job-name"])
 				key := []byte(fKey)
-				err := s.Store.DB.Update(func(txn *badger.Txn) error {
+				err := s.DB.Update(func(txn *badger.Txn) error {
 					item, err := txn.Get(key)
 					if err != nil {
 						podList := &corev1.PodList{
@@ -675,7 +675,7 @@ func (s *Sk8lServer) collectPods() {
 					panic(err)
 				}
 			} else {
-				x = s.Store.K8sClient.WatchPods()
+				x = s.K8sClient.WatchPods()
 				log.Println("Job watching: Received all Pods. Opening again", x)
 			}
 		}

@@ -70,7 +70,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 	}
 
 	c := protos.NewCronjobClient(conn)
-	subSystem := svr.Store.K8sClient.Namespace()
+	subSystem := svr.K8sClient.Namespace()
 
 	log.Println("Metrics: Starting metrics collection")
 	req := &protos.CronjobsRequest{}
