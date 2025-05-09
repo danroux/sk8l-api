@@ -17,9 +17,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var metricsNamesMap = &sync.Map{}
-
 var (
+	metricsNamesMap     = &sync.Map{}
 	namespace           = os.Getenv("K8_NAMESPACE")
 	optNamespace        = "sk8l"
 	summaryMap          = &sync.Map{}
@@ -71,7 +70,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 	}
 
 	c := protos.NewCronjobClient(conn)
-	subSystem := svr.K8sClient.namespace
+	subSystem := svr.K8sClient.Namespace()
 
 	log.Println("Metrics: Starting metrics collection")
 	req := &protos.CronjobsRequest{}

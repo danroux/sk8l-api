@@ -91,6 +91,7 @@ message JobResponse {
   k8s.io.api.batch.v1.JobCondition failureCondition = 14 [json_name="failure_condition"];
   repeated PodResponse pods = 15 [json_name="pods"];
   repeated TerminationReason terminationReasons = 16 [json_name="termination_reasons"];
+  bool withSidecarContainers = 17 [json_name="with_sidecar_containers"];
 }
 
 message JobsResponse  {

@@ -14,6 +14,10 @@
 | <a href="https://sk8l.io"><b>Documentation & screenshots</b></a> | <a href="https://artifacthub.io/packages/helm/sk8l/sk8l"><b>helm chart</b></a> |
 </p>
 
+<p align="center">
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/sk8l)](https://artifacthub.io/packages/search?repo=sk8l)
+</p>
+
 Monitor and view your cronjobs/job activity. Use the exported prometheus metrics to get alerts when your cronjob fails, takes longer than expected or does not start when it should.
 
 - Get an overview of your cronjobs running in a namespace
