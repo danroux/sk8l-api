@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-type K8sSk8lClient interface {
+type Sk8lK8sClientInterface interface {
 	kubernetes.Interface
 	GetCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob
 	WatchCronjobs() watch.Interface
@@ -34,7 +34,7 @@ type K8sClient struct {
 	namespace string
 }
 
-var _ K8sSk8lClient = (*K8sClient)(nil)
+var _ Sk8lK8sClientInterface = (*K8sClient)(nil)
 
 // A ClientOption is used to configure a Client.
 type ClientOption func(*K8sClient)

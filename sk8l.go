@@ -53,6 +53,7 @@ type Sk8lServer struct {
 	protos.UnimplementedCronjobServer
 	Target  string
 	Options []grpc.DialOption
+	// CronjobDBStore CronjobStore
 	*CronjobDBStore
 }
 

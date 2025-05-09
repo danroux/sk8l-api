@@ -14,8 +14,12 @@ import (
 
 type CronjobDBStore struct {
 	// K8sClient *K8sClient
-	K8sClient K8sSk8lClient
+	K8sClient Sk8lK8sClientInterface
 	*badger.DB
+}
+
+type CronjobStore interface {
+	Sk8lK8sClientInterface
 }
 
 func (c *CronjobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
