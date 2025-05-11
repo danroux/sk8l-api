@@ -9,9 +9,16 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/protos"
+	"github.com/danroux/sk8l/testutil"
 	badger "github.com/dgraph-io/badger/v4"
+	"github.com/google/go-cmp/cmp"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes/fake"
+	cgt "k8s.io/client-go/testing"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -96,35 +103,29 @@ func bufDialer(context.Context, string) (net.Conn, error) {
 //      }
 // }
 
-type MockK8sClient struct {
-	*K8sClient
-}
-
-func (kc *MockK8sClient) GetAllJobs() *batchv1.JobList {
-	return &batchv1.JobList{}
-}
-
-func (kc *MockK8sClient) GetAllJobsMapped() *protos.MappedJobs {
-	return &protos.MappedJobs{}
-}
-
-func TestMeh(t *testing.T) {
+func TestGetCronjosbDB(t *testing.T) {
 	db := setupBadger(t)
 	defer db.Close()
 
-	cronjobList := &batchv1.CronJobList{
-		Items: []batchv1.CronJob{
-			{
-				ObjectMeta: metav1.ObjectMeta{Name: "cronjob1"},
-			},
-			{
-				ObjectMeta: metav1.ObjectMeta{Name: "cronjob2"},
-			},
-		},
-	}
+	cronjob1 := testutil.NewCronJobBuilder().
+		WithName("cronjob1").
+		WithNamespace("sk8l").
+		Build()
 
-	// Put serialized cronjobs into Badger cache
-	k8sClient := &MockK8sClient{}
+	cronjob2 := testutil.NewCronJobBuilder().
+		WithName("cronjob2").
+		WithNamespace("sk8l").
+		Build()
+
+	cronjobList := testutil.NewCronJobListBuilder().
+		WithItems(cronjob1, cronjob2).
+		Build()
+
+		// Put serialized cronjobs into Badger cache
+	clientSet := fake.NewClientset()
+	k8sClient := &K8sClient{
+		Interface: clientSet,
+	}
 	store := &CronjobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
@@ -154,7 +155,8 @@ func TestMeh(t *testing.T) {
 
 	// https://grpc.io/docs/guides/cancellation/
 	// https://learn.microsoft.com/en-us/aspnet/core/grpc/performance
-	var gotCronjobs []*protos.CronjobResponse
+	cronJobResponse := &protos.CronjobsResponse{}
+
 	for {
 		cj, err := stream.Recv()
 		if err == io.EOF {
@@ -166,8 +168,8 @@ func TestMeh(t *testing.T) {
 			break
 		}
 
-		gotCronjobs = append(gotCronjobs, cj.Cronjobs...)
-		if len(gotCronjobs) >= len(cronjobList.Items) {
+		cronJobResponse.Cronjobs = append(cronJobResponse.Cronjobs, cj.Cronjobs...)
+		if len(cronJobResponse.Cronjobs) >= len(cronjobList.Items) {
 			// Cancel context early to stop streaming
 			cancel()
 			break
@@ -175,12 +177,159 @@ func TestMeh(t *testing.T) {
 	}
 
 	// Assert the response contains the cronjobs in cache
-	if len(gotCronjobs) != len(cronjobList.Items) {
-		t.Errorf("expected %d cronjobs, got %d", len(cronjobList.Items), len(gotCronjobs))
+	if len(cronJobResponse.Cronjobs) != len(cronjobList.Items) {
+		t.Errorf("expected %d cronjobs, got %d", len(cronjobList.Items), len(cronJobResponse.Cronjobs))
 	}
-	for i, cj := range gotCronjobs {
+	for i, cj := range cronJobResponse.Cronjobs {
 		if cj.Name != cronjobList.Items[i].Name {
 			t.Errorf("expected cronjob name %q, got %q", cronjobList.Items[i].Name, cj.Name)
 		}
 	}
+}
+
+func TestGetCronjobsService(t *testing.T) {
+	db := setupBadger(t)
+
+	defer db.Close()
+
+	podOne := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-1",
+			Namespace: "default",
+		},
+	}
+	podTwo := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-2",
+			Namespace: "default",
+		},
+	}
+
+	// Build JobSpec with containers
+	jobSpec := testutil.NewJobSpecBuilder().
+		Build()
+
+	job := testutil.NewJobBuilder().WithJobSpec(jobSpec).Build()
+
+	cronjob := testutil.NewCronJobBuilder().
+		WithName("my-cronjob").
+		WithNamespace("default").
+		WithJobTemplate(batchv1.JobTemplateSpec{
+			Spec: jobSpec,
+		}).
+		Build()
+
+	watcher := watch.NewFake()
+	go watcher.Add(cronjob)
+
+	clientSet := fake.NewClientset(podOne, podTwo, job, cronjob)
+
+	// watcher setup
+
+	// Prepend a watch reactor for "cronjobs" resource that returns the FakeWatcher
+	clientSet.PrependWatchReactor("cronjobs", func(action cgt.Action) (handled bool, ret watch.Interface, err error) {
+		return true, watcher, nil
+	})
+	// clientSet.PrependWatchReactor("cronjobs", cgt.DefaultWatchReactor(watcher, nil))
+	// watcher setup
+
+	name := "pod-1"
+	namespace := "default"
+	_, err := clientSet.CoreV1().ConfigMaps("default").Create(context.Background(),
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Data:       map[string]string{"k0": "v0"},
+		}, metav1.CreateOptions{FieldManager: "test-manager-0"})
+
+	expectedPods := []*corev1.Pod{}
+
+	pod, err := clientSet.CoreV1().Pods("default").Create(context.Background(), podOne, metav1.CreateOptions{})
+
+	expectedPods = append(expectedPods, pod)
+
+	pod, err = clientSet.CoreV1().Pods("default").Create(context.Background(), podTwo, metav1.CreateOptions{})
+
+	expectedPods = append(expectedPods, pod)
+
+	err = clientSet.CoreV1().Pods("default").EvictV1(context.Background(), &policyv1.Eviction{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: podTwo.Name,
+		},
+	})
+
+	pods, err := clientSet.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+
+	cmp.Equal(expectedPods, pods.Items)
+
+	k8sClient := &K8sClient{
+		namespace: "default",
+		Interface: clientSet,
+	}
+	store := &CronjobDBStore{
+		DB:        db,
+		K8sClient: k8sClient,
+	}
+
+	sk8lServer.CronjobDBStore = store
+	sk8lServer.collectCronjobs()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(bufDialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer conn.Close()
+
+	client := protos.NewCronjobClient(conn)
+	ctx = context.Background()
+	cronJobs, err := clientSet.BatchV1().CronJobs("default").List(context.Background(), metav1.ListOptions{})
+
+	if len(cronJobs.Items) < 1 {
+		t.Error("expected cronJobs to exist in the cluster")
+	}
+
+	// jobs, err := clientSet.BatchV1().Jobs("default").List(ctx, metav1.ListOptions{})
+
+	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
+	if err != nil {
+		t.Fatalf("GetCronjobs RPC failed: %v", err)
+	}
+
+	cronJobResponse := &protos.CronjobsResponse{}
+
+	for {
+		cj, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+
+		if status.Code(err) == codes.Canceled {
+			log.Println("stream canceled", err)
+			break
+		}
+
+		cronJobResponse.Cronjobs = append(cronJobResponse.Cronjobs, cj.Cronjobs...)
+		if len(cronJobResponse.Cronjobs) >= len(cronJobs.Items) {
+			// Cancel context early to stop streaming
+			cancel()
+			break
+		}
+	}
+
+	// Assert the response contains the cronjobs in cache
+	if len(cronJobResponse.Cronjobs) != len(cronJobs.Items) {
+		t.Errorf("expected %d cronjobs, got %d", len(cronJobs.Items), len(cronJobResponse.Cronjobs))
+	}
+	for i, cj := range cronJobResponse.Cronjobs {
+		if cj.Name != cronJobs.Items[i].Name {
+			t.Errorf("expected cronjob name %q, got %q", cronJobs.Items[i].Name, cj.Name)
+		}
+	}
+
 }

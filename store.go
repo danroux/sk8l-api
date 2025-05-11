@@ -12,14 +12,14 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 )
 
+type CronjobStore interface {
+	Sk8lK8sClientInterface
+}
+
 type CronjobDBStore struct {
 	// K8sClient *K8sClient
 	K8sClient Sk8lK8sClientInterface
 	*badger.DB
-}
-
-type CronjobStore interface {
-	Sk8lK8sClientInterface
 }
 
 func (c *CronjobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
