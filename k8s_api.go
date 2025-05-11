@@ -30,7 +30,7 @@ type Sk8lK8sClientInterface interface {
 }
 
 type K8sClient struct {
-	*kubernetes.Clientset
+	kubernetes.Interface
 	namespace string
 }
 
@@ -62,7 +62,7 @@ func NewK8sClient(options ...ClientOption) *K8sClient {
 	}
 
 	k8sClient := &K8sClient{
-		Clientset: clientset,
+		Interface: clientset,
 	}
 
 	for _, option := range options {
@@ -78,7 +78,7 @@ func (kc *K8sClient) Namespace() string {
 
 func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
 	ctx := context.TODO()
-	cronJob, err := kc.Clientset.BatchV1().CronJobs(cronjobNamespace).Get(ctx, cronjobName, metav1.GetOptions{})
+	cronJob, err := kc.BatchV1().CronJobs(cronjobNamespace).Get(ctx, cronjobName, metav1.GetOptions{})
 
 	if errors.IsNotFound(err) {
 		log.Printf("Cronjob not %s found in default namespace\n", cronjobName)
@@ -96,7 +96,7 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 func (kc *K8sClient) WatchCronjobs() watch.Interface {
 	ctx := context.Background()
 
-	watcher, err := kc.Clientset.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
+	watcher, err := kc.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
 
 	if err != nil {
 		panic(err.Error())
@@ -108,7 +108,7 @@ func (kc *K8sClient) WatchCronjobs() watch.Interface {
 func (kc *K8sClient) WatchJobs() watch.Interface {
 	ctx := context.Background()
 
-	watcher, err := kc.Clientset.BatchV1().Jobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
+	watcher, err := kc.BatchV1().Jobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
 
 	if err != nil {
 		panic(err.Error())
@@ -120,14 +120,14 @@ func (kc *K8sClient) WatchJobs() watch.Interface {
 func (kc *K8sClient) WatchPods() watch.Interface {
 	ctx := context.Background()
 
-	watcher, _ := kc.Clientset.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
+	watcher, _ := kc.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
 
 	return watcher
 }
 
 func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 	ctx := context.TODO()
-	pod, err := kc.Clientset.CoreV1().Pods(jobNamespace).Get(ctx, podName, metav1.GetOptions{})
+	pod, err := kc.CoreV1().Pods(jobNamespace).Get(ctx, podName, metav1.GetOptions{})
 
 	// Examples for error handling:
 	// - Use helper functions e.g. errors.IsNotFound()
@@ -147,7 +147,7 @@ func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 
 func (kc *K8sClient) GetJob(jobNamespace, jobName string) *batchv1.Job {
 	ctx := context.TODO()
-	job, err := kc.Clientset.BatchV1().Jobs(jobNamespace).Get(ctx, jobName, metav1.GetOptions{})
+	job, err := kc.BatchV1().Jobs(jobNamespace).Get(ctx, jobName, metav1.GetOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
@@ -161,12 +161,12 @@ func (kc *K8sClient) GetAllJobs() *batchv1.JobList {
 	// get pods in all the namespaces by omitting namespace
 	// Or specify namespace to get pods in particular namespace
 	// Limit: 10, // need to fix this - last duration / current duration get messed up
-	jobs, err := kc.Clientset.BatchV1().Jobs(kc.namespace).List(ctx, metav1.ListOptions{})
+	jobs, err := kc.BatchV1().Jobs(kc.namespace).List(ctx, metav1.ListOptions{})
 
 	if err != nil {
 		panic(err.Error())
 	}
-	log.Printf("There are %d jobs in the cluster\n", len(jobs.Items))
+	log.Printf("GAJ: There are %d jobs in the cluster\n", len(jobs.Items))
 	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
 	return jobs
 }
@@ -177,12 +177,12 @@ func (kc *K8sClient) GetAllJobsMapped() *protos.MappedJobs {
 	// get pods in all the namespaces by omitting namespace
 	// Or specify namespace to get pods in particular namespace
 	// Limit: 10, // need to fix this - last duration / current duration get messed up
-	jobs, err := kc.Clientset.BatchV1().Jobs(kc.namespace).List(ctx, metav1.ListOptions{})
+	jobs, err := kc.BatchV1().Jobs(kc.namespace).List(ctx, metav1.ListOptions{})
 
 	if err != nil {
 		panic(err.Error())
 	}
-	log.Printf("There are %d jobs in the cluster\n", len(jobs.Items))
+	log.Printf("GAJM: There are %d jobs in the cluster\n", len(jobs.Items))
 	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
 
 	cronjobNames := []string{}
