@@ -205,11 +205,15 @@ func TestGetCronjobsService(t *testing.T) {
 		},
 	}
 
-	// Build JobSpec with containers
-	jobSpec := testutil.NewJobSpecBuilder().
+	podTemsplateSpec := testutil.NewPodTemplateSpecBuilder().
+		WithSidecarContainers().
+		Build()
+	podTemsplateSpecTwo := testutil.NewPodTemplateSpecBuilder().
 		Build()
 
-	job := testutil.NewJobBuilder().WithJobSpec(jobSpec).Build()
+	jobSpec := testutil.NewJobSpecBuilder().
+		WithPodTemplateSpec(podTemsplateSpec).
+		Build()
 
 	cronjob := testutil.NewCronJobBuilder().
 		WithName("my-cronjob").
@@ -219,10 +223,26 @@ func TestGetCronjobsService(t *testing.T) {
 		}).
 		Build()
 
+	job := testutil.NewJobBuilder().
+		WithJobSpec(jobSpec).
+		WithName("process-videos").
+		WithCronjob(*cronjob).
+		Build()
+
+	jobSpecTwo := testutil.NewJobSpecBuilder().
+		WithPodTemplateSpec(podTemsplateSpecTwo).
+		Build()
+
+	jobTwo := testutil.NewJobBuilder().
+		WithJobSpec(jobSpecTwo).
+		WithName("process-reports").
+		WithCronjob(*cronjob).
+		Build()
+
 	watcher := watch.NewFake()
 	go watcher.Add(cronjob)
 
-	clientSet := fake.NewClientset(podOne, podTwo, job, cronjob)
+	clientSet := fake.NewClientset(podOne, podTwo, job, jobTwo, cronjob)
 
 	// watcher setup
 
@@ -301,10 +321,10 @@ func TestGetCronjobsService(t *testing.T) {
 		t.Fatalf("GetCronjobs RPC failed: %v", err)
 	}
 
-	cronJobResponse := &protos.CronjobsResponse{}
+	cronJobsResponse := &protos.CronjobsResponse{}
 
 	for {
-		cj, err := stream.Recv()
+		cronJobsResponse, err = stream.Recv()
 		if err == io.EOF {
 			break
 		}
@@ -314,8 +334,8 @@ func TestGetCronjobsService(t *testing.T) {
 			break
 		}
 
-		cronJobResponse.Cronjobs = append(cronJobResponse.Cronjobs, cj.Cronjobs...)
-		if len(cronJobResponse.Cronjobs) >= len(cronJobs.Items) {
+		// cronJobResponse.Cronjobs = append(cronJobResponse.Cronjobs, cronJobsResponse.Cronjobs...)
+		if len(cronJobsResponse.Cronjobs) >= len(cronJobs.Items) {
 			// Cancel context early to stop streaming
 			cancel()
 			break
@@ -323,13 +343,22 @@ func TestGetCronjobsService(t *testing.T) {
 	}
 
 	// Assert the response contains the cronjobs in cache
-	if len(cronJobResponse.Cronjobs) != len(cronJobs.Items) {
-		t.Errorf("expected %d cronjobs, got %d", len(cronJobs.Items), len(cronJobResponse.Cronjobs))
+	if len(cronJobsResponse.Cronjobs) != len(cronJobs.Items) {
+		t.Errorf("expected %d cronjobs, got %d", len(cronJobs.Items), len(cronJobsResponse.Cronjobs))
 	}
-	for i, cj := range cronJobResponse.Cronjobs {
+	for i, cj := range cronJobsResponse.Cronjobs {
 		if cj.Name != cronJobs.Items[i].Name {
 			t.Errorf("expected cronjob name %q, got %q", cronJobs.Items[i].Name, cj.Name)
 		}
+
+		if cj.Jobs[0].WithSidecarContainers != true {
+			t.Error("April true", cj.Jobs[0].WithSidecarContainers)
+		}
+
+		if cj.Jobs[1].WithSidecarContainers != false {
+			t.Error("April true", cj.Jobs[1].WithSidecarContainers)
+		}
+
 	}
 
 }

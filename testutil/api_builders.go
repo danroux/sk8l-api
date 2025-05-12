@@ -116,6 +116,124 @@ func (b *CronJobListBuilder) Build() *batchv1.CronJobList {
 	return &b.list
 }
 
+// baseContainerBuilder holds common fields and methods.
+type baseContainerBuilder struct {
+	name          string
+	image         string
+	command       []string
+	restartPolicy corev1.ContainerRestartPolicy
+}
+
+func (b *baseContainerBuilder) WithName(name string) {
+	b.name = name
+}
+
+func (b *baseContainerBuilder) WithImage(image string) {
+	b.image = image
+}
+
+func (b *baseContainerBuilder) WithCommand(cmd ...string) {
+	b.command = cmd
+}
+
+// ContainerBuilder builds a corev1.Container with minimal setters.
+type ContainerBuilder struct {
+	baseContainerBuilder
+}
+
+func NewContainerBuilder() *ContainerBuilder {
+	return &ContainerBuilder{
+		baseContainerBuilder: baseContainerBuilder{
+			name:    "default-container",
+			image:   "busybox",
+			command: []string{"echo", "Hello from CronJob"},
+		},
+	}
+}
+
+func (b *ContainerBuilder) WithName(name string) *ContainerBuilder {
+	b.baseContainerBuilder.WithName(name)
+	return b
+}
+
+func (b *ContainerBuilder) WithImage(image string) *ContainerBuilder {
+	b.baseContainerBuilder.WithImage(image)
+	return b
+}
+
+func (b *ContainerBuilder) WithCommand(cmd ...string) *ContainerBuilder {
+	b.baseContainerBuilder.WithCommand(cmd...)
+	return b
+}
+
+func (b *ContainerBuilder) WithRestartPolicy(rp corev1.ContainerRestartPolicy) *ContainerBuilder {
+	b.baseContainerBuilder.restartPolicy = rp
+	return b
+}
+
+func (b *ContainerBuilder) WithRestartPolicyAlways() *ContainerBuilder {
+	b.WithRestartPolicy(corev1.ContainerRestartPolicyAlways)
+	return b
+}
+
+func (b *ContainerBuilder) Build() corev1.Container {
+	return corev1.Container{
+		Name:          b.name,
+		Image:         b.image,
+		Command:       b.command,
+		RestartPolicy: (*corev1.ContainerRestartPolicy)(&b.restartPolicy),
+	}
+}
+
+// EphemeralContainerBuilder builds a corev1.EphemeralContainer with minimal setters.
+type EphemeralContainerBuilder struct {
+	baseContainerBuilder
+	tty bool
+}
+
+func NewEphemeralContainerBuilder() *EphemeralContainerBuilder {
+	return &EphemeralContainerBuilder{
+		baseContainerBuilder: baseContainerBuilder{
+			name:    "debugger",
+			image:   "busybox",
+			command: []string{"sh"},
+		},
+		tty: true,
+	}
+}
+
+func (b *EphemeralContainerBuilder) WithName(name string) *EphemeralContainerBuilder {
+	b.baseContainerBuilder.WithName(name)
+	return b
+}
+
+func (b *EphemeralContainerBuilder) WithImage(image string) *EphemeralContainerBuilder {
+	b.baseContainerBuilder.WithImage(image)
+	return b
+}
+
+func (b *EphemeralContainerBuilder) WithCommand(cmd ...string) *EphemeralContainerBuilder {
+	b.baseContainerBuilder.WithCommand(cmd...)
+	return b
+}
+
+func (b *EphemeralContainerBuilder) WithTTY(tty bool) *EphemeralContainerBuilder {
+	b.tty = tty
+	return b
+}
+
+func (b *EphemeralContainerBuilder) Build() corev1.EphemeralContainer {
+	return corev1.EphemeralContainer{
+		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
+			Name:    b.name,
+			Image:   b.image,
+			Command: b.command,
+			TTY:     b.tty,
+		},
+		TargetContainerName: "myapp-container",
+	}
+}
+
 ///
 
 type PodTemplateSpecBuilder struct {
@@ -124,34 +242,23 @@ type PodTemplateSpecBuilder struct {
 
 func NewPodTemplateSpecBuilder() *PodTemplateSpecBuilder {
 	containers := []corev1.Container{
-		{
-			Name:  "default-container",
-			Image: "busybox",
-			Command: []string{
-				"echo", "Hello from CronJob",
-			},
-		},
+		NewContainerBuilder().Build(),
 	}
 
 	var initContainers = []corev1.Container{
-		{
-			Name:    "init-myservice",
-			Image:   "busybox:1.28",
-			Command: []string{"sh", "-c", "until nslookup myservice.default.svc.cluster.local; do echo waiting for myservice; sleep 2; done"},
-		},
+		NewContainerBuilder().
+			WithName("init-myservice").
+			WithImage("busybox:1.28").
+			WithCommand("sh", "-c", "until nslookup myservice.default.svc.cluster.local; do echo waiting for myservice; sleep 2; done").
+			Build(),
 	}
 
 	var ephemeralContainers = []corev1.EphemeralContainer{
-		{
-			EphemeralContainerCommon: corev1.EphemeralContainerCommon{
-				Name:    "debugger",
-				Image:   "busybox",
-				Command: []string{"sh"},
-				Stdin:   true,
-				TTY:     true,
-			},
-			TargetContainerName: "myapp-container",
-		},
+		NewEphemeralContainerBuilder().
+			WithName("debugger").
+			WithImage("busybox").
+			WithCommand("sh").
+			Build(),
 	}
 
 	var volumes = []corev1.Volume{
@@ -185,10 +292,47 @@ func (b *PodTemplateSpecBuilder) Build() corev1.PodTemplateSpec {
 	return b.podTemplateSpec
 }
 
+func (b *PodTemplateSpecBuilder) WithInitContainers(containers []corev1.Container) *PodTemplateSpecBuilder {
+	b.podTemplateSpec.Spec.InitContainers = containers
+	return b
+}
+
+// WithSidecarContainers sets the RestartPolicy of all init containers to Always.
+func (b *PodTemplateSpecBuilder) WithSidecarContainers() *PodTemplateSpecBuilder {
+	rp := corev1.ContainerRestartPolicyAlways
+
+	for i := range b.podTemplateSpec.Spec.InitContainers {
+		b.podTemplateSpec.Spec.InitContainers[i].RestartPolicy = &rp
+	}
+
+	return b
+}
+
+func (b *PodTemplateSpecBuilder) WithContainers(containers []corev1.Container) *PodTemplateSpecBuilder {
+	b.podTemplateSpec.Spec.Containers = containers
+	return b
+}
+
+func (b *PodTemplateSpecBuilder) WithEphemeralContainers(containers []corev1.EphemeralContainer) *PodTemplateSpecBuilder {
+	b.podTemplateSpec.Spec.EphemeralContainers = containers
+	return b
+}
+
+func (b *PodTemplateSpecBuilder) WithRestartPolicy(rp corev1.RestartPolicy) *PodTemplateSpecBuilder {
+	b.podTemplateSpec.Spec.RestartPolicy = rp
+	return b
+}
+
+func (b *PodTemplateSpecBuilder) WithVolumes(volumes []corev1.Volume) *PodTemplateSpecBuilder {
+	b.podTemplateSpec.Spec.Volumes = volumes
+	return b
+}
+
 ///
 
 type JobSpecBuilder struct {
-	jobSpec batchv1.JobSpec
+	jobSpec            batchv1.JobSpec
+	podTemplateBuilder *PodTemplateSpecBuilder
 }
 
 func NewJobSpecBuilder() *JobSpecBuilder {
@@ -196,13 +340,16 @@ func NewJobSpecBuilder() *JobSpecBuilder {
 	completions := int32(1)
 	backoffLimit := int32(6)
 
+	podTemsplateSpecBuilder := NewPodTemplateSpecBuilder()
+
 	return &JobSpecBuilder{
 		jobSpec: batchv1.JobSpec{
 			Parallelism:  &parallelism,
 			Completions:  &completions,
 			BackoffLimit: &backoffLimit,
-			Template:     NewPodTemplateSpecBuilder().Build(),
+			Template:     podTemsplateSpecBuilder.Build(),
 		},
+		podTemplateBuilder: podTemsplateSpecBuilder,
 	}
 }
 
@@ -223,6 +370,24 @@ func (b *JobSpecBuilder) WithBackoffLimit(l int32) *JobSpecBuilder {
 
 func (b *JobSpecBuilder) WithPodTemplateSpec(template corev1.PodTemplateSpec) *JobSpecBuilder {
 	b.jobSpec.Template = template
+	return b
+}
+
+func (b *JobSpecBuilder) WithRestartPolicyAlways() *JobSpecBuilder {
+	b.podTemplateBuilder.WithRestartPolicy(corev1.RestartPolicyAlways)
+	b.jobSpec.Template = b.podTemplateBuilder.Build()
+	return b
+}
+
+func (b *JobSpecBuilder) WithRestartPolicyNever() *JobSpecBuilder {
+	b.podTemplateBuilder.WithRestartPolicy(corev1.RestartPolicyNever)
+	b.jobSpec.Template = b.podTemplateBuilder.Build()
+	return b
+}
+
+func (b *JobSpecBuilder) WithRestartPolicyOnFailure() *JobSpecBuilder {
+	b.podTemplateBuilder.WithRestartPolicy(corev1.RestartPolicyOnFailure)
+	b.jobSpec.Template = b.podTemplateBuilder.Build()
 	return b
 }
 
@@ -323,6 +488,17 @@ func (b *JobBuilder) WithAnnotations(annotations map[string]string) *JobBuilder 
 // WithJobSpec sets the JobSpec using an existing JobSpec.
 func (b *JobBuilder) WithJobSpec(spec batchv1.JobSpec) *JobBuilder {
 	b.job.Spec = spec
+	return b
+}
+
+func (b *JobBuilder) WithCronjob(cronjob batchv1.CronJob) *JobBuilder {
+	ownerRef := metav1.OwnerReference{
+		APIVersion: "batch/v1",
+		Kind:       "Job",
+		Name:       cronjob.Name,
+		UID:        "some-uid",
+	}
+	b.job.ObjectMeta.OwnerReferences = []metav1.OwnerReference{ownerRef}
 	return b
 }
 

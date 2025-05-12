@@ -396,7 +396,7 @@ func jobFailed(
 
 func (s *Sk8lServer) jobWithSidecarContainer(batchJob *batchv1.Job) bool {
 	for _, container := range batchJob.Spec.Template.Spec.InitContainers {
-		if container.RestartPolicy != nil && corev1.RestartPolicy(*container.RestartPolicy) == corev1.RestartPolicyAlways {
+		if container.RestartPolicy != nil && corev1.ContainerRestartPolicy(*container.RestartPolicy) == corev1.ContainerRestartPolicyAlways {
 			return true
 		}
 	}
