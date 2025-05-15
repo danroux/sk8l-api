@@ -51,10 +51,10 @@ var (
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
-	Target  string
-	Options []grpc.DialOption
 	// CronjobDBStore CronjobStore
 	*CronjobDBStore
+	Target  string
+	Options []grpc.DialOption
 }
 
 type APICall (func() []byte)
@@ -396,7 +396,7 @@ func jobFailed(
 
 func (s *Sk8lServer) jobWithSidecarContainer(batchJob *batchv1.Job) bool {
 	for _, container := range batchJob.Spec.Template.Spec.InitContainers {
-		if container.RestartPolicy != nil && corev1.ContainerRestartPolicy(*container.RestartPolicy) == corev1.ContainerRestartPolicyAlways {
+		if container.RestartPolicy != nil && *container.RestartPolicy == corev1.ContainerRestartPolicyAlways {
 			return true
 		}
 	}

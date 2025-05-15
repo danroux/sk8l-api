@@ -87,11 +87,12 @@ func TestGetCronjobYAML(t *testing.T) {
 		grpc.WithContextDialer(bufDialer),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
-	defer conn.Close()
 
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
+
+	defer conn.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -109,6 +110,9 @@ func TestGetCronjobYAML(t *testing.T) {
 
 	clientSet := fake.NewClientset()
 	_, err = clientSet.BatchV1().CronJobs(cronjob1.Namespace).Create(context.Background(), cronjob1, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create CronJob %q in namespace %q: %v", cronjob1.Name, cronjob1.Namespace, err)
+	}
 
 	k8sClient := &K8sClient{
 		Interface: clientSet,
@@ -176,11 +180,12 @@ func TestGetCronjosbDB(t *testing.T) {
 		grpc.WithContextDialer(bufDialer),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
-	defer conn.Close()
 
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
+
+	defer conn.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -252,58 +257,6 @@ func TestGetCronjosbDB(t *testing.T) {
 	}
 }
 
-func TestCronJobsResponseWithPods(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
-	namespace := "default"
-	podOne := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod-1",
-			Namespace: namespace,
-		},
-	}
-	podTwo := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod-2",
-			Namespace: namespace,
-		},
-	}
-
-	clientSet := fake.NewClientset(podOne, podTwo)
-
-	configMapName := "pod-1"
-	_, err := clientSet.CoreV1().ConfigMaps(namespace).Create(context.Background(),
-		&corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: configMapName, Namespace: namespace},
-			Data:       map[string]string{"k0": "v0"},
-		}, metav1.CreateOptions{FieldManager: "test-manager-0"})
-
-	if err != nil {
-		t.Fatalf("Failed to create ConfigMap: %v", err)
-	}
-
-	expectedPods := []*corev1.Pod{}
-
-	pod, err := clientSet.CoreV1().Pods(namespace).Create(context.Background(), podOne, metav1.CreateOptions{})
-
-	expectedPods = append(expectedPods, pod)
-
-	pod, err = clientSet.CoreV1().Pods(namespace).Create(context.Background(), podTwo, metav1.CreateOptions{})
-
-	expectedPods = append(expectedPods, pod)
-
-	err = clientSet.CoreV1().Pods(namespace).EvictV1(context.Background(), &policyv1.Eviction{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: podTwo.Name,
-		},
-	})
-
-	pods, err := clientSet.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
-
-	cmp.Equal(expectedPods, pods.Items)
-}
-
 func TestGetCronjobsService(t *testing.T) {
 	db := setupBadger(t)
 
@@ -369,7 +322,8 @@ func TestGetCronjobsService(t *testing.T) {
 	sk8lServer.CronjobDBStore = store
 	sk8lServer.collectCronjobs()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	conn, err := grpc.NewClient(
@@ -377,14 +331,19 @@ func TestGetCronjobsService(t *testing.T) {
 		grpc.WithContextDialer(bufDialer),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
+
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
+
 	defer conn.Close()
 
 	client := protos.NewCronjobClient(conn)
-	ctx = context.Background()
-	cronJobs, err := clientSet.BatchV1().CronJobs("default").List(context.Background(), metav1.ListOptions{})
+	cronJobs, err := clientSet.BatchV1().CronJobs("default").List(ctx, metav1.ListOptions{})
+
+	if err != nil {
+		t.Errorf("failed to list CronJobs in namespace %q: %v", namespace, err)
+	}
 
 	if len(cronJobs.Items) < 1 {
 		t.Error("expected cronJobs to exist in the cluster")
@@ -393,7 +352,7 @@ func TestGetCronjobsService(t *testing.T) {
 	// jobs, err := clientSet.BatchV1().Jobs("default").List(ctx, metav1.ListOptions{})
 	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
 	if err != nil {
-		t.Fatalf("GetCronjobs RPC failed: %v", err)
+		t.Fatalf("GetCronjobs failed: %v", err)
 	}
 
 	cronJobsResponse := &protos.CronjobsResponse{}
@@ -434,7 +393,67 @@ func TestGetCronjobsService(t *testing.T) {
 		if cj.Jobs[1].WithSidecarContainers != false {
 			t.Error("April true", cj.Jobs[1].WithSidecarContainers)
 		}
+	}
+}
 
+func TestCronJobsResponseWithPods(t *testing.T) {
+	db := setupBadger(t)
+	defer db.Close()
+
+	namespace := "default"
+	podOne := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-1",
+			Namespace: namespace,
+		},
+	}
+	podTwo := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-2",
+			Namespace: namespace,
+		},
 	}
 
+	clientSet := fake.NewClientset()
+
+	configMapName := "pod-1"
+	_, err := clientSet.CoreV1().ConfigMaps(namespace).Create(context.Background(),
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: configMapName, Namespace: namespace},
+			Data:       map[string]string{"k0": "v0"},
+		}, metav1.CreateOptions{FieldManager: "test-manager-0"})
+
+	if err != nil {
+		t.Fatalf("Failed to create ConfigMap: %v", err)
+	}
+
+	expectedPods := []*corev1.Pod{}
+
+	pod, err := clientSet.CoreV1().Pods(namespace).Create(context.Background(), podOne, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create pod %q in namespace %q: %v", podOne.Name, namespace, err)
+	}
+	expectedPods = append(expectedPods, pod)
+
+	pod, err = clientSet.CoreV1().Pods(namespace).Create(context.Background(), podTwo, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create pod %q in namespace %q: %v", podTwo.Name, namespace, err)
+	}
+	expectedPods = append(expectedPods, pod)
+
+	err = clientSet.CoreV1().Pods(namespace).EvictV1(context.Background(), &policyv1.Eviction{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: podTwo.Name,
+		},
+	})
+	if err != nil {
+		t.Errorf("failed to evict pod %q in namespace %q: %v", podTwo.Name, namespace, err)
+	}
+
+	pods, err := clientSet.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Errorf("failed to list pods in namespace %q: %v", namespace, err)
+	}
+
+	cmp.Equal(expectedPods, pods.Items)
 }

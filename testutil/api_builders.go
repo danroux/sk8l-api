@@ -1,3 +1,4 @@
+// Package testutil provides utilities for building API test objects.
 package testutil
 
 import (
@@ -119,10 +120,10 @@ func (b *CronJobListBuilder) Build() *batchv1.CronJobList {
 
 // baseContainerBuilder holds common fields and methods.
 type baseContainerBuilder struct {
-	name          string
-	image         string
 	command       []string
 	restartPolicy corev1.ContainerRestartPolicy
+	name          string
+	image         string
 }
 
 func (b *baseContainerBuilder) WithName(name string) {
@@ -137,7 +138,7 @@ func (b *baseContainerBuilder) WithCommand(cmd ...string) {
 	b.command = cmd
 }
 
-// ContainerBuilder builds a corev1.Container with minimal setters.
+// ContainerBuilder builds a corev1.Container.
 type ContainerBuilder struct {
 	baseContainerBuilder
 }
@@ -182,7 +183,7 @@ func (b *ContainerBuilder) Build() corev1.Container {
 		Name:          b.name,
 		Image:         b.image,
 		Command:       b.command,
-		RestartPolicy: (*corev1.ContainerRestartPolicy)(&b.restartPolicy),
+		RestartPolicy: &b.restartPolicy,
 	}
 }
 
@@ -235,8 +236,6 @@ func (b *EphemeralContainerBuilder) Build() corev1.EphemeralContainer {
 	}
 }
 
-///
-
 type PodTemplateSpecBuilder struct {
 	podTemplateSpec corev1.PodTemplateSpec
 }
@@ -286,7 +285,6 @@ func NewPodTemplateSpecBuilder() *PodTemplateSpecBuilder {
 			},
 		},
 	}
-
 }
 
 func (b *PodTemplateSpecBuilder) Build() corev1.PodTemplateSpec {
@@ -329,18 +327,25 @@ func (b *PodTemplateSpecBuilder) WithVolumes(volumes []corev1.Volume) *PodTempla
 	return b
 }
 
-///
-
 type JobSpecBuilder struct {
 	jobSpec            batchv1.JobSpec
 	podTemplateBuilder *PodTemplateSpecBuilder
 }
 
-func NewJobSpecBuilder() *JobSpecBuilder {
-	parallelism := int32(1)
-	completions := int32(1)
-	backoffLimit := int32(6)
+const (
+	defaultParallelism          int32 = 1
+	defaultCompletions          int32 = 1
+	defaultBackoffLimit         int32 = 6
+	jobCompletionTimeoutSeconds       = 120
+)
 
+var (
+	parallelism  = defaultParallelism
+	completions  = defaultCompletions
+	backoffLimit = defaultBackoffLimit
+)
+
+func NewJobSpecBuilder() *JobSpecBuilder {
 	podTemsplateSpecBuilder := NewPodTemplateSpecBuilder()
 
 	return &JobSpecBuilder{
@@ -396,8 +401,6 @@ func (b *JobSpecBuilder) Build() batchv1.JobSpec {
 	return b.jobSpec
 }
 
-///
-
 // JobBuilder builds batchv1.Job objects for tests.
 type JobBuilder struct {
 	job batchv1.Job
@@ -413,7 +416,7 @@ func NewJobBuilder() *JobBuilder {
 	}
 
 	now := metav1.NewTime(time.Now())
-	completion := metav1.NewTime(now.Time.Add(120 * time.Second))
+	completion := metav1.NewTime(now.Time.Add(jobCompletionTimeoutSeconds * time.Second))
 	ready := int32(1)
 	jobCondition := batchv1.JobCondition{
 

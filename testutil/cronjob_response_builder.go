@@ -43,7 +43,7 @@ func (b *CronjobResponseBuilder) WithNamespace(ns string) *CronjobResponseBuilde
 	return b
 }
 
-func (b *CronjobResponseBuilder) WithUid(uid string) *CronjobResponseBuilder {
+func (b *CronjobResponseBuilder) WithUID(uid string) *CronjobResponseBuilder {
 	b.cronjob.Uid = uid
 	return b
 }
