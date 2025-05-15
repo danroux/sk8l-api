@@ -23,8 +23,9 @@ func NewCronJobBuilder() *CronJobBuilder {
 				APIVersion: "batch/v1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "default-cronjob",
-				Namespace: "default",
+				Name:              "default-cronjob",
+				Namespace:         "default",
+				CreationTimestamp: defaultTime,
 			},
 			Spec: batchv1.CronJobSpec{
 				Schedule:          "0 0 * * *",

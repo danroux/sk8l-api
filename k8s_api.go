@@ -81,13 +81,14 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 	cronJob, err := kc.BatchV1().CronJobs(cronjobNamespace).Get(ctx, cronjobName, metav1.GetOptions{})
 
 	if errors.IsNotFound(err) {
-		log.Printf("Cronjob not %s found in default namespace\n", cronjobName)
+		log.Printf("Cronjob %s not found in default namespace\n", cronjobName)
+		// return err
 	} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
-		log.Printf("Error getting cronjob %v\n", statusError.ErrStatus.Message)
+		log.Printf("Error getting CronJob %v\n", statusError.ErrStatus.Message)
 	} else if err != nil {
 		panic(err.Error())
 	} else {
-		log.Printf("Found %s cronjob in %s namespace\n", cronjobName, cronjobNamespace)
+		log.Printf("CronJob %s found in %s namespace\n", cronjobName, cronjobNamespace)
 	}
 
 	return cronJob

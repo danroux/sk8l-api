@@ -107,7 +107,8 @@ func (c *CronjobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batc
 		return cronjobValue
 	}
 
-	key := []byte(fmt.Sprintf(cronjobsKeyFmt, cronjobNamespace, cronjobName))
+	cacheKey := fmt.Sprintf(cronjobsKeyFmt, cronjobNamespace, cronjobName)
+	key := []byte(cacheKey)
 	cronjobValue, err := c.getAndStore(key, gCjCall)
 
 	if err != nil {

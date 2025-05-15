@@ -11,6 +11,7 @@ import (
 	"github.com/danroux/sk8l/protos"
 	"github.com/danroux/sk8l/testutil"
 	badger "github.com/dgraph-io/badger/v4"
+	gyaml "github.com/ghodss/yaml"
 	"github.com/google/go-cmp/cmp"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -77,35 +78,114 @@ func bufDialer(context.Context, string) (net.Conn, error) {
 	return lis.Dial()
 }
 
-// func TestGetCronjobYAML(t *testing.T) {
-//      ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-//      defer cancel()
+func TestGetCronjobYAML(t *testing.T) {
+	db := setupBadger(t)
+	defer db.Close()
 
-//      conn, err := grpc.NewClient(
-//              "passthrough:///bufnet",
-//              grpc.WithContextDialer(bufDialer),
-//              grpc.WithTransportCredentials(insecure.NewCredentials()),
-//      )
-//      if err != nil {
-//              t.Fatalf("Failed to create client: %v", err)
-//      }
-//      defer conn.Close()
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(bufDialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	defer conn.Close()
 
-//      client := protos.NewCronjobClient(conn)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
 
-//      resp, err := client.GetCronjobYAML(ctx, &protos.CronjobRequest{CronjobName: "test", CronjobNamespace: "sk8l"})
-//      if err != nil {
-//              t.Fatalf("GetCronjobYAML failed: %v", err)
-//      }
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-//      if resp.Cronjob == "" {
-//              t.Error("YamlContent is empty")
-//      }
-// }
+	client := protos.NewCronjobClient(conn)
+
+	cronjob1 := testutil.NewCronJobBuilder().
+		WithName("process-videos").
+		WithNamespace("sk8l").
+		Build()
+
+	cronjobList := testutil.NewCronJobListBuilder().
+		WithItems(cronjob1).
+		Build()
+
+	clientSet := fake.NewClientset()
+	_, err = clientSet.BatchV1().CronJobs(cronjob1.Namespace).Create(context.Background(), cronjob1, metav1.CreateOptions{})
+
+	k8sClient := &K8sClient{
+		Interface: clientSet,
+	}
+	store := &CronjobDBStore{
+		DB:        db,
+		K8sClient: k8sClient,
+	}
+	sk8lServer.CronjobDBStore = store
+	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
+
+	yamlResp, err := client.GetCronjobYAML(ctx, &protos.CronjobRequest{CronjobName: cronjob1.Name, CronjobNamespace: cronjob1.Namespace})
+	if err != nil {
+		t.Fatalf("GetCronjobYAML failed: %v", err)
+	}
+
+	if yamlResp.Cronjob == "" {
+		t.Error("CronjobYAMLResponse.Cronjob is empty")
+	}
+
+	cronJob := &batchv1.CronJob{}
+	if err := gyaml.Unmarshal([]byte(yamlResp.Cronjob), cronJob); err != nil {
+		t.Errorf("failed to gyaml.Unmarshal: %v", err)
+	}
+
+	if cronJob.Name != "process-videos" {
+		t.Errorf("expected cronJob.Name 'process-videos', got %q", cronJob.Name)
+	}
+	if cronJob.Namespace != "sk8l" {
+		t.Errorf("expected cronJob.Namespace 'sk8l', got %q", cronJob.Namespace)
+	}
+
+	containers := cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers
+	ephContainers := cronJob.Spec.JobTemplate.Spec.Template.Spec.EphemeralContainers
+	initContainers := cronJob.Spec.JobTemplate.Spec.Template.Spec.InitContainers
+
+	if len(containers) == 0 {
+		t.Fatalf("expected at least one container")
+	}
+	if containers[0].Name != "default-container" {
+		t.Errorf("expected Container.Name 'default-container', got %q", containers[0].Name)
+	}
+
+	if len(ephContainers) == 0 {
+		t.Fatalf("expected at least one EphemeralContainer")
+	}
+	if ephContainers[0].Name != "debugger" {
+		t.Errorf("expected EphemeralContainer.Name 'debugger', got %q", ephContainers[0].Name)
+	}
+
+	if len(initContainers) == 0 {
+		t.Fatalf("expected at least one InitContainer")
+	}
+	if initContainers[0].Name != "init-myservice" {
+		t.Errorf("expected InitContainer.Name 'init-myservice', got %q", initContainers[0].Name)
+	}
+}
 
 func TestGetCronjosbDB(t *testing.T) {
 	db := setupBadger(t)
 	defer db.Close()
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(bufDialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	defer conn.Close()
+
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client := protos.NewCronjobClient(conn)
 
 	cronjob1 := testutil.NewCronJobBuilder().
 		WithName("cronjob1").
@@ -132,21 +212,6 @@ func TestGetCronjosbDB(t *testing.T) {
 	}
 	sk8lServer.CronjobDBStore = store
 	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	defer conn.Close()
-
-	client := protos.NewCronjobClient(conn)
 
 	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
 	if err != nil {
@@ -187,23 +252,62 @@ func TestGetCronjosbDB(t *testing.T) {
 	}
 }
 
-func TestGetCronjobsService(t *testing.T) {
+func TestCronJobsResponseWithPods(t *testing.T) {
 	db := setupBadger(t)
-
 	defer db.Close()
 
+	namespace := "default"
 	podOne := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pod-1",
-			Namespace: "default",
+			Namespace: namespace,
 		},
 	}
 	podTwo := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pod-2",
-			Namespace: "default",
+			Namespace: namespace,
 		},
 	}
+
+	clientSet := fake.NewClientset(podOne, podTwo)
+
+	configMapName := "pod-1"
+	_, err := clientSet.CoreV1().ConfigMaps(namespace).Create(context.Background(),
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: configMapName, Namespace: namespace},
+			Data:       map[string]string{"k0": "v0"},
+		}, metav1.CreateOptions{FieldManager: "test-manager-0"})
+
+	if err != nil {
+		t.Fatalf("Failed to create ConfigMap: %v", err)
+	}
+
+	expectedPods := []*corev1.Pod{}
+
+	pod, err := clientSet.CoreV1().Pods(namespace).Create(context.Background(), podOne, metav1.CreateOptions{})
+
+	expectedPods = append(expectedPods, pod)
+
+	pod, err = clientSet.CoreV1().Pods(namespace).Create(context.Background(), podTwo, metav1.CreateOptions{})
+
+	expectedPods = append(expectedPods, pod)
+
+	err = clientSet.CoreV1().Pods(namespace).EvictV1(context.Background(), &policyv1.Eviction{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: podTwo.Name,
+		},
+	})
+
+	pods, err := clientSet.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
+
+	cmp.Equal(expectedPods, pods.Items)
+}
+
+func TestGetCronjobsService(t *testing.T) {
+	db := setupBadger(t)
+
+	defer db.Close()
 
 	podTemsplateSpec := testutil.NewPodTemplateSpecBuilder().
 		WithSidecarContainers().
@@ -242,7 +346,7 @@ func TestGetCronjobsService(t *testing.T) {
 	watcher := watch.NewFake()
 	go watcher.Add(cronjob)
 
-	clientSet := fake.NewClientset(podOne, podTwo, job, jobTwo, cronjob)
+	clientSet := fake.NewClientset(job, jobTwo, cronjob)
 
 	// watcher setup
 
@@ -252,34 +356,6 @@ func TestGetCronjobsService(t *testing.T) {
 	})
 	// clientSet.PrependWatchReactor("cronjobs", cgt.DefaultWatchReactor(watcher, nil))
 	// watcher setup
-
-	name := "pod-1"
-	namespace := "default"
-	_, err := clientSet.CoreV1().ConfigMaps("default").Create(context.Background(),
-		&corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-			Data:       map[string]string{"k0": "v0"},
-		}, metav1.CreateOptions{FieldManager: "test-manager-0"})
-
-	expectedPods := []*corev1.Pod{}
-
-	pod, err := clientSet.CoreV1().Pods("default").Create(context.Background(), podOne, metav1.CreateOptions{})
-
-	expectedPods = append(expectedPods, pod)
-
-	pod, err = clientSet.CoreV1().Pods("default").Create(context.Background(), podTwo, metav1.CreateOptions{})
-
-	expectedPods = append(expectedPods, pod)
-
-	err = clientSet.CoreV1().Pods("default").EvictV1(context.Background(), &policyv1.Eviction{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: podTwo.Name,
-		},
-	})
-
-	pods, err := clientSet.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
-
-	cmp.Equal(expectedPods, pods.Items)
 
 	k8sClient := &K8sClient{
 		namespace: "default",
@@ -315,7 +391,6 @@ func TestGetCronjobsService(t *testing.T) {
 	}
 
 	// jobs, err := clientSet.BatchV1().Jobs("default").List(ctx, metav1.ListOptions{})
-
 	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
 	if err != nil {
 		t.Fatalf("GetCronjobs RPC failed: %v", err)
@@ -346,6 +421,7 @@ func TestGetCronjobsService(t *testing.T) {
 	if len(cronJobsResponse.Cronjobs) != len(cronJobs.Items) {
 		t.Errorf("expected %d cronjobs, got %d", len(cronJobs.Items), len(cronJobsResponse.Cronjobs))
 	}
+
 	for i, cj := range cronJobsResponse.Cronjobs {
 		if cj.Name != cronJobs.Items[i].Name {
 			t.Errorf("expected cronjob name %q, got %q", cronJobs.Items[i].Name, cj.Name)
