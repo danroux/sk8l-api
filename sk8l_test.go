@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -32,8 +33,6 @@ import (
 
 const bufSize = 1 << 20
 
-var lis *bufconn.Listener
-
 func setupBadger(t *testing.T) *badger.DB {
 	dir := t.TempDir()
 	opts := badger.DefaultOptions(dir).WithLogger(nil)
@@ -58,10 +57,15 @@ func putCronjobsToBadger(t *testing.T, db *badger.DB, cronjobList *batchv1.CronJ
 		t.Fatalf("failed to write cronjobs to badger: %v", err)
 	}
 }
+func bufDialer(context.Context, string) (net.Conn, error) {
+	return lis.Dial()
+}
+
+var lis *bufconn.Listener
 
 var sk8lServer Sk8lServer
 
-func init() {
+func TestMain(m *testing.M) {
 	lis = bufconn.Listen(bufSize)
 	s := grpc.NewServer()
 
@@ -72,10 +76,12 @@ func init() {
 			log.Fatalf("Server exited with error: %v", err)
 		}
 	}()
-}
 
-func bufDialer(context.Context, string) (net.Conn, error) {
-	return lis.Dial()
+	c := m.Run()
+
+	s.GracefulStop() // s.Stop()
+	lis.Close()
+	os.Exit(c)
 }
 
 func TestGetCronjobYAML(t *testing.T) {

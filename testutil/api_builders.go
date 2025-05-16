@@ -9,6 +9,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	defaultParallelism          int32 = 1
+	defaultCompletions          int32 = 1
+	defaultBackoffLimit         int32 = 6
+	jobCompletionTimeoutSeconds       = 120
+)
+
+var (
+	parallelism  = defaultParallelism
+	completions  = defaultCompletions
+	backoffLimit = defaultBackoffLimit
+)
+
 type CronJobBuilder struct {
 	cronJob batchv1.CronJob
 }
@@ -120,10 +133,10 @@ func (b *CronJobListBuilder) Build() *batchv1.CronJobList {
 
 // baseContainerBuilder holds common fields and methods.
 type baseContainerBuilder struct {
-	command       []string
 	restartPolicy corev1.ContainerRestartPolicy
 	name          string
 	image         string
+	command       []string
 }
 
 func (b *baseContainerBuilder) WithName(name string) {
@@ -331,19 +344,6 @@ type JobSpecBuilder struct {
 	jobSpec            batchv1.JobSpec
 	podTemplateBuilder *PodTemplateSpecBuilder
 }
-
-const (
-	defaultParallelism          int32 = 1
-	defaultCompletions          int32 = 1
-	defaultBackoffLimit         int32 = 6
-	jobCompletionTimeoutSeconds       = 120
-)
-
-var (
-	parallelism  = defaultParallelism
-	completions  = defaultCompletions
-	backoffLimit = defaultBackoffLimit
-)
 
 func NewJobSpecBuilder() *JobSpecBuilder {
 	podTemsplateSpecBuilder := NewPodTemplateSpecBuilder()
