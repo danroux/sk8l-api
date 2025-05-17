@@ -33,6 +33,11 @@ import (
 
 const bufSize = 1 << 20
 
+var (
+	lis        = &bufconn.Listener{}
+	sk8lServer = &Sk8lServer{}
+)
+
 func setupBadger(t *testing.T) *badger.DB {
 	dir := t.TempDir()
 	opts := badger.DefaultOptions(dir).WithLogger(nil)
@@ -61,15 +66,11 @@ func bufDialer(context.Context, string) (net.Conn, error) {
 	return lis.Dial()
 }
 
-var lis *bufconn.Listener
-
-var sk8lServer Sk8lServer
-
 func TestMain(m *testing.M) {
 	lis = bufconn.Listen(bufSize)
 	s := grpc.NewServer()
 
-	protos.RegisterCronjobServer(s, &sk8lServer)
+	protos.RegisterCronjobServer(s, sk8lServer)
 
 	go func() {
 		if err := s.Serve(lis); err != nil {
