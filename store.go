@@ -12,17 +12,17 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 )
 
-type CronjobStore interface {
+type CronJobStore interface {
 	Sk8lK8sClientInterface
 }
 
-type CronjobDBStore struct {
+type CronJobDBStore struct {
 	// K8sClient *K8sClient
 	K8sClient Sk8lK8sClientInterface
 	*badger.DB
 }
 
-func (c *CronjobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
+func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
 	var valueResponse []byte
 	err := c.DB.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
@@ -56,7 +56,7 @@ func (c *CronjobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error
 	return nil, err
 }
 
-func (c *CronjobDBStore) get(key []byte) ([]byte, error) {
+func (c *CronJobDBStore) get(key []byte) ([]byte, error) {
 	var valueResponse []byte
 	err := c.DB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
@@ -77,7 +77,7 @@ func (c *CronjobDBStore) get(key []byte) ([]byte, error) {
 	return valueResponse, err
 }
 
-func (c *CronjobDBStore) findCronjobs() *batchv1.CronJobList {
+func (c *CronJobDBStore) findCronjobs() *batchv1.CronJobList {
 	cronjobs, err := c.get(cronjobsCacheKey)
 
 	if err != nil {
@@ -97,7 +97,7 @@ func (c *CronjobDBStore) findCronjobs() *batchv1.CronJobList {
 	return cronjobList
 }
 
-func (c *CronjobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
+func (c *CronJobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
 	gCjCall := func() []byte {
 		cronjobName := cronjobName
 		cronjobNamespace := cronjobNamespace
@@ -126,7 +126,7 @@ func (c *CronjobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batc
 	return cronjob
 }
 
-func (c *CronjobDBStore) findJobs() *batchv1.JobList {
+func (c *CronJobDBStore) findJobs() *batchv1.JobList {
 	jobs, err := c.get(jobsCacheKey)
 
 	if err != nil {

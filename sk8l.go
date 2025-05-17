@@ -51,8 +51,8 @@ var (
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
-	// CronjobDBStore CronjobStore
-	*CronjobDBStore
+	// CronJobDBStore CronJobStore
+	*CronJobDBStore
 	Target  string
 	Options []grpc.DialOption
 }

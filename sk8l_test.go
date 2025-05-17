@@ -124,11 +124,11 @@ func TestGetCronjobYAML(t *testing.T) {
 	k8sClient := &K8sClient{
 		Interface: clientSet,
 	}
-	store := &CronjobDBStore{
+	store := &CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronjobDBStore = store
+	sk8lServer.CronJobDBStore = store
 	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
 
 	yamlResp, err := client.GetCronjobYAML(ctx, &protos.CronjobRequest{CronjobName: cronjob1.Name, CronjobNamespace: cronjob1.Namespace})
@@ -218,11 +218,11 @@ func TestGetCronjosbDB(t *testing.T) {
 	k8sClient := &K8sClient{
 		Interface: clientSet,
 	}
-	store := &CronjobDBStore{
+	store := &CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronjobDBStore = store
+	sk8lServer.CronJobDBStore = store
 	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
 
 	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
@@ -321,12 +321,12 @@ func TestGetCronjobsService(t *testing.T) {
 		namespace: "default",
 		Interface: clientSet,
 	}
-	store := &CronjobDBStore{
+	store := &CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
 	}
 
-	sk8lServer.CronjobDBStore = store
+	sk8lServer.CronJobDBStore = store
 	sk8lServer.collectCronjobs()
 
 	ctx := context.Background()
