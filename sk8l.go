@@ -51,8 +51,8 @@ var (
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
-	K8sClient *K8sClient
-	*badger.DB
+	// CronJobDBStore CronJobStore
+	*CronJobDBStore
 	Target  string
 	Options []grpc.DialOption
 }
@@ -114,11 +114,19 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 			Cronjobs: cronjobs,
 		}
 
-		if err := stream.Send(y); err != nil {
+		select {
+		// https://grpc.io/docs/guides/cancellation/
+		// https://learn.microsoft.com/en-us/aspnet/core/grpc/performance?view=aspnetcore-9.0
+		case <-stream.Context().Done():
+			err := stream.Context().Err()
+			log.Printf("stream context done: client canceled or deadline exceeded: %v", err)
 			return err
+		default:
+			if err := stream.Send(y); err != nil {
+				return err
+			}
+			time.Sleep(refreshInterval)
 		}
-
-		time.Sleep(refreshInterval)
 	}
 }
 
@@ -128,8 +136,8 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 
 		jobsMapped := s.findJobsMapped()
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
-		cronjobPodsResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
-		if err := stream.Send(cronjobPodsResponse); err != nil {
+		cronJobResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
+		if err := stream.Send(cronJobResponse); err != nil {
 			return err
 		}
 
@@ -267,141 +275,6 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	return response, nil
 }
 
-func (s *Sk8lServer) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
-	var valueResponse []byte
-	err := s.DB.Update(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
-
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			err = s.DB.Update(func(txn *badger.Txn) error {
-				apiResult := apiCall()
-				entry := badger.NewEntry(key, apiResult).WithTTL(time.Second * badgerTTL)
-				err = txn.SetEntry(entry)
-				if err != nil {
-					log.Println("Error: getAndStore#txn.SetEntry", err)
-				}
-				valueResponse = append([]byte{}, apiResult...)
-				return err
-			})
-		} else {
-			err = item.Value(func(val []byte) error {
-				valueResponse = append([]byte{}, val...)
-
-				return nil
-			})
-		}
-
-		return err
-	})
-
-	if err == nil {
-		return valueResponse, nil
-	}
-
-	return nil, err
-}
-
-func (s *Sk8lServer) get(key []byte) ([]byte, error) {
-	var valueResponse []byte
-	err := s.DB.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
-
-		if err != nil {
-			return err
-		}
-
-		err = item.Value(func(val []byte) error {
-			valueResponse = append([]byte{}, val...)
-
-			return nil
-		})
-
-		return err
-	})
-
-	return valueResponse, err
-}
-
-func (s *Sk8lServer) findCronjobs() *batchv1.CronJobList {
-	cronjobs, err := s.get(cronjobsCacheKey)
-
-	if err != nil {
-		if !errors.Is(err, badger.ErrKeyNotFound) {
-			log.Println("Error: findCronjobs#s.get", err)
-		}
-	}
-
-	cronjobList := &batchv1.CronJobList{}
-	cronjobListV2 := protoadapt.MessageV2Of(cronjobList)
-
-	err = proto.Unmarshal(cronjobs, cronjobListV2)
-	if err != nil {
-		log.Println("Error: findCronjobs#proto.Unmarshal", err)
-	}
-
-	return cronjobList
-}
-
-func (s *Sk8lServer) findCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
-	gCjCall := func() []byte {
-		cronjobName := cronjobName
-		cronjobNamespace := cronjobNamespace
-		cronjob := s.K8sClient.GetCronjob(cronjobNamespace, cronjobName)
-		cronjobV2 := protoadapt.MessageV2Of(cronjob)
-		cronjobValue, _ := proto.Marshal(cronjobV2)
-		return cronjobValue
-	}
-
-	key := []byte(fmt.Sprintf(cronjobsKeyFmt, cronjobNamespace, cronjobName))
-	cronjobValue, err := s.getAndStore(key, gCjCall)
-
-	if err != nil {
-		log.Println("Error: findCronjob#s.getAndStore", err)
-	}
-
-	cronjob := &batchv1.CronJob{}
-	cronjobV2 := protoadapt.MessageV2Of(cronjob)
-	err = proto.Unmarshal(cronjobValue, cronjobV2)
-
-	if err != nil {
-		log.Println("Error: findCronjob#proton.Unmarshal", err)
-	}
-
-	return cronjob
-}
-
-func (s *Sk8lServer) findJobs() *batchv1.JobList {
-	jobs, err := s.get(jobsCacheKey)
-
-	if err != nil {
-		if !errors.Is(err, badger.ErrKeyNotFound) {
-			log.Println("Error: findCronjobs#s.get", err)
-		}
-	}
-
-	jobList := &batchv1.JobList{}
-	jobListV2 := protoadapt.MessageV2Of(jobList)
-
-	err = proto.Unmarshal(jobs, jobListV2)
-	if err != nil {
-		log.Println("Error: findJobs#proto.Unmarshal", err)
-	}
-
-	// filter out jobs that belong to cronjobs
-	jobTasks := make([]batchv1.Job, 0, len(jobList.Items))
-	for _, job := range jobList.Items {
-		if job.OwnerReferences == nil {
-			jobTasks = append(jobTasks, job)
-		}
-	}
-
-	jobTaskList := &batchv1.JobList{
-		Items: jobTasks,
-	}
-
-	return jobTaskList
-}
-
 func (s *Sk8lServer) findJobsMapped() *protos.MappedJobs {
 	jobsCall := func() []byte {
 		result := s.K8sClient.GetAllJobsMapped()
@@ -521,6 +394,16 @@ func jobFailed(
 	return jobFailed, failureCondition, jobConditions
 }
 
+func (s *Sk8lServer) jobWithSidecarContainer(batchJob *batchv1.Job) bool {
+	for _, container := range batchJob.Spec.Template.Spec.InitContainers {
+		if container.RestartPolicy != nil && *container.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse {
 	jobPodsForJob := s.findJobPodsForJob(batchJob)
 	jobPodsResponses := buildJobPodsResponses(jobPodsForJob)
@@ -536,6 +419,8 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 	for _, podResponse := range jobPodsResponses {
 		terminationReasons = append(terminationReasons, podResponse.TerminationReasons...)
 	}
+
+	jobWithSidecar := s.jobWithSidecarContainer(batchJob)
 
 	jobResponse := &protos.JobResponse{
 		Name:              batchJob.Name,
@@ -557,11 +442,12 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 			Succeeded:         &batchJob.Status.Succeeded,
 			Conditions:        jobConditions,
 		},
-		Succeeded:          jobSucceded(batchJob),
-		Failed:             jobFailed,
-		FailureCondition:   failureCondition,
-		Pods:               jobPodsResponses,
-		TerminationReasons: terminationReasons,
+		Succeeded:             jobSucceeded(batchJob),
+		Failed:                jobFailed,
+		FailureCondition:      failureCondition,
+		Pods:                  jobPodsResponses,
+		TerminationReasons:    terminationReasons,
+		WithSidecarContainers: jobWithSidecar,
 	}
 
 	return jobResponse
@@ -1030,7 +916,7 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 			finishedAt = containerFinishedAtTimes[len(containerFinishedAtTimes)-1]
 		}
 
-		jobResponse := &protos.PodResponse{
+		podResponse := &protos.PodResponse{
 			Metadata:             &pod.ObjectMeta,
 			Spec:                 &pod.Spec,
 			Status:               &pod.Status,
@@ -1041,13 +927,13 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 			TerminationReasons:   failedContainers.TerminationReasons,
 			FinishedAt:           finishedAt,
 		}
-		jobPodsResponses = append(jobPodsResponses, jobResponse)
+		jobPodsResponses = append(jobPodsResponses, podResponse)
 	}
 
 	return jobPodsResponses
 }
 
-func jobSucceded(job *batchv1.Job) bool {
+func jobSucceeded(job *batchv1.Job) bool {
 	// The completion time is only set when the job finishes successfully.
 	return job.Status.CompletionTime != nil
 }

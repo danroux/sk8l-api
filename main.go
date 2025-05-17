@@ -71,10 +71,14 @@ func main() {
 
 	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
 
-	sk8lServer := &Sk8lServer{
+	cronjobDBStore := &CronJobDBStore{
 		K8sClient: k8sClient,
 		DB:        db,
-		Target:    target,
+	}
+
+	sk8lServer := &Sk8lServer{
+		Target:         target,
+		CronJobDBStore: cronjobDBStore,
 		Options: []grpc.DialOption{
 			grpc.WithTransportCredentials(serverCreds),
 		},
