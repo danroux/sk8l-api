@@ -12,7 +12,6 @@ import (
 	"github.com/danroux/sk8l/protos"
 	"github.com/danroux/sk8l/testutil"
 	badger "github.com/dgraph-io/badger/v4"
-	gyaml "github.com/ghodss/yaml"
 	"github.com/google/go-cmp/cmp"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -21,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/fake"
 	cgt "k8s.io/client-go/testing"
+	gyaml "sigs.k8s.io/yaml"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

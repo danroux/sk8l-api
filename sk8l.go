@@ -17,10 +17,10 @@ import (
 
 	"github.com/danroux/sk8l/protos"
 	badger "github.com/dgraph-io/badger/v4"
-	gyaml "github.com/ghodss/yaml"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
+	gyaml "sigs.k8s.io/yaml"
 
 	// structpb "google.golang.org/protobuf/types/known/structpb".
 	"google.golang.org/grpc"
