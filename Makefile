@@ -40,7 +40,7 @@ chart-version:
 	@echo $(CHART_VERSION)
 
 chart-version-wo:
-	@echo $(CHART_VERSION_WITHOUT)
+	@echo $(if $(strip $(GITHUB_CHART_VERSION)),$(GITHUB_CHART_VERSION),$(CHART_VERSION_WITHOUT))
 
 
 .PHONY: package-app-ci
@@ -94,6 +94,11 @@ api-smoke-tests: # api-smoke-tests
 GITHUB_PR_IMAGE_TAG ?=''
 update-config-files: # update-config-files
 	./ci/update_config_files.sh $(GITHUB_PR_IMAGE_TAG)
+
+
+helm-push:
+	helm push charts/repo/sk8l-$(shell make chart-version-wo).tgz oci://ghcr.io/danroux/sk8l
+
 
 
 
