@@ -1,24 +1,68 @@
-name: update-helm-charts-index
+name: helm-chart
 on:
   workflow_dispatch:
+    inputs:
+      chart_version:
+        description: 'Chart version number'
+        required: true
+        default: '-alpha'
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
-  update-helm-charts-index:
+  release-chart:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_CHART_VERSION: ${{ github.event.pull_request.number || github.event.inputs.chart_version || '' }}
     steps:
+      - name: Install Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: 'v3.13.3'
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: verify Chart version matches tag version
-        run: |-
-          export TAG=${{ github.ref_name }}
-          git_tag="${TAG#v}"
-          chart_tag=$(yq -r '.version' charts/sk8l/Chart.yaml)
-          if [ "${git_tag}" != "${chart_tag}" ]; then
-            echo "chart version (${chart_tag}) did not match git version (${git_tag})"
-            exit 1
-          fi
+        with:
+          fetch-depth: 1
+      - name: Login to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: package-app
+        run: |
+          set -e
+          IMAGE_TAG=$(make chart-version-wo)
+          echo "IMAGE_TAG=$IMAGE_TAG"
+          helm package --version "$IMAGE_TAG" charts/sk8l
+          mkdir -p charts/repo
+          mv sk8l*tgz charts/repo
+          helm repo index charts/repo --url https://sk8l.io/charts
+      - name: Push Helm chart
+        run: |
+          IMAGE_TAG=$(make chart-version-wo)
+          file charts/repo/sk8l-$IMAGE_TAG.tgz
+          make helm-push
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: charts-repo
+          path: charts/repo
+          retention-days: 1
+  # update-helm-charts-index:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #     - name: verify Chart version matches tag version
+  #       run: |-
+  #         export TAG=${{ github.ref_name }}
+  #         git_tag="${TAG#v}"
+  #         chart_tag=$(yq -r '.version' charts/sk8l/Chart.yaml)
+  #         if [ "${git_tag}" != "${chart_tag}" ]; then
+  #           echo "chart version (${chart_tag}) did not match git version (${git_tag})"
+  #           exit 1
+  #         fi
+  #     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+  #       with:
+  #         name: charts-repo
+  #         path: charts/repo
+  #         retention-days: 1
