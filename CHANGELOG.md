@@ -1,3 +1,16 @@
+## v0.17.0 (May 19, 2025)
+
+ENHANCEMENTS:
+
+* api: Add JobResponse.WithSidecarContainers [[GH-191](https://github.com/danroux/sk8l-api/issues/191)]
+* ci/dependabot: docker:(deps): bump golang from 1.24.2 to 1.24.3 [[GH-193](https://github.com/danroux/sk8l-api/issues/193)]
+* ci/dependabot: gha:(deps): bump docker/build-push-action from 6.15.0 to 6.16.0 [[GH-189](https://github.com/danroux/sk8l-api/issues/189)]
+
+IMPROVEMENTS:
+
+* gha/chart: Automate helm chart release with GHA [[GH-192](https://github.com/danroux/sk8l-api/issues/192)]
+* go/deps: Replace github.com/ghodss/yaml with sigs.k8s.io/yaml [[GH-196](https://github.com/danroux/sk8l-api/issues/196)]
+
 ## v0.16.0 (April 24, 2025)
 
 ENHANCEMENTS:
