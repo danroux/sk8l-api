@@ -32,36 +32,36 @@ annotations:
   artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: api: Add JobResponse.WithSidecarContainers
+      description: "api: Add JobResponse.WithSidecarContainers"
     - kind: changed
-      description: ci/dependabot: docker:(deps): bump golang from 1.24.2 to 1.24.3
+      description: "ci/dependabot: docker:(deps): bump golang from 1.24.2 to 1.24.3"
     - kind: changed
-      description: ci/dependabot: gha:(deps): bump docker/build-push-action from 6.15.0 to 6.16.0
+      description: "ci/dependabot: gha:(deps): bump docker/build-push-action from 6.15.0 to 6.16.0"
     - kind: changed
-      description: gha/chart: Automate helm chart release with GHA
+      description: "gha/chart: Automate helm chart release with GHA"
     - kind: changed
-      description: go/deps: Replace github.com/ghodss/yaml with sigs.k8s.io/yaml
+      description: "go/deps: Replace github.com/ghodss/yaml with sigs.k8s.io/yaml"
     - kind: changed
-      description: ci/dependabot: docker:(deps): bump cypress/included from 14.3.0 to 14.3.1
+      description: "ci/dependabot: docker:(deps): bump cypress/included from 14.3.0 to 14.3.1"
     - kind: changed
-      description: ci/dependabot: docker:(deps): bump cypress/included from 14.3.1 to 14.3.2
+      description: "ci/dependabot: docker:(deps): bump cypress/included from 14.3.1 to 14.3.2"
     - kind: changed
-      description: ci/dependabot: gha:(deps): bump engineerd/setup-kind from 0.5.0 to 0.6.2
+      description: "ci/dependabot: gha:(deps): bump engineerd/setup-kind from 0.5.0 to 0.6.2"
     - kind: changed
-      description: ci/dependabot: npm:(deps): bump @primer/octicons from 19.10.0 to 19.15.1
+      description: "ci/dependabot: npm:(deps): bump @primer/octicons from 19.10.0 to 19.15.1"
     - kind: changed
-      description: ci/dependabot: npm:(deps): bump rollup from 4.39.0 to 4.40.0
+      description: "ci/dependabot: npm:(deps): bump rollup from 4.39.0 to 4.40.0"
     - kind: changed
-      description: ci/dependabot: npm:(deps-dev): bump eslint from 9.24.0 to 9.25.0
+      description: "ci/dependabot: npm:(deps-dev): bump eslint from 9.24.0 to 9.25.0"
     - kind: changed
-      description: ci/dependabot: npm:(deps-dev): bump eslint from 9.25.0 to 9.25.1
+      description: "ci/dependabot: npm:(deps-dev): bump eslint from 9.25.0 to 9.25.1"
     - kind: changed
-      description: ci/dependabot: npm:(deps-dev): bump eslint from 9.25.1 to 9.26.0
+      description: "ci/dependabot: npm:(deps-dev): bump eslint from 9.25.1 to 9.26.0"
     - kind: changed
-      description: ci/dependabot: npm:(deps-dev): bump vite from 6.2.6 to 6.3.0
+      description: "ci/dependabot: npm:(deps-dev): bump vite from 6.2.6 to 6.3.0"
     - kind: changed
-      description: ci/k8s: Increase kind version, update supported versions and test against them.
+      description: "ci/k8s: Increase kind version, update supported versions and test against them."
     - kind: changed
-      description: js/vue.js: Improve status display for jobs with sidecars containers && setup vitest
+      description: "js/vue.js: Improve status display for jobs with sidecars containers && setup vitest"
     - kind: changed
-      description: js: Fix typo in DashboardAnnotationsModal#getDashboardAnnotations
+      description: "js: Fix typo in DashboardAnnotationsModal#getDashboardAnnotations"
