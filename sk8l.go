@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
+	"google.golang.org/protobuf/runtime/protoiface"
 	gyaml "sigs.k8s.io/yaml"
 
 	// structpb "google.golang.org/protobuf/types/known/structpb".
@@ -488,21 +489,8 @@ func (s *Sk8lServer) collectCronjobs() {
 							Items: []batchv1.CronJob{*eventCronjob},
 						}
 
-						cjListV2 := protoadapt.MessageV2Of(cjList)
-						result, err := proto.Marshal(cjListV2)
-
-						if err != nil {
-							log.Println("Error: collectCronjobs#proto.Marshal", err)
-							return fmt.Errorf("sk8l#collectCronjobs: proto.Marshal() failed: %w", err)
-						}
-
-						entry := badger.NewEntry(cronjobsCacheKey, result)
-						err = txn.SetEntry(entry)
-						if err != nil {
-							log.Println("Error: collectCronjobs#txn.SetEntry", err)
-							return fmt.Errorf("sk8l#collectCronjobs: txn.SetEntry() failed: %w", err)
-						}
-						return nil
+						mashErr := marshalAndStore(txn, cronjobsCacheKey, cjList, "sk8l#collectCronjobs")
+						return mashErr
 					}
 
 					err = item.Value(func(stored []byte) error {
@@ -582,20 +570,8 @@ func (s *Sk8lServer) collectJobs() {
 							Items: []batchv1.Job{*eventJob},
 						}
 
-						jListV2 := protoadapt.MessageV2Of(jList)
-						result, err := proto.Marshal(jListV2)
-						if err != nil {
-							log.Println("Error: collectJobs#proto.Marshal", err)
-							return fmt.Errorf("sk8l#collectJobs: proto.Marshal() failed: %w", err)
-						}
-
-						entry := badger.NewEntry(jobsCacheKey, result)
-						err = txn.SetEntry(entry)
-						if err != nil {
-							log.Println("Error: collectJobs#txn.SetEntry", err)
-							return fmt.Errorf("sk8l#collectJobs: txn.SetEntry() failed: %w", err)
-						}
-						return nil
+						mashErr := marshalAndStore(txn, jobsCacheKey, jList, "sk8l#collectJobs")
+						return mashErr
 					}
 
 					err = item.Value(func(stored []byte) error {
@@ -677,20 +653,8 @@ func (s *Sk8lServer) collectPods() {
 							Items: []corev1.Pod{*eventPod},
 						}
 
-						podListV2 := protoadapt.MessageV2Of(podList)
-						result, err := proto.Marshal(podListV2)
-						if err != nil {
-							log.Println("Error: collectPods#proto.Marshal", err)
-							return fmt.Errorf("sk8l#collectPods: proto.Marshal() failed: %w", err)
-						}
-
-						entry := badger.NewEntry(key, result)
-						err = txn.SetEntry(entry)
-						if err != nil {
-							log.Println("Error: collectPods#txn.SetEntry", err)
-							return fmt.Errorf("sk8l#collectPods: txn.SetEntry() failed: %w", err)
-						}
-						return nil
+						mashErr := marshalAndStore(txn, key, podList, "sk8l#collectPods")
+						return mashErr
 					}
 
 					err = item.Value(func(val []byte) error {
@@ -734,6 +698,22 @@ func (s *Sk8lServer) collectPods() {
 			}
 		}
 	}()
+}
+
+func marshalAndStore(txn *badger.Txn, key []byte, msg protoiface.MessageV1, errContext string) error {
+	msgV2 := protoadapt.MessageV2Of(msg)
+	result, err := proto.Marshal(msgV2)
+	if err != nil {
+		log.Printf("Error: %s#proto.Marshal: %v", errContext, err)
+		return fmt.Errorf("%s: proto.Marshal() failed: %w", errContext, err)
+	}
+
+	entry := badger.NewEntry(key, result)
+	if err := txn.SetEntry(entry); err != nil {
+		log.Printf("Error: %s#txn.SetEntry: %v", errContext, err)
+		return fmt.Errorf("%s: txn.SetEntry() failed: %w", errContext, err)
+	}
+	return nil
 }
 
 func (s *Sk8lServer) allAndRunningJobsAnPods(

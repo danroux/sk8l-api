@@ -52,7 +52,6 @@ func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error
 		}
 
 		return nil
-
 	})
 
 	if err != nil {
