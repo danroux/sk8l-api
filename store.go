@@ -24,57 +24,76 @@ type CronJobDBStore struct {
 
 func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
 	var valueResponse []byte
+
 	err := c.DB.Update(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
+		current, err := txn.Get(key)
 
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			err = c.DB.Update(func(txn *badger.Txn) error {
+			// Key not found: fetch from API and store
+			storeErr := c.DB.Update(func(txn *badger.Txn) error {
 				apiResult := apiCall()
 				entry := badger.NewEntry(key, apiResult).WithTTL(time.Second * badgerTTL)
-				err = txn.SetEntry(entry)
-				if err != nil {
-					log.Println("Error: getAndStore#txn.SetEntry", err)
+				setErr := txn.SetEntry(entry)
+				if setErr != nil {
+					log.Println("Error: getAndStore#txn.SetEntry", setErr)
+					return fmt.Errorf("sk8l#getAndStore: txn.SetEntry() failed: %w", setErr)
 				}
 				valueResponse = append([]byte{}, apiResult...)
-				return err
-			})
-		} else {
-			err = item.Value(func(val []byte) error {
-				valueResponse = append([]byte{}, val...)
-
 				return nil
 			})
+			return fmt.Errorf("sk8l#getAndStore: DB.Update() failed: %w", storeErr)
+		} else if err != nil {
+			return fmt.Errorf("sk8l#getAndStore: txn.Get() failed: %w", err)
 		}
 
-		return err
+		valErr := current.Value(func(val []byte) error {
+			valueResponse = append([]byte{}, val...)
+			return nil
+		})
+
+		if valErr != nil {
+			log.Println("Error: getAndStore#current.Value", valErr)
+			return fmt.Errorf("sk8l#getAndStore: current.Value() failed: %w", valErr)
+		}
+
+		return nil
 	})
 
-	if err == nil {
-		return valueResponse, nil
+	if err != nil {
+		return nil, fmt.Errorf("sk8l#getAndStore: DB.Update() failed: %w", err)
 	}
 
-	return nil, err
+	return valueResponse, nil
 }
 
 func (c *CronJobDBStore) get(key []byte) ([]byte, error) {
 	var valueResponse []byte
 	err := c.DB.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
+		current, err := txn.Get(key)
 
 		if err != nil {
-			return err
+			return fmt.Errorf("sk8l#get: txn.Get() failed: %w", err)
 		}
 
-		err = item.Value(func(val []byte) error {
+		err = current.Value(func(val []byte) error {
 			valueResponse = append([]byte{}, val...)
 
 			return nil
 		})
 
-		return err
+		if err != nil {
+			log.Println("Error: get#current.Value", err)
+			return fmt.Errorf("sk8l#get: current.Value() failed: %w", err)
+		}
+
+		return nil
 	})
 
-	return valueResponse, err
+	if err != nil {
+		return nil, fmt.Errorf("sk8l#get: DB.Update() failed: %w", err)
+	}
+
+	return valueResponse, nil
 }
 
 func (c *CronJobDBStore) findCronjobs() *batchv1.CronJobList {

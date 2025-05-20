@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
 )
 
 //go:embed annotations.tmpl
@@ -72,7 +73,7 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 
 	if err := stream.Send(response); err != nil {
 		log.Println("Error: Watch#stream.Send", err)
-		return err
+		return fmt.Errorf("sk8l#Watch: stream.Send failed: %w", err)
 	}
 
 	return nil
@@ -120,10 +121,10 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		case <-stream.Context().Done():
 			err := stream.Context().Err()
 			log.Printf("stream context done: client canceled or deadline exceeded: %v", err)
-			return err
+			return fmt.Errorf("sk8l#GetCronjobs: stream.Context().Done(): %w", err)
 		default:
 			if err := stream.Send(y); err != nil {
-				return err
+				return fmt.Errorf("sk8l#GetCronjobs: stream.Send() failed: %w", err)
 			}
 			time.Sleep(refreshInterval)
 		}
@@ -138,7 +139,7 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
 		cronJobResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
 		if err := stream.Send(cronJobResponse); err != nil {
-			return err
+			return fmt.Errorf("sk8l#GetCronjob: stream.Send() failed: %w", err)
 		}
 
 		time.Sleep(refreshInterval)
@@ -172,7 +173,7 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 		}
 
 		if err := stream.Send(cronjobPodsResponse); err != nil {
-			return err
+			return fmt.Errorf("sk8l#GetCronjobPods: stream.Send() failed: %w", err)
 		}
 
 		time.Sleep(refreshInterval)
@@ -196,7 +197,7 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 		}
 
 		if err := stream.Send(y); err != nil {
-			return err
+			return fmt.Errorf("sk8l#GetJobs: stream.Send() failed: %w", err)
 		}
 
 		time.Sleep(refreshInterval)
@@ -208,7 +209,11 @@ func (s *Sk8lServer) GetCronjobYAML(
 	in *protos.CronjobRequest,
 ) (*protos.CronjobYAMLResponse, error) {
 	cronjob := s.K8sClient.GetCronjob(in.CronjobNamespace, in.CronjobName)
-	prettyJSON, _ := json.MarshalIndent(cronjob, "", "  ")
+	prettyJSON, err := json.MarshalIndent(cronjob, "", "  ")
+
+	if err != nil {
+		log.Println("sk8l#GetCronjobYAML: json.MarshalIndent() failed: %w", err)
+	}
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
 
@@ -221,7 +226,11 @@ func (s *Sk8lServer) GetCronjobYAML(
 
 func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*protos.JobYAMLResponse, error) {
 	job := s.K8sClient.GetJob(in.JobNamespace, in.JobName)
-	prettyJSON, _ := json.MarshalIndent(job, "", "  ")
+	prettyJSON, err := json.MarshalIndent(job, "", "  ")
+
+	if err != nil {
+		log.Println("sk8l#GetJobYAML: json.MarshalIndent() failed: %w", err)
+	}
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
 
@@ -234,7 +243,11 @@ func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*pr
 
 func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*protos.PodYAMLResponse, error) {
 	pod := s.K8sClient.GetPod(in.PodNamespace, in.PodName)
-	prettyJSON, _ := json.MarshalIndent(pod, "", "  ")
+	prettyJSON, err := json.MarshalIndent(pod, "", "  ")
+
+	if err != nil {
+		log.Println("sk8l#GetPodYAML: json.MarshalIndent() failed: %w", err)
+	}
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
 
@@ -310,6 +323,8 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return nil
+		} else if err != nil {
+			return fmt.Errorf("sk8l#findJobPodsForJob: txn.Get() failed: %w", err)
 		}
 
 		err = current.Value(func(val []byte) error {
@@ -317,7 +332,7 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 
 			if err != nil {
 				log.Println("findJobPodsForJob#proto.Unmarshal", err)
-				return err
+				return fmt.Errorf("sk8l#findJobPodsForJob: proto.Unmarshal() failed: %w", err)
 			}
 
 			return nil
@@ -325,7 +340,7 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 
 		if err != nil {
 			log.Println("Error: findJobPodsForJob#current.Value", err)
-			return err
+			return fmt.Errorf("sk8l#findJobPodsForJob: current.Value() failed: %w", err)
 		}
 
 		return nil
@@ -474,14 +489,20 @@ func (s *Sk8lServer) collectCronjobs() {
 						}
 
 						cjListV2 := protoadapt.MessageV2Of(cjList)
-						result, _ := proto.Marshal(cjListV2)
+						result, err := proto.Marshal(cjListV2)
+
+						if err != nil {
+							log.Println("Error: collectCronjobs#proto.Marshal", err)
+							return fmt.Errorf("sk8l#collectCronjobs: proto.Marshal() failed: %w", err)
+						}
 
 						entry := badger.NewEntry(cronjobsCacheKey, result)
 						err = txn.SetEntry(entry)
 						if err != nil {
 							log.Println("Error: collectCronjobs#txn.SetEntry", err)
+							return fmt.Errorf("sk8l#collectCronjobs: txn.SetEntry() failed: %w", err)
 						}
-						return err
+						return nil
 					}
 
 					err = item.Value(func(stored []byte) error {
@@ -492,33 +513,38 @@ func (s *Sk8lServer) collectCronjobs() {
 
 						if err != nil {
 							log.Println("Error: collectCronjobs#proto.Unmarshal", err)
+							return fmt.Errorf("sk8l#collectCronjobs: proto.Unmarshal() failed: %w", err)
 						}
 
 						switch event.Type {
-						case "ADDED":
+						case watch.Added:
 							updateStoredCronjobList(storedCjList, eventCronjob)
 							storedCjList.Items = append(storedCjList.Items, *eventCronjob)
-						case "MODIFIED":
+						case watch.Modified:
 							updateStoredCronjobList(storedCjList, eventCronjob)
 							storedCjList.Items = append(storedCjList.Items, *eventCronjob)
-						case "DELETED":
+						case watch.Deleted:
 							updateStoredCronjobList(storedCjList, eventCronjob)
+						case watch.Bookmark, watch.Error:
+							// no-op: explicitly ignored
 						}
 
 						result, err := proto.Marshal(storedCjListV2)
 						if err != nil {
 							log.Println("Error: collectCronjobs#proto.Marshal", err)
+							return fmt.Errorf("sk8l#collectCronjobs: proto.Marshal() failed: %w", err)
 						}
 
 						entry := badger.NewEntry(cronjobsCacheKey, result)
 						err = txn.SetEntry(entry)
 						if err != nil {
 							log.Println("Error: collectCronjobs#txn.SetEntry", err)
+							return fmt.Errorf("sk8l#collectCronjobs: txn.SetEntry() failed: %w", err)
 						}
-						return err
+						return nil
 					})
 
-					return err
+					return fmt.Errorf("sk8l#collectCronjobs: item.Value() failed: %w", err)
 				})
 
 				if err != nil {
@@ -553,14 +579,19 @@ func (s *Sk8lServer) collectJobs() {
 						}
 
 						jListV2 := protoadapt.MessageV2Of(jList)
-						result, _ := proto.Marshal(jListV2)
+						result, err := proto.Marshal(jListV2)
+						if err != nil {
+							log.Println("Error: collectJobs#proto.Marshal", err)
+							return fmt.Errorf("sk8l#collectJobs: proto.Marshal() failed: %w", err)
+						}
 
 						entry := badger.NewEntry(jobsCacheKey, result)
 						err = txn.SetEntry(entry)
 						if err != nil {
 							log.Println("Error: collectJobs#txn.SetEntry", err)
+							return fmt.Errorf("sk8l#collectJobs: txn.SetEntry() failed: %w", err)
 						}
-						return err
+						return nil
 					}
 
 					err = item.Value(func(stored []byte) error {
@@ -571,33 +602,38 @@ func (s *Sk8lServer) collectJobs() {
 
 						if err != nil {
 							log.Println("Error: collectJobs#proto.Unmarshal", err)
+							return fmt.Errorf("sk8l#collectJobs: proto.Unmarshal() failed: %w", err)
 						}
 
 						switch event.Type {
-						case "ADDED":
+						case watch.Added:
 							updateStoredJobList(storedJList, eventJob)
 							storedJList.Items = append(storedJList.Items, *eventJob)
-						case "MODIFIED":
+						case watch.Modified:
 							updateStoredJobList(storedJList, eventJob)
 							storedJList.Items = append(storedJList.Items, *eventJob)
-						case "DELETED":
+						case watch.Deleted:
 							updateStoredJobList(storedJList, eventJob)
+						case watch.Bookmark, watch.Error:
+							// no-op: explicitly ignored
 						}
 
 						result, err := proto.Marshal(storedJListV2)
 						if err != nil {
 							log.Println("Error: collectJobs#proto.Marshal", err)
+							return fmt.Errorf("sk8l#collectJobs: proto.Marshal() failed: %w", err)
 						}
 
 						entry := badger.NewEntry(jobsCacheKey, result)
 						err = txn.SetEntry(entry)
 						if err != nil {
 							log.Println("Error: collectJobs#txn.SetEntry", err)
+							return fmt.Errorf("sk8l#collectJobs: txn.SetEntry() failed: %w", err)
 						}
-						return err
+						return nil
 					})
 
-					return err
+					return fmt.Errorf("sk8l#collectJobs: item.Value() failed: %w", err)
 				})
 
 				if err != nil {
@@ -638,11 +674,12 @@ func (s *Sk8lServer) collectPods() {
 
 						if err != nil {
 							log.Println("Error: collectPods#proto.Marshal", err)
+							return fmt.Errorf("sk8l#collectPods: proto.Marshal() failed: %w", err)
 						}
 
 						entry := badger.NewEntry(key, result)
 						err = txn.SetEntry(entry)
-						return err
+						return fmt.Errorf("sk8l#collectPods: txn.SetEntry() failed: %w", err)
 					}
 
 					err = item.Value(func(val []byte) error {
@@ -664,12 +701,13 @@ func (s *Sk8lServer) collectPods() {
 						entry := badger.NewEntry(key, result)
 						err = txn.SetEntry(entry)
 						if err != nil {
-							log.Println("Error: collectCronjobs#txn.SetEntry", err)
+							log.Println("Error: collectPods#txn.SetEntry", err)
+							return fmt.Errorf("sk8l#collectPods: txn.SetEntry() failed: %w", err)
 						}
-						return err
+						return nil
 					})
 
-					return err
+					return fmt.Errorf("sk8l#collectPods: item.Value() failed: %w", err)
 				})
 
 				if err != nil {
@@ -1076,8 +1114,8 @@ func toDuration(job *batchv1.Job, jobFailed bool, failureCondition *batchv1.JobC
 		return d
 	}
 
-	switch {
-	case status.CompletionTime == nil:
+	switch status.CompletionTime {
+	case nil:
 		d = time.Since(status.StartTime.Time)
 	default:
 		d = status.CompletionTime.Sub(status.StartTime.Time)

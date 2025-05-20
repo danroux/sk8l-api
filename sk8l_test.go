@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -63,7 +65,11 @@ func putCronjobsToBadger(t *testing.T, db *badger.DB, cronjobList *batchv1.CronJ
 	}
 }
 func bufDialer(context.Context, string) (net.Conn, error) {
-	return lis.Dial()
+	conn, err := lis.Dial()
+	if err != nil {
+		return nil, fmt.Errorf("bufDialer: failed to lis.Dial: %w", err)
+	}
+	return conn, nil
 }
 
 func TestMain(m *testing.M) {
@@ -236,7 +242,7 @@ func TestGetCronjosbDB(t *testing.T) {
 
 	for {
 		cj, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -366,7 +372,7 @@ func TestGetCronjobsService(t *testing.T) {
 
 	for {
 		cronJobsResponse, err = stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -394,11 +400,11 @@ func TestGetCronjobsService(t *testing.T) {
 		}
 
 		if cj.Jobs[0].WithSidecarContainers != true {
-			t.Error("April true", cj.Jobs[0].WithSidecarContainers)
+			t.Error("expected WithSidecarContainers to be false", cj.Jobs[0].WithSidecarContainers)
 		}
 
 		if cj.Jobs[1].WithSidecarContainers != false {
-			t.Error("April true", cj.Jobs[1].WithSidecarContainers)
+			t.Error("expected WithSidecarContainers to be true", cj.Jobs[1].WithSidecarContainers)
 		}
 	}
 }
