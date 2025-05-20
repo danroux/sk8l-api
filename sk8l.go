@@ -544,7 +544,11 @@ func (s *Sk8lServer) collectCronjobs() {
 						return nil
 					})
 
-					return fmt.Errorf("sk8l#collectCronjobs: item.Value() failed: %w", err)
+					if err != nil {
+						return fmt.Errorf("sk8l#collectCronjobs: item.Value() failed: %w", err)
+					}
+
+					return nil
 				})
 
 				if err != nil {
@@ -633,7 +637,11 @@ func (s *Sk8lServer) collectJobs() {
 						return nil
 					})
 
-					return fmt.Errorf("sk8l#collectJobs: item.Value() failed: %w", err)
+					if err != nil {
+						return fmt.Errorf("sk8l#collectJobs: item.Value() failed: %w", err)
+					}
+
+					return nil
 				})
 
 				if err != nil {
@@ -671,7 +679,6 @@ func (s *Sk8lServer) collectPods() {
 
 						podListV2 := protoadapt.MessageV2Of(podList)
 						result, err := proto.Marshal(podListV2)
-
 						if err != nil {
 							log.Println("Error: collectPods#proto.Marshal", err)
 							return fmt.Errorf("sk8l#collectPods: proto.Marshal() failed: %w", err)
@@ -679,7 +686,11 @@ func (s *Sk8lServer) collectPods() {
 
 						entry := badger.NewEntry(key, result)
 						err = txn.SetEntry(entry)
-						return fmt.Errorf("sk8l#collectPods: txn.SetEntry() failed: %w", err)
+						if err != nil {
+							log.Println("Error: collectPods#txn.SetEntry", err)
+							return fmt.Errorf("sk8l#collectPods: txn.SetEntry() failed: %w", err)
+						}
+						return nil
 					}
 
 					err = item.Value(func(val []byte) error {
@@ -707,7 +718,11 @@ func (s *Sk8lServer) collectPods() {
 						return nil
 					})
 
-					return fmt.Errorf("sk8l#collectPods: item.Value() failed: %w", err)
+					if err != nil {
+						return fmt.Errorf("sk8l#collectPods: item.Value() failed: %w", err)
+					}
+
+					return nil
 				})
 
 				if err != nil {

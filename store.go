@@ -24,39 +24,35 @@ type CronJobDBStore struct {
 
 func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
 	var valueResponse []byte
-
 	err := c.DB.Update(func(txn *badger.Txn) error {
-		current, err := txn.Get(key)
+		item, err := txn.Get(key)
 
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			// Key not found: fetch from API and store
-			storeErr := c.DB.Update(func(txn *badger.Txn) error {
+			err = c.DB.Update(func(txn *badger.Txn) error {
 				apiResult := apiCall()
 				entry := badger.NewEntry(key, apiResult).WithTTL(time.Second * badgerTTL)
-				setErr := txn.SetEntry(entry)
-				if setErr != nil {
-					log.Println("Error: getAndStore#txn.SetEntry", setErr)
-					return fmt.Errorf("sk8l#getAndStore: txn.SetEntry() failed: %w", setErr)
+				err = txn.SetEntry(entry)
+				if err != nil {
+					log.Println("Error: getAndStore#txn.SetEntry", err)
+					return fmt.Errorf("sk8l#getAndStore: txn.SetEntry() failed: %w", err)
 				}
 				valueResponse = append([]byte{}, apiResult...)
 				return nil
 			})
-			return fmt.Errorf("sk8l#getAndStore: DB.Update() failed: %w", storeErr)
-		} else if err != nil {
-			return fmt.Errorf("sk8l#getAndStore: txn.Get() failed: %w", err)
+		} else {
+			err = item.Value(func(val []byte) error {
+				valueResponse = append([]byte{}, val...)
+
+				return nil
+			})
 		}
 
-		valErr := current.Value(func(val []byte) error {
-			valueResponse = append([]byte{}, val...)
-			return nil
-		})
-
-		if valErr != nil {
-			log.Println("Error: getAndStore#current.Value", valErr)
-			return fmt.Errorf("sk8l#getAndStore: current.Value() failed: %w", valErr)
+		if err != nil {
+			return fmt.Errorf("sk8l#getAndStore: DB.Update() failed: %w", err)
 		}
 
 		return nil
+
 	})
 
 	if err != nil {
