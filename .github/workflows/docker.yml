@@ -35,6 +35,36 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Ensure Go folders
+        run: |
+          mkdir -p ~/go/pkg/build
+          mkdir -p ~/go/pkg/mod
+      - name: go-build-cache
+        uses: actions/cache@v4
+        id: go-build-cache
+        with:
+          path: |
+            ~/go/pkg/build
+          key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
+      - name: Inject go-build-cache
+        uses: reproducible-containers/buildkit-cache-dance@v2.1.4
+        with:
+          cache-source: go-build-cache
+          cache-target: ~/go/pkg/build
+          skip-extraction: ${{ steps.go-build-cache.outputs.cache-hit }}
+      - name: go-mod-cache
+        uses: actions/cache@v4
+        id: go-mod-cache
+        with:
+          path: |
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-mod-cache-${{ hashFiles('**/go.sum') }}
+      - name: Inject go-mod-cache
+        uses: reproducible-containers/buildkit-cache-dance@v2.1.4
+        with:
+          cache-source: go-mod-cache
+          cache-target: ~/go/pkg/mod
+          skip-extraction: ${{ steps.go-mod-cache.outputs.cache-hit }}
       - name: Cache sk8l-api:dev-${{ inputs.image_tag }}
         id: image-cache
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3

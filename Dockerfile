@@ -8,21 +8,20 @@ WORKDIR /src/
 
 ARG TARGETOS TARGETARCH
 RUN go env GOCACHE
-ENV GOCACHE=/gocache
-ENV GOMODCACHE=/gomodcache
-RUN mkdir /gocache /gomodcache
+RUN go env -w GOMODCACHE=/go/pkg/mod && \
+    go env -w GOCACHE=/go/pkg/build
 RUN go env GOCACHE
 
 # COPY go.mod go.sum ./
-COPY go.mod .
-COPY go.sum .
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download -x
+
 COPY *.go .
 COPY protos/ ./protos
 COPY Makefile .
 COPY annotations.tmpl .
 
-RUN --mount=type=cache,target=/gomodcache go mod download -x
-RUN --mount=type=cache,target=/gocache make go-out
+RUN --mount=type=cache,target=/go/pkg/build make go-out
 
 COPY . .
 
