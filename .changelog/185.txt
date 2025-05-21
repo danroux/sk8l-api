@@ -1,16 +1,16 @@
 ```release-note:enhancement
-ci/dependabot: go:(deps): bump k8s.io/client-go from 0.32.3 to 0.32.4
+ci/dependabot: go:(deps): bump k8s.io/client-go from 0.32.3 to 0.33.1
 
-go:(deps): bump k8s.io/client-go from 0.32.3 to 0.32.4
+go:(deps): bump k8s.io/client-go from 0.32.3 to 0.33.1
 
-Bumps [k8s.io/client-go](https://github.com/kubernetes/client-go) from 0.32.3 to 0.32.4.
+Bumps [k8s.io/client-go](https://github.com/kubernetes/client-go) from 0.32.3 to 0.33.1.
 - [Changelog](https://github.com/kubernetes/client-go/blob/master/CHANGELOG.md)
-- [Commits](https://github.com/kubernetes/client-go/compare/v0.32.3...v0.32.4)
+- [Commits](https://github.com/kubernetes/client-go/compare/v0.32.3...v0.33.1)
 
 ---
 updated-dependencies:
 - dependency-name: k8s.io/client-go
-  dependency-version: 0.32.4
+  dependency-version: 0.33.1
   dependency-type: direct:production
   update-type: version-update:semver-patch
 ...
