@@ -483,60 +483,7 @@ func (s *Sk8lServer) collectCronjobs() {
 				}
 
 				err := s.DB.Update(func(txn *badger.Txn) error {
-					item, err := txn.Get(cronjobsCacheKey)
-					if err != nil {
-						cjList := &batchv1.CronJobList{
-							Items: []batchv1.CronJob{*eventCronjob},
-						}
-
-						mashErr := marshalAndStore(txn, cronjobsCacheKey, cjList, "sk8l#collectCronjobs")
-						return mashErr
-					}
-
-					err = item.Value(func(stored []byte) error {
-						storedCjList := &batchv1.CronJobList{}
-
-						storedCjListV2 := protoadapt.MessageV2Of(storedCjList)
-						err = proto.Unmarshal(stored, storedCjListV2)
-
-						if err != nil {
-							log.Println("Error: collectCronjobs#proto.Unmarshal", err)
-							return fmt.Errorf("sk8l#collectCronjobs: proto.Unmarshal() failed: %w", err)
-						}
-
-						switch event.Type {
-						case watch.Added:
-							updateStoredCronjobList(storedCjList, eventCronjob)
-							storedCjList.Items = append(storedCjList.Items, *eventCronjob)
-						case watch.Modified:
-							updateStoredCronjobList(storedCjList, eventCronjob)
-							storedCjList.Items = append(storedCjList.Items, *eventCronjob)
-						case watch.Deleted:
-							updateStoredCronjobList(storedCjList, eventCronjob)
-						case watch.Bookmark, watch.Error:
-							// no-op: explicitly ignored
-						}
-
-						result, err := proto.Marshal(storedCjListV2)
-						if err != nil {
-							log.Println("Error: collectCronjobs#proto.Marshal", err)
-							return fmt.Errorf("sk8l#collectCronjobs: proto.Marshal() failed: %w", err)
-						}
-
-						entry := badger.NewEntry(cronjobsCacheKey, result)
-						err = txn.SetEntry(entry)
-						if err != nil {
-							log.Println("Error: collectCronjobs#txn.SetEntry", err)
-							return fmt.Errorf("sk8l#collectCronjobs: txn.SetEntry() failed: %w", err)
-						}
-						return nil
-					})
-
-					if err != nil {
-						return fmt.Errorf("sk8l#collectCronjobs: item.Value() failed: %w", err)
-					}
-
-					return nil
+					return handleCronJobEvent(txn, event, eventCronjob)
 				})
 
 				if err != nil {
@@ -564,60 +511,7 @@ func (s *Sk8lServer) collectJobs() {
 				}
 
 				err := s.DB.Update(func(txn *badger.Txn) error {
-					item, err := txn.Get(jobsCacheKey)
-					if err != nil {
-						jList := &batchv1.JobList{
-							Items: []batchv1.Job{*eventJob},
-						}
-
-						mashErr := marshalAndStore(txn, jobsCacheKey, jList, "sk8l#collectJobs")
-						return mashErr
-					}
-
-					err = item.Value(func(stored []byte) error {
-						storedJList := &batchv1.JobList{}
-
-						storedJListV2 := protoadapt.MessageV2Of(storedJList)
-						err = proto.Unmarshal(stored, storedJListV2)
-
-						if err != nil {
-							log.Println("Error: collectJobs#proto.Unmarshal", err)
-							return fmt.Errorf("sk8l#collectJobs: proto.Unmarshal() failed: %w", err)
-						}
-
-						switch event.Type {
-						case watch.Added:
-							updateStoredJobList(storedJList, eventJob)
-							storedJList.Items = append(storedJList.Items, *eventJob)
-						case watch.Modified:
-							updateStoredJobList(storedJList, eventJob)
-							storedJList.Items = append(storedJList.Items, *eventJob)
-						case watch.Deleted:
-							updateStoredJobList(storedJList, eventJob)
-						case watch.Bookmark, watch.Error:
-							// no-op: explicitly ignored
-						}
-
-						result, err := proto.Marshal(storedJListV2)
-						if err != nil {
-							log.Println("Error: collectJobs#proto.Marshal", err)
-							return fmt.Errorf("sk8l#collectJobs: proto.Marshal() failed: %w", err)
-						}
-
-						entry := badger.NewEntry(jobsCacheKey, result)
-						err = txn.SetEntry(entry)
-						if err != nil {
-							log.Println("Error: collectJobs#txn.SetEntry", err)
-							return fmt.Errorf("sk8l#collectJobs: txn.SetEntry() failed: %w", err)
-						}
-						return nil
-					})
-
-					if err != nil {
-						return fmt.Errorf("sk8l#collectJobs: item.Value() failed: %w", err)
-					}
-
-					return nil
+					return handleJobEvent(txn, event, eventJob)
 				})
 
 				if err != nil {
@@ -644,49 +538,8 @@ func (s *Sk8lServer) collectPods() {
 					log.Println("Error: event.Object.(*corev1.Pod)")
 				}
 
-				fKey := fmt.Sprintf(jobPodsKeyFmt, eventPod.Labels["job-name"])
-				key := []byte(fKey)
 				err := s.DB.Update(func(txn *badger.Txn) error {
-					item, err := txn.Get(key)
-					if err != nil {
-						podList := &corev1.PodList{
-							Items: []corev1.Pod{*eventPod},
-						}
-
-						mashErr := marshalAndStore(txn, key, podList, "sk8l#collectPods")
-						return mashErr
-					}
-
-					err = item.Value(func(val []byte) error {
-						podList := &corev1.PodList{}
-						podListV2 := protoadapt.MessageV2Of(podList)
-						err = proto.Unmarshal(val, podListV2)
-
-						if err != nil {
-							log.Println("Error: collectPods#proto.Unmarshal", err)
-						}
-
-						podList.Items = append(podList.Items, *eventPod)
-						result, err := proto.Marshal(podListV2)
-
-						if err != nil {
-							log.Println("Error: collectPods#proto.Marshal", err)
-						}
-
-						entry := badger.NewEntry(key, result)
-						err = txn.SetEntry(entry)
-						if err != nil {
-							log.Println("Error: collectPods#txn.SetEntry", err)
-							return fmt.Errorf("sk8l#collectPods: txn.SetEntry() failed: %w", err)
-						}
-						return nil
-					})
-
-					if err != nil {
-						return fmt.Errorf("sk8l#collectPods: item.Value() failed: %w", err)
-					}
-
-					return nil
+					return handlePodEvent(txn, event, eventPod)
 				})
 
 				if err != nil {
@@ -700,7 +553,200 @@ func (s *Sk8lServer) collectPods() {
 	}()
 }
 
-func marshalAndStore(txn *badger.Txn, key []byte, msg protoiface.MessageV1, errContext string) error {
+func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv1.CronJob) error {
+	item, err := txn.Get(cronjobsCacheKey)
+	if err != nil {
+		cjList := &batchv1.CronJobList{
+			Items: []batchv1.CronJob{*eventCronJob},
+		}
+
+		mashErr := marshalAndSetEntry(txn, cronjobsCacheKey, cjList, "sk8l#collectCronjobs")
+		return mashErr
+	}
+
+	err = item.Value(func(stored []byte) error {
+		return updateStoredCronjobList(txn, stored, event, eventCronJob)
+	})
+
+	if err != nil {
+		return fmt.Errorf("sk8l#collectCronjobs: item.Value() failed: %w", err)
+	}
+
+	return nil
+}
+
+func handleJobEvent(txn *badger.Txn, event watch.Event, eventJob *batchv1.Job) error {
+	item, err := txn.Get(jobsCacheKey)
+	if err != nil {
+		jList := &batchv1.JobList{
+			Items: []batchv1.Job{*eventJob},
+		}
+
+		mashErr := marshalAndSetEntry(txn, jobsCacheKey, jList, "sk8l#collectJobs")
+		return mashErr
+	}
+
+	err = item.Value(func(stored []byte) error {
+		return updateStoredJobList(txn, stored, event, eventJob)
+	})
+
+	if err != nil {
+		return fmt.Errorf("sk8l#collectJobs: item.Value() failed: %w", err)
+	}
+
+	return nil
+}
+
+func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) error {
+	fKey := fmt.Sprintf(jobPodsKeyFmt, eventPod.Labels["job-name"])
+	key := []byte(fKey)
+	item, err := txn.Get(key)
+	if err != nil {
+		podList := &corev1.PodList{
+			Items: []corev1.Pod{*eventPod},
+		}
+
+		mashErr := marshalAndSetEntry(txn, key, podList, "sk8l#collectPods")
+		return mashErr
+	}
+
+	err = item.Value(func(val []byte) error {
+		return updateStoredPodList(txn, val, key, eventPod)
+	})
+
+	if err != nil {
+		return fmt.Errorf("sk8l#collectPods: item.Value() failed: %w", err)
+	}
+
+	return nil
+}
+
+func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, eventCronJob *batchv1.CronJob) error {
+	storedCjList := &batchv1.CronJobList{}
+
+	storedCjListV2 := protoadapt.MessageV2Of(storedCjList)
+	err := proto.Unmarshal(stored, storedCjListV2)
+
+	if err != nil {
+		log.Println("Error: collectCronjobs#proto.Unmarshal", err)
+		return fmt.Errorf("sk8l#collectCronjobs: proto.Unmarshal() failed: %w", err)
+	}
+
+	switch event.Type {
+	case watch.Added:
+		filterCronJobsList(storedCjList, eventCronJob)
+		storedCjList.Items = append(storedCjList.Items, *eventCronJob)
+	case watch.Modified:
+		filterCronJobsList(storedCjList, eventCronJob)
+		storedCjList.Items = append(storedCjList.Items, *eventCronJob)
+	case watch.Deleted:
+		filterCronJobsList(storedCjList, eventCronJob)
+	case watch.Bookmark, watch.Error:
+		// no-op: explicitly ignored
+	}
+
+	result, err := proto.Marshal(storedCjListV2)
+	if err != nil {
+		log.Println("Error: collectCronjobs#proto.Marshal", err)
+		return fmt.Errorf("sk8l#collectCronjobs: proto.Marshal() failed: %w", err)
+	}
+
+	entry := badger.NewEntry(cronjobsCacheKey, result)
+	err = txn.SetEntry(entry)
+	if err != nil {
+		log.Println("Error: collectCronjobs#txn.SetEntry", err)
+		return fmt.Errorf("sk8l#collectCronjobs: txn.SetEntry() failed: %w", err)
+	}
+	return nil
+}
+
+func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, eventJob *batchv1.Job) error {
+	storedJList := &batchv1.JobList{}
+
+	storedJListV2 := protoadapt.MessageV2Of(storedJList)
+	err := proto.Unmarshal(stored, storedJListV2)
+
+	if err != nil {
+		log.Println("Error: collectJobs#proto.Unmarshal", err)
+		return fmt.Errorf("sk8l#collectJobs: proto.Unmarshal() failed: %w", err)
+	}
+
+	switch event.Type {
+	case watch.Added:
+		filterStoredJobList(storedJList, eventJob)
+		storedJList.Items = append(storedJList.Items, *eventJob)
+	case watch.Modified:
+		filterStoredJobList(storedJList, eventJob)
+		storedJList.Items = append(storedJList.Items, *eventJob)
+	case watch.Deleted:
+		filterStoredJobList(storedJList, eventJob)
+	case watch.Bookmark, watch.Error:
+		// no-op: explicitly ignored
+	}
+
+	result, err := proto.Marshal(storedJListV2)
+	if err != nil {
+		log.Println("Error: collectJobs#proto.Marshal", err)
+		return fmt.Errorf("sk8l#collectJobs: proto.Marshal() failed: %w", err)
+	}
+
+	entry := badger.NewEntry(jobsCacheKey, result)
+	err = txn.SetEntry(entry)
+	if err != nil {
+		log.Println("Error: collectJobs#txn.SetEntry", err)
+		return fmt.Errorf("sk8l#collectJobs: txn.SetEntry() failed: %w", err)
+	}
+	return nil
+}
+
+func filterCronJobsList(storedCjList *batchv1.CronJobList, eventCronjob *batchv1.CronJob) {
+	cjList := &batchv1.CronJobList{}
+	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
+	for _, cronjob := range storedCjList.Items {
+		if cronjob.Name != eventCronjob.Name {
+			cjList.Items = append(cjList.Items, cronjob)
+		}
+	}
+	storedCjList.Items = cjList.Items
+}
+
+func filterStoredJobList(storedJList *batchv1.JobList, eventJob *batchv1.Job) {
+	jList := &batchv1.JobList{}
+	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
+	for _, job := range storedJList.Items {
+		if job.Name != eventJob.Name {
+			jList.Items = append(jList.Items, job)
+		}
+	}
+	storedJList.Items = jList.Items
+}
+
+func updateStoredPodList(txn *badger.Txn, val []byte, key []byte, eventPod *corev1.Pod) error {
+	podList := &corev1.PodList{}
+	podListV2 := protoadapt.MessageV2Of(podList)
+	err := proto.Unmarshal(val, podListV2)
+
+	if err != nil {
+		log.Println("Error: collectPods#proto.Unmarshal", err)
+	}
+
+	podList.Items = append(podList.Items, *eventPod)
+	result, err := proto.Marshal(podListV2)
+
+	if err != nil {
+		log.Println("Error: collectPods#proto.Marshal", err)
+	}
+
+	entry := badger.NewEntry(key, result)
+	err = txn.SetEntry(entry)
+	if err != nil {
+		log.Println("Error: collectPods#txn.SetEntry", err)
+		return fmt.Errorf("sk8l#collectPods: txn.SetEntry() failed: %w", err)
+	}
+	return nil
+}
+
+func marshalAndSetEntry(txn *badger.Txn, key []byte, msg protoiface.MessageV1, errContext string) error {
 	msgV2 := protoadapt.MessageV2Of(msg)
 	result, err := proto.Marshal(msgV2)
 	if err != nil {
@@ -1044,28 +1090,6 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 	}
 
 	return commands
-}
-
-func updateStoredCronjobList(storedCjList *batchv1.CronJobList, eventCronjob *batchv1.CronJob) {
-	cjList := &batchv1.CronJobList{}
-	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
-	for _, cronjob := range storedCjList.Items {
-		if cronjob.Name != eventCronjob.Name {
-			cjList.Items = append(cjList.Items, cronjob)
-		}
-	}
-	storedCjList.Items = cjList.Items
-}
-
-func updateStoredJobList(storedJList *batchv1.JobList, eventJob *batchv1.Job) {
-	jList := &batchv1.JobList{}
-	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
-	for _, job := range storedJList.Items {
-		if job.Name != eventJob.Name {
-			jList.Items = append(jList.Items, job)
-		}
-	}
-	storedJList.Items = jList.Items
 }
 
 func getCurrentDuration(runningJobsForCronJob []*protos.JobResponse) int64 {
