@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
-
 	"slices"
 
 	"github.com/danroux/sk8l/protos"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -80,14 +80,16 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 	ctx := context.TODO()
 	cronJob, err := kc.BatchV1().CronJobs(cronjobNamespace).Get(ctx, cronjobName, metav1.GetOptions{})
 
-	if errors.IsNotFound(err) {
+	var statusError *k8serrors.StatusError
+	switch {
+	case k8serrors.IsNotFound(err):
 		log.Printf("Cronjob %s not found in default namespace\n", cronjobName)
 		// return err
-	} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
+	case errors.As(err, &statusError):
 		log.Printf("Error getting CronJob %v\n", statusError.ErrStatus.Message)
-	} else if err != nil {
+	case err != nil:
 		panic(err.Error())
-	} else {
+	default:
 		log.Printf("CronJob %s found in %s namespace\n", cronjobName, cronjobNamespace)
 	}
 
@@ -133,14 +135,17 @@ func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 	// Examples for error handling:
 	// - Use helper functions e.g. errors.IsNotFound()
 	// - And/or cast to StatusError and use its properties like e.g. ErrStatus.Message
-	if errors.IsNotFound(err) {
-		log.Printf("Pod example-xxxxx not found in default namespace\n")
-	} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
-		log.Printf("Error getting pod %v\n", statusError.ErrStatus.Message)
-	} else if err != nil {
+	var statusError *k8serrors.StatusError
+	switch {
+	case k8serrors.IsNotFound(err):
+		log.Printf("Pod %s not found in default namespace\n", podName)
+		// return err
+	case errors.As(err, &statusError):
+		log.Printf("Error getting Pod %v\n", statusError.ErrStatus.Message)
+	case err != nil:
 		panic(err.Error())
-	} else {
-		log.Printf("Found %s pod in %s namespace\n", podName, jobNamespace)
+	default:
+		log.Printf("Pod %s found in %s namespace\n", jobNamespace, podName)
 	}
 
 	return pod

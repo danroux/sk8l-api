@@ -416,7 +416,7 @@ func NewJobBuilder() *JobBuilder {
 	}
 
 	now := metav1.NewTime(time.Now())
-	completion := metav1.NewTime(now.Time.Add(jobCompletionTimeoutSeconds * time.Second))
+	completion := metav1.NewTime(now.Add(jobCompletionTimeoutSeconds * time.Second))
 	ready := int32(1)
 	jobCondition := batchv1.JobCondition{
 

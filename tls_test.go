@@ -90,8 +90,8 @@ func TestSetupTLS(t *testing.T) {
 				}
 
 				if tc.expectedError != nil {
-					certError, ok := err.(*CertError)
-					if !ok {
+					var certError *CertError
+					if !errors.As(err, &certError) {
 						t.Errorf("unexpected error type: got %T, want *CertError", err)
 						return
 					}

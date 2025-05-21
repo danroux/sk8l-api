@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -89,7 +90,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 			default:
 				cronjobsResponse, err := cronjobsClient.Recv()
 
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 
