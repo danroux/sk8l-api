@@ -27,43 +27,43 @@ jobs:
           fetch-depth: 1
           submodules: recursive
       - name: Checkout - set env
-        run: echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
+        run: |
+          echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
-      - name: Login to Docker Hub
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Ensure Go folders
-        run: |
-          mkdir -p ~/go/pkg/build
-          mkdir -p ~/go/pkg/mod
       - name: go-build-cache
         uses: actions/cache@v4
         id: go-build-cache
         with:
-          path: |
-            ~/go/pkg/build
+          path: var-cache-gocache
           key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
-      - name: Inject go-build-cache
-        uses: reproducible-containers/buildkit-cache-dance@v2.1.4
-        with:
-          cache-source: go-build-cache
-          cache-target: ~/go/pkg/build
-          skip-extraction: ${{ steps.go-build-cache.outputs.cache-hit }}
+      # - name: Inject go-build-cache
+      #   uses: reproducible-containers/buildkit-cache-dance@v2.1.4
+      #   with:
+      #     cache-source: go-build-cache
+      #     cache-target: ~/.gocache
+      #     skip-extraction: ${{ steps.go-build-cache.outputs.cache-hit }}
       - name: go-mod-cache
         uses: actions/cache@v4
         id: go-mod-cache
         with:
-          path: |
-            ~/go/pkg/mod
+          path: var-cache-gomodcache
           key: ${{ runner.os }}-go-mod-cache-${{ hashFiles('**/go.sum') }}
-      - name: Inject go-mod-cache
-        uses: reproducible-containers/buildkit-cache-dance@v2.1.4
+      # - name: Inject go-mod-cache
+      #   uses: reproducible-containers/buildkit-cache-dance@v2.1.4
+      #   with:
+      #     cache-source: go-mod-cache
+      #     cache-target: ~/.gomodcache
+      #     skip-extraction: ${{ steps.go-mod-cache.outputs.cache-hit }}
+      - name: inject cache folders into docker
+        uses: reproducible-containers/buildkit-cache-dance@v3.2.0
         with:
-          cache-source: go-mod-cache
-          cache-target: ~/go/pkg/mod
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          cache-map: |
+            {
+              "var-cache-gocache": "/go/pkg/mod",
+              "var-cache-gomodcache": "/root/.cache/go-build"
+            }
           skip-extraction: ${{ steps.go-mod-cache.outputs.cache-hit }}
       - name: Cache sk8l-api:dev-${{ inputs.image_tag }}
         id: image-cache
