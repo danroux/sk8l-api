@@ -14,14 +14,14 @@ RUN go env GOCACHE
 
 # COPY go.mod go.sum ./
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download -x
+RUN --mount=type=cache,target=/go/pkg/mod,id=gomodcache go mod download -x
 
 COPY *.go .
 COPY protos/ ./protos
 COPY Makefile .
 COPY annotations.tmpl .
 
-RUN --mount=type=cache,target=/root/.cache/go-build make go-out
+RUN --mount=type=cache,target=/root/.cache/go-build,id=gocache make go-out
 
 COPY . .
 
