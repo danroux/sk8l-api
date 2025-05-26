@@ -59,10 +59,17 @@ jobs:
         uses: reproducible-containers/buildkit-cache-dance@v3.2.0
         with:
           builder: ${{ steps.setup-buildx.outputs.name }}
+          utility-image: ghcr.io/containerd/busybox:latest
           cache-map: |
             {
-              "var-cache-gocache": "/go/pkg/mod",
-              "var-cache-gomodcache": "/root/.cache/go-build"
+              "var-cache-gocache":{
+                "target": "/root/.cache/go-build",
+                "id": "gomodcache"
+                },
+              "var-cache-gomodcache": {
+                "target": "/go/pkg/mod",
+                "id": "gocache"
+                }
             }
           skip-extraction: ${{ steps.go-mod-cache.outputs.cache-hit }}
       - name: Cache sk8l-api:dev-${{ inputs.image_tag }}
@@ -71,6 +78,7 @@ jobs:
         with:
           path: ./sk8l-api:dev-${{ inputs.image_tag }}.tar
           key: dev-${{ inputs.image_tag }}-${{ github.sha }}
+      - run: echo "cache-hit=${{ steps.image-cache.outputs.cache-hit }}"
       - name: Build sk8l-api:dev-${{ inputs.image_tag }}
         if: steps.image-cache.outputs.cache-hit != 'true'
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
@@ -92,6 +100,7 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push dev version to ghcr.io
+        if: steps.image-cache.outputs.cache-hit != 'true'
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
         with:
           context: .

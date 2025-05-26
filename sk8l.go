@@ -20,7 +20,6 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
-	"google.golang.org/protobuf/runtime/protoiface"
 	gyaml "sigs.k8s.io/yaml"
 
 	// structpb "google.golang.org/protobuf/types/known/structpb".
@@ -560,7 +559,14 @@ func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv
 			Items: []batchv1.CronJob{*eventCronJob},
 		}
 
-		mashErr := marshalAndSetEntry(txn, cronjobsCacheKey, cjList, "sk8l#collectCronjobs")
+		msgV2 := protoadapt.MessageV2Of(cjList)
+		result, err := proto.Marshal(msgV2)
+		if err != nil {
+			log.Printf("Error: %s#proto.Marshal: %v", "sk8l#collectCronjobs", err)
+			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectCronjobs", err)
+		}
+
+		mashErr := storeEntry(txn, cronjobsCacheKey, result, "sk8l#collectCronjobs")
 		return mashErr
 	}
 
@@ -582,7 +588,14 @@ func handleJobEvent(txn *badger.Txn, event watch.Event, eventJob *batchv1.Job) e
 			Items: []batchv1.Job{*eventJob},
 		}
 
-		mashErr := marshalAndSetEntry(txn, jobsCacheKey, jList, "sk8l#collectJobs")
+		msgV2 := protoadapt.MessageV2Of(jList)
+		result, err := proto.Marshal(msgV2)
+		if err != nil {
+			log.Printf("Error: %s#proto.Marshal: %v", "sk8l#collectJobs", err)
+			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectJobs", err)
+		}
+
+		mashErr := storeEntry(txn, jobsCacheKey, result, "sk8l#collectJobs")
 		return mashErr
 	}
 
@@ -606,8 +619,15 @@ func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) er
 			Items: []corev1.Pod{*eventPod},
 		}
 
-		mashErr := marshalAndSetEntry(txn, key, podList, "sk8l#collectPods")
-		return mashErr
+		msgV2 := protoadapt.MessageV2Of(podList)
+		result, err := proto.Marshal(msgV2)
+		if err != nil {
+			log.Printf("Error: %s#proto.Marshal: %v", "sk8l#collectPods", err)
+			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectPods", err)
+		}
+
+		setEntryErr := storeEntry(txn, key, result, "sk8l#collectPods")
+		return setEntryErr
 	}
 
 	err = item.Value(func(val []byte) error {
@@ -651,13 +671,8 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 		return fmt.Errorf("sk8l#collectCronjobs: proto.Marshal() failed: %w", err)
 	}
 
-	entry := badger.NewEntry(cronjobsCacheKey, result)
-	err = txn.SetEntry(entry)
-	if err != nil {
-		log.Println("Error: collectCronjobs#txn.SetEntry", err)
-		return fmt.Errorf("sk8l#collectCronjobs: txn.SetEntry() failed: %w", err)
-	}
-	return nil
+	setEntryErr := storeEntry(txn, cronjobsCacheKey, result, "sk8l#collectJobs")
+	return setEntryErr
 }
 
 func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, eventJob *batchv1.Job) error {
@@ -690,41 +705,14 @@ func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, even
 		return fmt.Errorf("sk8l#collectJobs: proto.Marshal() failed: %w", err)
 	}
 
-	entry := badger.NewEntry(jobsCacheKey, result)
-	err = txn.SetEntry(entry)
-	if err != nil {
-		log.Println("Error: collectJobs#txn.SetEntry", err)
-		return fmt.Errorf("sk8l#collectJobs: txn.SetEntry() failed: %w", err)
-	}
-	return nil
+	setEntryErr := storeEntry(txn, jobsCacheKey, result, "sk8l#collectJobs")
+	return setEntryErr
 }
 
-func filterCronJobsList(storedCjList *batchv1.CronJobList, eventCronjob *batchv1.CronJob) {
-	cjList := &batchv1.CronJobList{}
-	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
-	for _, cronjob := range storedCjList.Items {
-		if cronjob.Name != eventCronjob.Name {
-			cjList.Items = append(cjList.Items, cronjob)
-		}
-	}
-	storedCjList.Items = cjList.Items
-}
-
-func filterStoredJobList(storedJList *batchv1.JobList, eventJob *batchv1.Job) {
-	jList := &batchv1.JobList{}
-	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
-	for _, job := range storedJList.Items {
-		if job.Name != eventJob.Name {
-			jList.Items = append(jList.Items, job)
-		}
-	}
-	storedJList.Items = jList.Items
-}
-
-func updateStoredPodList(txn *badger.Txn, val []byte, key []byte, eventPod *corev1.Pod) error {
+func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *corev1.Pod) error {
 	podList := &corev1.PodList{}
 	podListV2 := protoadapt.MessageV2Of(podList)
-	err := proto.Unmarshal(val, podListV2)
+	err := proto.Unmarshal(stored, podListV2)
 
 	if err != nil {
 		log.Println("Error: collectPods#proto.Unmarshal", err)
@@ -737,23 +725,33 @@ func updateStoredPodList(txn *badger.Txn, val []byte, key []byte, eventPod *core
 		log.Println("Error: collectPods#proto.Marshal", err)
 	}
 
-	entry := badger.NewEntry(key, result)
-	err = txn.SetEntry(entry)
-	if err != nil {
-		log.Println("Error: collectPods#txn.SetEntry", err)
-		return fmt.Errorf("sk8l#collectPods: txn.SetEntry() failed: %w", err)
-	}
-	return nil
+	setEntryErr := storeEntry(txn, key, result, "sk8l#collectPods")
+	return setEntryErr
 }
 
-func marshalAndSetEntry(txn *badger.Txn, key []byte, msg protoiface.MessageV1, errContext string) error {
-	msgV2 := protoadapt.MessageV2Of(msg)
-	result, err := proto.Marshal(msgV2)
-	if err != nil {
-		log.Printf("Error: %s#proto.Marshal: %v", errContext, err)
-		return fmt.Errorf("%s: proto.Marshal() failed: %w", errContext, err)
+func filterCronJobsList(storedCjList *batchv1.CronJobList, eventCronjob *batchv1.CronJob) {
+	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
+	cjList := &batchv1.CronJobList{}
+	for _, cronjob := range storedCjList.Items {
+		if cronjob.Name != eventCronjob.Name {
+			cjList.Items = append(cjList.Items, cronjob)
+		}
 	}
+	storedCjList.Items = cjList.Items
+}
 
+func filterStoredJobList(storedJList *batchv1.JobList, eventJob *batchv1.Job) {
+	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
+	jList := &batchv1.JobList{}
+	for _, job := range storedJList.Items {
+		if job.Name != eventJob.Name {
+			jList.Items = append(jList.Items, job)
+		}
+	}
+	storedJList.Items = jList.Items
+}
+
+func storeEntry(txn *badger.Txn, key []byte, result []byte, errContext string) error {
 	entry := badger.NewEntry(key, result)
 	if err := txn.SetEntry(entry); err != nil {
 		log.Printf("Error: %s#txn.SetEntry: %v", errContext, err)
