@@ -13,8 +13,6 @@ updates:
       prefix: "go:"
       include: "scope"
     open-pull-requests-limit: 10
-    reviewers:
-      - "danroux"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -28,8 +26,6 @@ updates:
       prefix: "gha:"
       include: "scope"
     open-pull-requests-limit: 10
-    reviewers:
-      - "danroux"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
