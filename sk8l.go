@@ -554,9 +554,11 @@ func (s *Sk8lServer) collectPods() {
 
 func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv1.CronJob) error {
 	item, err := txn.Get(cronjobsCacheKey)
-	if err != nil {
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		cronJob := *eventCronJob
+		log.Println("handleCronJobEvent:", badger.ErrKeyNotFound, "storing eventCronJob", cronJob.Name)
 		cjList := &batchv1.CronJobList{
-			Items: []batchv1.CronJob{*eventCronJob},
+			Items: []batchv1.CronJob{cronJob},
 		}
 
 		msgV2 := protoadapt.MessageV2Of(cjList)
@@ -642,6 +644,7 @@ func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) er
 }
 
 func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, eventCronJob *batchv1.CronJob) error {
+	log.Println("updateStoredCronjobList: Updating with -", eventCronJob.Name)
 	storedCjList := &batchv1.CronJobList{}
 
 	storedCjListV2 := protoadapt.MessageV2Of(storedCjList)
@@ -731,6 +734,7 @@ func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *c
 
 func filterCronJobsList(storedCjList *batchv1.CronJobList, eventCronjob *batchv1.CronJob) {
 	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
+	log.Println("filterCronJobsList: filtering out -", eventCronjob.Name)
 	cjList := &batchv1.CronJobList{}
 	for _, cronjob := range storedCjList.Items {
 		if cronjob.Name != eventCronjob.Name {
@@ -752,6 +756,7 @@ func filterStoredJobList(storedJList *batchv1.JobList, eventJob *batchv1.Job) {
 }
 
 func storeEntry(txn *badger.Txn, key []byte, result []byte, errContext string) error {
+	log.Println("storeEntry:", errContext)
 	entry := badger.NewEntry(key, result)
 	if err := txn.SetEntry(entry); err != nil {
 		log.Printf("Error: %s#txn.SetEntry: %v", errContext, err)

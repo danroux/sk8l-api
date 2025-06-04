@@ -71,6 +71,10 @@ func main() {
 
 	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
 
+	if err != nil {
+		log.Fatalf("failed to open Badger DB: %v", err)
+	}
+
 	cronjobDBStore := &CronJobDBStore{
 		K8sClient: k8sClient,
 		DB:        db,
@@ -87,7 +91,8 @@ func main() {
 	healthgrpc.RegisterHealthServer(probeS, sk8lServer)
 	protos.RegisterCronjobServer(grpcS, sk8lServer)
 
-	http.Handle("/metrics", promhttp.Handler())
+	mux := &http.ServeMux{}
+	mux.Handle("/metrics", promhttp.Handler())
 
 	httpS := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%s", MetricsPort),
@@ -95,55 +100,56 @@ func main() {
 		ReadTimeout:  ReadTimeout * time.Second,
 		WriteTimeout: WriteTimeout * time.Second,
 		TLSConfig:    serverTLSConfig,
+		Handler:      mux,
 	}
 	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 
 	logger.Printf("Starting %s server %s on %s", "sk8l", Version(), conn.Addr().String())
+	errCh := make(chan error, 3)
 
 	go func() {
-		err = httpS.ListenAndServeTLS(certFile, certKeyFile)
-	}()
-
-	if err != nil {
-		log.Fatal("httpS error", err)
-	}
-
-	go func() {
-		err = probeS.Serve(healthConn)
-
-		if err != nil {
-			log.Fatal("httpS error", err)
+		if err := httpS.ListenAndServeTLS(certFile, certKeyFile); err != nil {
+			errCh <- fmt.Errorf("httpS error: %w", err)
 		}
 	}()
 
 	go func() {
-		err = grpcS.Serve(conn)
-		if err != nil {
-			log.Fatal("grpcS error", err)
+		if err := probeS.Serve(healthConn); err != nil {
+			errCh <- fmt.Errorf("probeS error: %w", err)
 		}
 	}()
 
-	x := context.Background()
-	metricsCxt, metricsCancel := context.WithCancel(x)
+	go func() {
+		if err := grpcS.Serve(conn); err != nil {
+			errCh <- fmt.Errorf("grpcS error: %w", err)
+		}
+	}()
+
+	rootCtx := context.Background()
+	metricsCxt, metricsCancel := context.WithCancel(rootCtx)
 	sk8lServer.Run(metricsCxt)
 
 	// Servers shutdown
 	log.Printf("Shutdown: setting up")
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-	sig := <-c
+	select {
+	case err := <-errCh:
+		log.Printf("Server error: %v, sk8l shutting down...", err)
+	case sig := <-sigCh:
+		log.Printf("Shutdown: Got %v signal. sk8l will shut down shortly\n", sig)
+	}
 
-	log.Printf("Shutdown: Got %v signal. sk8l will shut down shortly\n", sig)
-
-	ctx, cancel := context.WithTimeout(x, 5*time.Second)
-	defer cancel()
-	if err := httpS.Shutdown(ctx); err != nil {
+	shutdownCtx, shutdownCancel := context.WithTimeout(rootCtx, 5*time.Second)
+	defer shutdownCancel()
+	if err := httpS.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Shutdown: Server forced to shutdown: %v\n", err)
 	}
 
 	metricsCancel()
 	grpcS.GracefulStop()
+	probeS.GracefulStop()
 
 	log.Println("Shutdown: sk8l has stopped")
 }
