@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
 	"slices"
 
 	"github.com/danroux/sk8l/protos"
+	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -83,14 +84,22 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 	var statusError *k8serrors.StatusError
 	switch {
 	case k8serrors.IsNotFound(err):
-		log.Printf("Cronjob %s not found in default namespace\n", cronjobName)
+		log.Error().
+			Err(err).
+			Str("action", "GetCronjob").
+			Msg(fmt.Sprintf("Cronjob %s not found in default namespace", cronjobName))
 		// return err
 	case errors.As(err, &statusError):
-		log.Printf("Error getting CronJob %v\n", statusError.ErrStatus.Message)
+		log.Error().
+			Err(err).
+			Str("action", "GetCronjob").
+			Msg(fmt.Sprintf("Error getting CronJob %v", statusError.ErrStatus.Message))
 	case err != nil:
 		panic(err.Error())
 	default:
-		log.Printf("CronJob %s found in %s namespace\n", cronjobName, cronjobNamespace)
+		log.Info().
+			Str("action", "GetCronjob").
+			Msg(fmt.Sprintf("CronJob %s found in %s namespace", cronjobName, cronjobNamespace))
 	}
 
 	return cronJob
@@ -138,14 +147,23 @@ func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 	var statusError *k8serrors.StatusError
 	switch {
 	case k8serrors.IsNotFound(err):
-		log.Printf("Pod %s not found in default namespace\n", podName)
+		log.Error().
+			Err(err).
+			Str("action", "GetPod").
+			Msg(fmt.Sprintf("Pod %s not found in default namespace", podName))
 		// return err
 	case errors.As(err, &statusError):
 		log.Printf("Error getting Pod %v\n", statusError.ErrStatus.Message)
+		log.Error().
+			Err(err).
+			Str("action", "GetPod").
+			Msg(fmt.Sprintf("Error getting Pod %v", statusError.ErrStatus.Message))
 	case err != nil:
 		panic(err.Error())
 	default:
-		log.Printf("Pod %s found in %s namespace\n", jobNamespace, podName)
+		log.Info().
+			Str("action", "GetPod").
+			Msg(fmt.Sprintf("Pod %s found in %s namespace", jobNamespace, podName))
 	}
 
 	return pod
@@ -172,7 +190,10 @@ func (kc *K8sClient) GetAllJobs() *batchv1.JobList {
 	if err != nil {
 		panic(err.Error())
 	}
-	log.Printf("GAJ: There are %d jobs in the cluster\n", len(jobs.Items))
+
+	log.Info().
+		Str("action", "GetAllJobs").
+		Msg(fmt.Sprintf("There are %d jobs in the cluster", len(jobs.Items)))
 	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
 	return jobs
 }
@@ -188,7 +209,10 @@ func (kc *K8sClient) GetAllJobsMapped() *protos.MappedJobs {
 	if err != nil {
 		panic(err.Error())
 	}
-	log.Printf("GAJM: There are %d jobs in the cluster\n", len(jobs.Items))
+
+	log.Info().
+		Str("action", "GetAllJobsMapped").
+		Msg(fmt.Sprintf("There are %d jobs in the cluster", len(jobs.Items)))
 	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
 
 	cronjobNames := []string{}
