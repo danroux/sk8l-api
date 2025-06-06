@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+
 	"os"
 	"regexp"
 	"sync"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -73,7 +74,10 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 	c := protos.NewCronjobClient(conn)
 	subSystem := svr.K8sClient.Namespace()
 
-	log.Println("Metrics: Starting metrics collection")
+	log.Info().
+		Str("component", "metrics").
+		Str("action", "recordMetrics").
+		Msg("Starting metrics collection")
 	req := &protos.CronjobsRequest{}
 	cronjobsClient, err := c.GetCronjobs(ctx, req)
 
@@ -85,7 +89,9 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("Metrics: Shutdown - Stopping metrics collection")
+				log.Info().
+					Str("component", "metrics").
+					Msg("Stopping metrics collection")
 				return
 			default:
 				cronjobsResponse, err := cronjobsClient.Recv()
@@ -95,7 +101,10 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 				}
 
 				if err != nil {
-					log.Printf("Error: %v.GetCronjobs(_) = _, %v\n", cronjobsClient, err)
+					log.Error().
+						Err(err).
+						Str("action", "recordMetrics").
+						Msg("cronjobsClient = c.GetCronjobs.Recv()")
 				}
 
 				registeredCronjobs := len(cronjobsResponse.Cronjobs)
