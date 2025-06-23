@@ -66,9 +66,9 @@ var (
 )
 
 func recordMetrics(ctx context.Context, svr *Sk8lServer) {
-	conn, err := grpc.NewClient(svr.Target, svr.Options...)
+	conn, err := grpc.NewClient(svr.GetTarget(), svr.GetDialOptions()...)
 	if err != nil {
-		panic(fmt.Sprintf("grpc.NewClient(%s) failed: %v", svr.Target, err))
+		panic(fmt.Sprintf("grpc.NewClient(%s) failed: %v", svr.GetTarget(), err))
 	}
 
 	c := protos.NewCronjobClient(conn)
@@ -76,7 +76,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 
 	log.Info().
 		Str("component", "metrics").
-		Str("action", "recordMetrics").
+		Str("operation", "recordMetrics").
 		Msg("Starting metrics collection")
 	req := &protos.CronjobsRequest{}
 	cronjobsClient, err := c.GetCronjobs(ctx, req)
@@ -103,7 +103,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 				if err != nil {
 					log.Error().
 						Err(err).
-						Str("action", "recordMetrics").
+						Str("operation", "recordMetrics").
 						Msg("cronjobsClient = c.GetCronjobs.Recv()")
 				}
 

@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/danroux/sk8l/protos"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,7 @@ type Sk8lK8sClientInterface interface {
 
 type K8sClient struct {
 	kubernetes.Interface
+	l         zerolog.Logger
 	namespace string
 }
 
@@ -43,6 +45,12 @@ type ClientOption func(*K8sClient)
 func WithNamespace(namespace string) ClientOption {
 	return func(kc *K8sClient) {
 		kc.namespace = namespace
+	}
+}
+
+func WithLogger(l zerolog.Logger) ClientOption {
+	return func(kc *K8sClient) {
+		kc.l = l
 	}
 }
 
@@ -66,8 +74,8 @@ func NewK8sClient(options ...ClientOption) *K8sClient {
 		Interface: clientset,
 	}
 
-	for _, option := range options {
-		option(k8sClient)
+	for _, optionFn := range options {
+		optionFn(k8sClient)
 	}
 
 	return k8sClient
@@ -84,21 +92,22 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 	var statusError *k8serrors.StatusError
 	switch {
 	case k8serrors.IsNotFound(err):
-		log.Error().
+		kc.l.Error().
 			Err(err).
-			Str("action", "GetCronjob").
+			Str("operation", "GetCronjob").
 			Msg(fmt.Sprintf("Cronjob %s not found in default namespace", cronjobName))
 		// return err
 	case errors.As(err, &statusError):
-		log.Error().
+		kc.l.Error().
 			Err(err).
-			Str("action", "GetCronjob").
+			Str("operation", "GetCronjob").
 			Msg(fmt.Sprintf("Error getting CronJob %v", statusError.ErrStatus.Message))
 	case err != nil:
 		panic(err.Error())
 	default:
-		log.Info().
-			Str("action", "GetCronjob").
+		kc.l.Info().
+			Str("component", "k8s").
+			Str("operation", "GetCronjob").
 			Msg(fmt.Sprintf("CronJob %s found in %s namespace", cronjobName, cronjobNamespace))
 	}
 
@@ -147,22 +156,22 @@ func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 	var statusError *k8serrors.StatusError
 	switch {
 	case k8serrors.IsNotFound(err):
-		log.Error().
+		kc.l.Error().
 			Err(err).
-			Str("action", "GetPod").
+			Str("operation", "GetPod").
 			Msg(fmt.Sprintf("Pod %s not found in default namespace", podName))
 		// return err
 	case errors.As(err, &statusError):
 		log.Printf("Error getting Pod %v\n", statusError.ErrStatus.Message)
-		log.Error().
+		kc.l.Error().
 			Err(err).
-			Str("action", "GetPod").
+			Str("operation", "GetPod").
 			Msg(fmt.Sprintf("Error getting Pod %v", statusError.ErrStatus.Message))
 	case err != nil:
 		panic(err.Error())
 	default:
-		log.Info().
-			Str("action", "GetPod").
+		kc.l.Info().
+			Str("operation", "GetPod").
 			Msg(fmt.Sprintf("Pod %s found in %s namespace", jobNamespace, podName))
 	}
 
@@ -191,8 +200,8 @@ func (kc *K8sClient) GetAllJobs() *batchv1.JobList {
 		panic(err.Error())
 	}
 
-	log.Info().
-		Str("action", "GetAllJobs").
+	kc.l.Info().
+		Str("operation", "GetAllJobs").
 		Msg(fmt.Sprintf("There are %d jobs in the cluster", len(jobs.Items)))
 	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
 	return jobs
@@ -210,8 +219,8 @@ func (kc *K8sClient) GetAllJobsMapped() *protos.MappedJobs {
 		panic(err.Error())
 	}
 
-	log.Info().
-		Str("action", "GetAllJobsMapped").
+	kc.l.Info().
+		Str("operation", "GetAllJobsMapped").
 		Msg(fmt.Sprintf("There are %d jobs in the cluster", len(jobs.Items)))
 	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
 

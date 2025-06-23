@@ -56,19 +56,35 @@ type Sk8lServer struct {
 	protos.UnimplementedCronjobServer
 	// CronJobDBStore CronJobStore
 	*CronJobDBStore
-	Target  string
-	Options []grpc.DialOption
+	target      string
+	dialOptions []grpc.DialOption
 }
 
 type APICall (func() []byte)
+
+func NewSk8lServer(target string, cronJobDBStore *CronJobDBStore, dialOptions ...grpc.DialOption) *Sk8lServer {
+	return &Sk8lServer{
+		target:         target,
+		CronJobDBStore: cronJobDBStore,
+		dialOptions:    dialOptions,
+	}
+}
+
+func (s *Sk8lServer) GetTarget() string {
+	return s.target
+}
+
+func (s *Sk8lServer) GetDialOptions() []grpc.DialOption {
+	return s.dialOptions
+}
 
 func (s Sk8lServer) Check(
 	ctx context.Context,
 	req *grpc_health_v1.HealthCheckRequest,
 ) (*grpc_health_v1.HealthCheckResponse, error) {
 	log.Info().
-		Str("action", "health").
 		Str("component", "probe").
+		Str("operation", "health").
 		Msg("serving health")
 	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
 }
@@ -79,8 +95,8 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 	if err := stream.Send(response); err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "Watch#stream.Send").
-			Msg("")
+			Str("operation", "Watch#stream.Send").
+			Send()
 		return fmt.Errorf("sk8l#Watch: stream.Send failed: %w", err)
 	}
 
@@ -130,7 +146,7 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 			err := stream.Context().Err()
 			log.Error().
 				Err(err).
-				Str("action", "GetCronJobs").
+				Str("operation", "GetCronJobs").
 				Msg("stream context done: client canceled or deadline exceeded")
 			return fmt.Errorf("sk8l#GetCronjobs: stream.Context().Done(): %w", err)
 		default:
@@ -225,7 +241,7 @@ func (s *Sk8lServer) GetCronjobYAML(
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "sk8l#GetCronjobYAML").
+			Str("operation", "sk8l#GetCronjobYAML").
 			Msg("json.MarshalIndent() failed")
 	}
 
@@ -245,7 +261,7 @@ func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*pr
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "sk8l#GetJobYAML").
+			Str("operation", "sk8l#GetJobYAML").
 			Msg("json.MarshalIndent() failed")
 	}
 
@@ -265,7 +281,7 @@ func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*pr
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "sk8l#GetPodYAML").
+			Str("operation", "sk8l#GetPodYAML").
 			Msg("json.MarshalIndent() failed")
 	}
 
@@ -300,7 +316,7 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "sk8l#GetDashboardAnnotations").
+			Str("operation", "sk8l#GetDashboardAnnotations").
 			Msg("executing template")
 	}
 
@@ -323,7 +339,7 @@ func (s *Sk8lServer) findJobsMapped() *protos.MappedJobs {
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "findJobsMapped").
+			Str("operation", "findJobsMapped").
 			Msg("getAndStore")
 	}
 
@@ -334,7 +350,7 @@ func (s *Sk8lServer) findJobsMapped() *protos.MappedJobs {
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "findJobsMapped").
+			Str("operation", "findJobsMapped").
 			Msg("proto.Unmarshal")
 	}
 
@@ -362,7 +378,7 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 			if err != nil {
 				log.Error().
 					Err(err).
-					Str("action", "findJobPodsForJob").
+					Str("operation", "findJobPodsForJob").
 					Msg("proto.Unmarshal")
 				return fmt.Errorf("sk8l#findJobPodsForJob: proto.Unmarshal() failed: %w", err)
 			}
@@ -373,7 +389,7 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("action", "findJobPodsForJob").
+				Str("operation", "findJobPodsForJob").
 				Msg("current.Value")
 			return fmt.Errorf("sk8l#findJobPodsForJob: current.Value() failed: %w", err)
 		}
@@ -384,7 +400,7 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "findJobPodsForJob").
+			Str("operation", "findJobPodsForJob").
 			Msg("DB.View")
 	}
 
@@ -517,7 +533,7 @@ func (s *Sk8lServer) collectCronjobs() {
 
 				if !ok {
 					log.Error().
-						Str("action", "collectCronjobs").
+						Str("operation", "collectCronjobs").
 						Msg("event.Object.(*batchv1.CronJob)")
 				}
 
@@ -531,7 +547,7 @@ func (s *Sk8lServer) collectCronjobs() {
 			} else {
 				x = s.K8sClient.WatchCronjobs()
 				log.Error().
-					Str("action", "collectCronjobs").
+					Str("operation", "collectCronjobs").
 					Msg("WatchCronjobs: Received all Cronjobs. Opening again")
 			}
 		}
@@ -549,7 +565,7 @@ func (s *Sk8lServer) collectJobs() {
 
 				if !ok {
 					log.Error().
-						Str("action", "collectPods").
+						Str("operation", "collectPods").
 						Msg("event.Object.(*batchv1.Job)")
 				}
 
@@ -563,7 +579,7 @@ func (s *Sk8lServer) collectJobs() {
 			} else {
 				x = s.K8sClient.WatchJobs()
 				log.Error().
-					Str("action", "collectJobs").
+					Str("operation", "collectJobs").
 					Msg("WatchJobs: Received all Jobs. Opening again")
 			}
 		}
@@ -581,7 +597,7 @@ func (s *Sk8lServer) collectPods() {
 
 				if !ok {
 					log.Error().
-						Str("action", "collectPods").
+						Str("operation", "collectPods").
 						Msg("event.Object.(*corev1.Pod)")
 				}
 
@@ -595,7 +611,7 @@ func (s *Sk8lServer) collectPods() {
 			} else {
 				x = s.K8sClient.WatchPods()
 				log.Error().
-					Str("action", "collectPods").
+					Str("operation", "collectPods").
 					Msg("WatchJobs: Received all Pods. Opening again")
 			}
 		}
@@ -608,7 +624,7 @@ func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv
 		cronJob := *eventCronJob
 		log.Error().
 			Err(badger.ErrKeyNotFound).
-			Str("action", "handleCronJobEvent").
+			Str("operation", "handleCronJobEvent").
 			Msg(fmt.Sprintf("storing eventCronJob %s", cronJob.Name))
 		cjList := &batchv1.CronJobList{
 			Items: []batchv1.CronJob{cronJob},
@@ -619,7 +635,7 @@ func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("action", "handleCronJobEvent").
+				Str("operation", "handleCronJobEvent").
 				Msg("proto.Marshal")
 			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectCronjobs", err)
 		}
@@ -651,7 +667,7 @@ func handleJobEvent(txn *badger.Txn, event watch.Event, eventJob *batchv1.Job) e
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("action", "handleJobEvent").
+				Str("operation", "handleJobEvent").
 				Msg("proto.Marshal")
 			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectJobs", err)
 		}
@@ -685,7 +701,7 @@ func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) er
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("action", "handlePodEvent").
+				Str("operation", "handlePodEvent").
 				Msg("proto.Marshal")
 			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectPods", err)
 		}
@@ -707,7 +723,7 @@ func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) er
 
 func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, eventCronJob *batchv1.CronJob) error {
 	log.Info().
-		Str("action", "updateStoredCronjobList").
+		Str("operation", "updateStoredCronjobList").
 		Msg(fmt.Sprintf("Updating with %s", eventCronJob.Name))
 	storedCjList := &batchv1.CronJobList{}
 
@@ -717,7 +733,7 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "updateStoredCronjobList").
+			Str("operation", "updateStoredCronjobList").
 			Msg("proto.Unmarshal")
 		return fmt.Errorf("sk8l#collectCronjobs: proto.Unmarshal() failed: %w", err)
 	}
@@ -739,7 +755,7 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "updateStoredCronjobList").
+			Str("operation", "updateStoredCronjobList").
 			Msg("proto.Marshal")
 		return fmt.Errorf("sk8l#collectCronjobs: proto.Marshal() failed: %w", err)
 	}
@@ -757,7 +773,7 @@ func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, even
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "updateStoredJobList").
+			Str("operation", "updateStoredJobList").
 			Msg("proto.Unmarshal")
 		return fmt.Errorf("sk8l#collectJobs: proto.Unmarshal() failed: %w", err)
 	}
@@ -779,7 +795,7 @@ func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, even
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "updateStoredJobList").
+			Str("operation", "updateStoredJobList").
 			Msg("proto.Marshal")
 		return fmt.Errorf("sk8l#collectJobs: proto.Marshal() failed: %w", err)
 	}
@@ -796,7 +812,7 @@ func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *c
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "updateStoredPodList").
+			Str("operation", "updateStoredPodList").
 			Msg("proto.Unmarshal")
 	}
 
@@ -806,7 +822,7 @@ func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *c
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("action", "updateStoredPodList").
+			Str("operation", "updateStoredPodList").
 			Msg("proto.Marshal")
 	}
 
@@ -817,7 +833,7 @@ func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *c
 func filterCronJobsList(storedCjList *batchv1.CronJobList, eventCronJob *batchv1.CronJob) {
 	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
 	log.Info().
-		Str("action", "filterCronJobsList").
+		Str("operation", "filterCronJobsList").
 		Msg(fmt.Sprintf("filtering out %s", eventCronJob.Name))
 	cjList := &batchv1.CronJobList{}
 	for _, cronjob := range storedCjList.Items {
@@ -841,7 +857,7 @@ func filterStoredJobList(storedJList *batchv1.JobList, eventJob *batchv1.Job) {
 
 func storeEntry(txn *badger.Txn, key []byte, result []byte, errContext string) error {
 	log.Info().
-		Str("action", "storeEntry").
+		Str("operation", "storeEntry").
 		Msg(errContext)
 	entry := badger.NewEntry(key, result)
 	if err := txn.SetEntry(entry); err != nil {
@@ -1139,7 +1155,7 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 			if err != nil {
 				log.Error().
 					Err(err).
-					Str("action", "buildCronJobCommand").
+					Str("operation", "buildCronJobCommand").
 					Msg("InitContainers: command.WriteString")
 			}
 		}
@@ -1154,7 +1170,7 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 			if err != nil {
 				log.Error().
 					Err(err).
-					Str("action", "buildCronJobCommand").
+					Str("operation", "buildCronJobCommand").
 					Msg("Containers: command.WriteString")
 			}
 		}
@@ -1169,7 +1185,7 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 			if err != nil {
 				log.Error().
 					Err(err).
-					Str("action", "buildCronJobCommand").
+					Str("operation", "buildCronJobCommand").
 					Msg("EphemeralContainers: command.WriteString")
 			}
 		}
