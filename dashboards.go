@@ -3,8 +3,10 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"regexp"
+	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 type DataSource struct {
@@ -53,10 +55,10 @@ var (
 	failingCronjobsMetricRe = regexp.MustCompile(`failing_cronjobs_total$`)
 
 	totalMetricNames = []string{
-		failingCronjobsOpts.Name,
-		runningCronjobsOpts.Name,
-		completedCronjobsOpts.Name,
 		registeredCronjobsOpts.Name,
+		completedCronjobsOpts.Name,
+		runningCronjobsOpts.Name,
+		failingCronjobsOpts.Name,
 	}
 
 	totalStatNames = []string{
@@ -67,8 +69,7 @@ var (
 )
 
 func generatePanels() []Panel {
-	var totalsMetrics = []*Target{}
-	var totalsStats = []*Target{}
+	var totalsMetrics = make([]*Target, 0, len(totalMetricNames))
 	for _, totalMetricName := range totalMetricNames {
 		t := &Target{
 			Expr:         fmt.Sprintf("%s_%s", MetricPrefix, totalMetricName),
@@ -76,20 +77,6 @@ func generatePanels() []Panel {
 			DataSource:   dataSource,
 		}
 		totalsMetrics = append(totalsMetrics, t)
-	}
-
-	for _, totalStatName := range totalStatNames {
-		legendFmt := "{{__name__}}"
-		if failingCronjobsMetricRe.MatchString(totalStatName) {
-			legendFmt = "failing cronjobs"
-		}
-
-		t := &Target{
-			Expr:         fmt.Sprintf("%s_%s", MetricPrefix, totalStatName),
-			LegendFormat: legendFmt,
-			DataSource:   dataSource,
-		}
-		totalsStats = append(totalsStats, t)
 	}
 
 	var panels = []Panel{
@@ -119,29 +106,10 @@ func generatePanels() []Panel {
 				Calcs: "last",
 			},
 		},
-		{
-			Type:       "stat",
-			Title:      fmt.Sprintf("sk8l: %s totals", K8Namespace),
-			DataSource: dataSource,
-			GridPos: &GridPos{
-				H: 8,
-				W: 12,
-				X: 12,
-				Y: 1,
-			},
-			Targets: totalsStats,
-			Options: &Option{
-				Calcs: "lastNotNull",
-			},
-			Override: &Override{
-				ID:      "byName",
-				Options: "failing cronjobs",
-			},
-		},
+		totalsBarGaugePanel(),
 	}
 
-	individualPanels := []Panel{}
-
+	individualPanels := make([]Panel, 0)
 	individualPanelsGenerator := func(key, value any) bool {
 		var row Panel
 		var target *Target
@@ -151,13 +119,19 @@ func generatePanels() []Panel {
 		metricNames, ok := value.([]string)
 
 		if !ok {
-			log.Println("Error: value.([]string)")
+			log.Error().
+				Str("component", "dashboards").
+				Str("operation", "generatePanels").
+				Msg("value.([]string)")
 		}
 
 		keyName, ok := key.(string)
 
 		if !ok {
-			log.Println("Error: key.(string)")
+			log.Error().
+				Str("component", "dashboards").
+				Str("operation", "generatePanels").
+				Msg("key.(string)")
 		}
 
 		i := len(individualPanels)
@@ -243,14 +217,12 @@ func generatePanels() []Panel {
 		}
 
 		if failureMetricName != "" {
-			fTarget := &Target{
-				Expr:         failureMetricName,
-				LegendFormat: "{{__name__}}",
-				DataSource:   dataSource,
-			}
-
 			failureTargets := []*Target{
-				fTarget,
+				&Target{
+					Expr:         failureMetricName,
+					LegendFormat: "failure total", // {{ __name__ }}
+					DataSource:   dataSource,
+				},
 			}
 
 			individualPanels = append(individualPanels, Panel{
@@ -277,4 +249,80 @@ func generatePanels() []Panel {
 	panels = append(panels, individualPanels...)
 
 	return panels
+}
+
+// func totalsStatPanel() Panel {
+//      var totalsStatsTargets = make([]*Target, 0, len(totalStatNames))
+//      for _, totalStatName := range totalStatNames {
+//              legendFmt := "{{__name__}}"
+//              if failingCronjobsMetricRe.MatchString(totalStatName) {
+//                      legendFmt = "failing cronjobs"
+//              }
+
+//              t := &Target{
+//                      Expr:         fmt.Sprintf("%s_%s", MetricPrefix, totalStatName),
+//                      LegendFormat: legendFmt,
+//                      DataSource:   dataSource,
+//              }
+//              totalsStatsTargets = append(totalsStatsTargets, t)
+//      }
+
+//      return Panel{
+//              Type:       "stat",
+//              Title:      fmt.Sprintf("sk8l: %s totals", K8Namespace),
+//              DataSource: dataSource,
+//              GridPos: &GridPos{
+//                      H: 8,
+//                      W: 12,
+//                      X: 12,
+//                      Y: 1,
+//              },
+//              Targets: totalsStatsTargets,
+//              Options: &Option{
+//                      Calcs: "lastNotNull",
+//              },
+//              Override: &Override{
+//                      ID:      "byName",
+//                      Options: "failing cronjobs",
+//              },
+//      }
+// }
+
+func totalsBarGaugePanel() Panel {
+	var totalsTargets = make([]*Target, 0, len(totalMetricNames))
+	for _, totalMetricName := range totalMetricNames {
+		// legendFmt := "{{__name__}}"
+		// if failingCronjobsMetricRe.MatchString(totalMetricName) {
+		//      legendFmt = "failing cronjobs"
+		// }
+		legendFmt := strings.TrimSuffix(totalMetricName, "_total")
+		legendFmt = strings.ReplaceAll(legendFmt, "_", " ")
+
+		t := &Target{
+			Expr:         fmt.Sprintf("%s_%s", MetricPrefix, totalMetricName),
+			LegendFormat: legendFmt,
+			DataSource:   dataSource,
+		}
+		totalsTargets = append(totalsTargets, t)
+	}
+
+	return Panel{
+		Type:       "bargauge",
+		Title:      fmt.Sprintf("sk8l: %s totals", K8Namespace),
+		DataSource: dataSource,
+		GridPos: &GridPos{
+			H: 8,
+			W: 12,
+			X: 12,
+			Y: 1,
+		},
+		Targets: totalsTargets,
+		Options: &Option{
+			Calcs: "lastNotNull",
+		},
+		Override: &Override{
+			ID:      "byName",
+			Options: "failing cronjobs",
+		},
+	}
 }

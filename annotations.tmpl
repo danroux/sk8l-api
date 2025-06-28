@@ -18,6 +18,12 @@
       "version": "10.2.2"
     },
     {
+      "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    },
+    {
       "type": "datasource",
       "id": "prometheus",
       "name": "Prometheus",
@@ -139,6 +145,7 @@
           "sort": "none"
         }
       },
+      "transparent": true,
       "targets": [
         {{- range $targetIndex, $target := .Targets }}
         {{- if $targetIndex}},{{end}}
@@ -162,6 +169,108 @@
       ],
       "title": "{{ .Title }}",
       "type": "state-timeline"
+    }
+    {{- else if (eq .Type "bargauge") }}
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "id": 320,
+      "gridPos": {{ marshal .GridPos }},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#5794F2",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {{ marshal .Override }},
+            "properties": [
+              {
+                "id": "color"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "semi-dark-blue",
+                      "value": null
+                    },
+                    {
+                      "color": "semi-dark-red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "transparent": true,
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {{- range $targetIndex, $target := .Targets }}
+        {{- if $targetIndex}},{{end}}
+        {
+          "datasource": {
+            "type": "{{ .DataSource.Type }}",
+            "uid": "{{ .DataSource.UID }}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "{{ .Expr }}",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "{{ .LegendFormat }}",
+          "range": true,
+          "refId": "A{{ $targetIndex }}",
+          "useBackend": false
+        }
+        {{- end }}
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "vertical",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "maxVizHeight": 300
+      },
+      "title": "{{ .Title }}",
+      "type": "bargauge"
     }
     {{- else if (eq .Type "stat") }}
     {
@@ -235,6 +344,7 @@
         "textMode": "value_and_name",
         "wideLayout": false
       },
+      "transparent": true,
       "pluginVersion": "10.2.2",
       "targets": [
         {{- range $targetIndex, $target := .Targets }}
@@ -346,6 +456,7 @@
           "sort": "none"
         }
       },
+      "transparent": true,
       "targets": [
         {{- range $targetIndex, $target := .Targets }}
         {{- if $targetIndex}},{{end}}
