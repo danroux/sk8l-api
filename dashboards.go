@@ -107,6 +107,7 @@ func generatePanels() []Panel {
 			},
 		},
 		totalsBarGaugePanel(),
+		allStateTimelines(),
 	}
 
 	individualPanels := make([]Panel, 0)
@@ -323,6 +324,50 @@ func totalsBarGaugePanel() Panel {
 		Override: &Override{
 			ID:      "byName",
 			Options: "failing cronjobs",
+		},
+	}
+}
+
+func allStateTimelines() Panel {
+	failureTargets := make([]*Target, 0)
+
+	metricsNamesMap.Range(func(key, value any) bool {
+		metricNames, ok := value.([]string)
+		if !ok {
+			log.Error().
+				Str("component", "dashboards").
+				Str("operation", "allStateTimelines").
+				Msg("value.([]string)")
+		}
+
+		for _, metricName := range metricNames {
+			if failureMetricRe.MatchString(metricName) {
+				legendFmt := strings.TrimPrefix(metricName, MetricPrefix)
+				legendFmt = strings.TrimPrefix(legendFmt, "_")
+				failureTarget := &Target{
+					Expr:         metricName,
+					LegendFormat: legendFmt, // {{__name__}}
+					DataSource:   dataSource,
+				}
+				failureTargets = append(failureTargets, failureTarget)
+			}
+		}
+		return true
+	})
+
+	return Panel{
+		Title:      "status overview",
+		Type:       "state-timeline",
+		DataSource: dataSource,
+		GridPos: &GridPos{
+			H: 8,
+			W: 12,
+			X: 0,
+			Y: 8,
+		},
+		Targets: failureTargets,
+		Options: &Option{
+			Calcs: "last",
 		},
 	}
 }

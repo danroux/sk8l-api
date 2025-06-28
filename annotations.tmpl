@@ -131,12 +131,12 @@
       "gridPos": {{ marshal .GridPos }},
       "id": 14,
       "options": {
-        "mergeValues": false,
+        "mergeValues": true,
         "showValue": "auto",
-        "alignValue": "left",
-        "rowHeight": 0.9,
+        "alignValue": "center",
+        "rowHeight": 0.95,
         "legend": {
-          "showLegend": true,
+          "showLegend": false,
           "displayMode": "list",
           "placement": "bottom"
         },
@@ -162,7 +162,7 @@
           "instant": false,
           "legendFormat": "{{ .LegendFormat }}",
           "range": true,
-          "refId": "A",
+          "refId": "A{{ $targetIndex }}",
           "useBackend": false
         }
         {{- end }}
