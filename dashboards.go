@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 )
@@ -110,8 +111,20 @@ func generatePanels() []Panel {
 		allStateTimelines(),
 	}
 
-	individualPanels := make([]Panel, 0)
-	individualPanelsGenerator := func(key, value any) bool {
+	cronJobRowPanels := generateCronJobRowPanels(metricsNamesMap)
+	panels = append(panels, cronJobRowPanels...)
+
+	return panels
+}
+
+func generateCronJobRowPanels(metricsNames *sync.Map) []Panel {
+	cronJobRowPanels := make([]Panel, 0)
+	metricsNames.Range(individualPanelsGenerator(&cronJobRowPanels))
+	return cronJobRowPanels
+}
+
+func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) bool {
+	return func(key, value any) bool {
 		var row Panel
 		var target *Target
 		var failureMetricName string
@@ -135,13 +148,14 @@ func generatePanels() []Panel {
 				Msg("key.(string)")
 		}
 
-		i := len(individualPanels)
+		i := len(*cronJobRowPanels)
 
 		var rowI, rowM, failureY uint16
 
 		rowI = uint16((i + 1) * 9)
 		rowM = rowI + 1
 		failureY = rowM + 8
+		emptyRowTargets := make([]*Target, 0)
 
 		row = Panel{
 			Type:  "row",
@@ -152,11 +166,11 @@ func generatePanels() []Panel {
 				X: 0,
 				Y: rowI,
 			},
-			Targets:    make([]*Target, 0),
+			Targets:    emptyRowTargets,
 			DataSource: dataSource,
 		}
 
-		individualPanels = append(individualPanels, row)
+		*cronJobRowPanels = append(*cronJobRowPanels, row)
 
 		for _, metricName := range metricNames {
 			if durationRe.MatchString(metricName) {
@@ -184,7 +198,7 @@ func generatePanels() []Panel {
 		c := fmt.Sprintf("%s: state timeline", keyName)
 
 		if len(cronjobTotals) > 0 {
-			individualPanels = append(individualPanels, Panel{
+			*cronJobRowPanels = append(*cronJobRowPanels, Panel{
 				Title:      a,
 				DataSource: dataSource,
 				GridPos: &GridPos{
@@ -201,7 +215,7 @@ func generatePanels() []Panel {
 		}
 
 		if len(cronjobDurations) > 0 {
-			individualPanels = append(individualPanels, Panel{
+			*cronJobRowPanels = append(*cronJobRowPanels, Panel{
 				Title:      b,
 				DataSource: dataSource,
 				GridPos: &GridPos{
@@ -226,7 +240,7 @@ func generatePanels() []Panel {
 				},
 			}
 
-			individualPanels = append(individualPanels, Panel{
+			*cronJobRowPanels = append(*cronJobRowPanels, Panel{
 				Title:      c,
 				Type:       "state-timeline",
 				DataSource: dataSource,
@@ -245,11 +259,6 @@ func generatePanels() []Panel {
 
 		return true
 	}
-
-	metricsNamesMap.Range(individualPanelsGenerator)
-	panels = append(panels, individualPanels...)
-
-	return panels
 }
 
 // func totalsStatPanel() Panel {
