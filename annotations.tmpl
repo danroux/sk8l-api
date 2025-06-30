@@ -488,7 +488,38 @@
   "schemaVersion": 38,
   "tags": [],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "type": "query",
+        "name": "cronjob",
+        "label": "Cronjob Name",
+        "datasource": "Prometheus",
+        "refresh": 1,
+        "query": {
+          "query": "label_values(__name__)",
+          "refId": "StandardVariableQuery"
+        },
+        "regex": "^sk8l_[^_]+_([^_]+(?:_[^_]+)*)_(?:completion|duration_seconds|failure)_total$",
+        "sort": 1,
+        "multi": true,
+        "name": "cronjob",
+        "includeAll": true,
+        "allValue": ".*",
+        "hide": 0
+      },
+      {
+        "current": {
+          "text": "sk8l",
+          "value": "sk8l"
+        },
+        "hide": 0,
+        "label": "namespace",
+        "name": "namespace",
+        "query": "sk8l",
+        "skipUrlSync": true,
+        "type": "constant"
+      }
+    ]
   },
   "time": {
     "from": "now-1h",
