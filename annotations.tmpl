@@ -79,7 +79,8 @@
       "id": {{ $panelIndex }},
       "panels": [],
       "title": "{{ .Title }}",
-      "type": "row"
+      "type": "row",
+      "repeat": true
     }
     {{- else if (eq .Type "state-timeline") }}
     {
@@ -490,6 +491,18 @@
   "templating": {
     "list": [
       {
+        "current": {
+          "text": "sk8l",
+          "value": "sk8l"
+        },
+        "hide": 0,
+        "label": "namespace",
+        "name": "namespace",
+        "query": "sk8l",
+        "skipUrlSync": true,
+        "type": "constant"
+      },
+      {
         "type": "query",
         "name": "cronjob",
         "label": "Cronjob Name",
@@ -506,18 +519,6 @@
         "includeAll": true,
         "allValue": ".*",
         "hide": 0
-      },
-      {
-        "current": {
-          "text": "sk8l",
-          "value": "sk8l"
-        },
-        "hide": 0,
-        "label": "namespace",
-        "name": "namespace",
-        "query": "sk8l",
-        "skipUrlSync": true,
-        "type": "constant"
       }
     ]
   },
