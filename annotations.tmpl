@@ -66,8 +66,8 @@
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
-  "id": 2,
+  "graphTooltip": 1,
+  "id": null,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -79,8 +79,8 @@
       "id": {{ $panelIndex }},
       "panels": [],
       "title": "{{ .Title }}",
-      "type": "row",
-      "repeat": true
+      "type": "row"
+      {{- if .Repeat }} ,"repeat": {{ .Repeat }} {{ end }}
     }
     {{- else if (eq .Type "state-timeline") }}
     {
@@ -391,7 +391,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 50,
+            "fillOpacity": 40,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -399,13 +399,13 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "stepAfter",
+            "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": true,
             "stacking": {
               "group": "A",
@@ -487,7 +487,7 @@
   ],
   "refresh": "10s",
   "schemaVersion": 38,
-  "tags": [],
+  "tags": ["sk8l"],
   "templating": {
     "list": [
       {
@@ -518,6 +518,7 @@
         "name": "cronjob",
         "includeAll": true,
         "allValue": ".*",
+        "allFormat": "regex",
         "hide": 0
       }
     ]

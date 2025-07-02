@@ -43,6 +43,7 @@ type Panel struct {
 	Title      string
 	Type       string
 	Targets    []*Target
+	Repeat     string
 }
 
 var (
@@ -139,7 +140,7 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 				Msg("value.([]string)")
 		}
 
-		keyName, ok := key.(string)
+		_, ok = key.(string)
 
 		if !ok {
 			log.Error().
@@ -159,7 +160,7 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 
 		row = Panel{
 			Type:  "row",
-			Title: keyName,
+			Title: "${cronjob} hehe bts",
 			GridPos: &GridPos{
 				H: 1,
 				W: 24,
@@ -168,10 +169,13 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 			},
 			Targets:    emptyRowTargets,
 			DataSource: dataSource,
+			Repeat:     "cronjob",
 		}
 
 		*cronJobRowPanels = append(*cronJobRowPanels, row)
 
+		// sk8l_${namespace}_${cronjob}_completion_total
+		// sk8l_${namespace}_${cronjob}_failure_total
 		for _, metricName := range metricNames {
 			if durationRe.MatchString(metricName) {
 				target = &Target{
@@ -182,7 +186,10 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 				cronjobDurations = append(cronjobDurations, target)
 			} else {
 				if failureMetricRe.MatchString(metricName) {
+					metricName = "sk8l_${namespace}_${cronjob}_failure_total"
 					failureMetricName = metricName
+				} else {
+					metricName = "sk8l_${namespace}_${cronjob}_completion_total"
 				}
 				target = &Target{
 					Expr:         metricName,
@@ -193,9 +200,9 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 			}
 		}
 
-		a := fmt.Sprintf("%s: completion / failure totals", keyName)
-		b := fmt.Sprintf("%s: jobs duration", keyName)
-		c := fmt.Sprintf("%s: state timeline", keyName)
+		a := "${cronjob}: completion / failure totals"
+		b := "${cronjob}: jobs duration"
+		c := "${cronjob}: state timeline"
 
 		if len(cronjobTotals) > 0 {
 			*cronJobRowPanels = append(*cronJobRowPanels, Panel{
