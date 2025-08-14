@@ -126,13 +126,23 @@ func generateCronJobRowPanels(metricsNames *sync.Map) []Panel {
 
 func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) bool {
 	return func(key, value any) bool {
+		if len(*cronJobRowPanels) > 0 {
+			log.Info().
+				Str(
+					"individualPanelsGenerator",
+					fmt.Sprintf("%d", len(*cronJobRowPanels)),
+				).
+				Msg("metricName")
+			return true
+		}
+
 		var row Panel
 		var target *Target
 		var failureMetricName string
 		var cronjobDurations = make([]*Target, 0)
 		var cronjobTotals = make([]*Target, 0)
-		metricNames, ok := value.([]string)
 
+		metricNames, ok := value.([]string)
 		if !ok {
 			log.Error().
 				Str("component", "dashboards").
@@ -141,7 +151,6 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 		}
 
 		_, ok = key.(string)
-
 		if !ok {
 			log.Error().
 				Str("component", "dashboards").
@@ -160,7 +169,7 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 
 		row = Panel{
 			Type:  "row",
-			Title: "${cronjob} hehe bts",
+			Title: "${cronjob}",
 			GridPos: &GridPos{
 				H: 1,
 				W: 24,
@@ -205,7 +214,7 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 		c := "${cronjob}: state timeline"
 
 		if len(cronjobTotals) > 0 {
-			*cronJobRowPanels = append(*cronJobRowPanels, Panel{
+			cronjobTotalsPanel := Panel{
 				Title:      a,
 				DataSource: dataSource,
 				GridPos: &GridPos{
@@ -218,11 +227,12 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 				Options: &Option{
 					Calcs: "last",
 				},
-			})
+			}
+			*cronJobRowPanels = append(*cronJobRowPanels, cronjobTotalsPanel)
 		}
 
 		if len(cronjobDurations) > 0 {
-			*cronJobRowPanels = append(*cronJobRowPanels, Panel{
+			cronjobDurationsPanel := Panel{
 				Title:      b,
 				DataSource: dataSource,
 				GridPos: &GridPos{
@@ -235,7 +245,8 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 				Options: &Option{
 					Calcs: "max",
 				},
-			})
+			}
+			*cronJobRowPanels = append(*cronJobRowPanels, cronjobDurationsPanel)
 		}
 
 		if failureMetricName != "" {
@@ -247,7 +258,7 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 				},
 			}
 
-			*cronJobRowPanels = append(*cronJobRowPanels, Panel{
+			cronjobStateTimelinePanel := Panel{
 				Title:      c,
 				Type:       "state-timeline",
 				DataSource: dataSource,
@@ -261,7 +272,8 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 				Options: &Option{
 					Calcs: "last",
 				},
-			})
+			}
+			*cronJobRowPanels = append(*cronJobRowPanels, cronjobStateTimelinePanel)
 		}
 
 		return true

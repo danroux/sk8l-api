@@ -80,7 +80,7 @@
       "panels": [],
       "title": "{{ .Title }}",
       "type": "row"
-      {{- if .Repeat }} ,"repeat": {{ .Repeat }} {{ end }}
+      {{- if .Repeat }} ,"repeat": "{{ .Repeat }}", "repeatDirection": "h" {{ end }}
     }
     {{- else if (eq .Type "state-timeline") }}
     {
@@ -485,7 +485,7 @@
     {{- end }}
     {{- end }}
   ],
-  "refresh": "10s",
+  "refresh": "1m",
   "schemaVersion": 38,
   "tags": ["sk8l"],
   "templating": {
