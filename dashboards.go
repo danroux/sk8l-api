@@ -15,7 +15,7 @@ type DataSource struct {
 }
 
 type Target struct {
-	DataSource         *DataSource
+	DataSource         DataSource
 	Expr, LegendFormat string
 }
 
@@ -36,10 +36,10 @@ type Override struct {
 }
 
 type Panel struct {
-	GridPos    *GridPos `json:"gridPos"`
-	DataSource *DataSource
-	Options    *Option
-	Override   *Override
+	GridPos    GridPos `json:"gridPos"`
+	DataSource DataSource
+	Options    Option
+	Override   Override
 	Title      string
 	Type       string
 	Targets    []*Target
@@ -47,7 +47,7 @@ type Panel struct {
 }
 
 var (
-	dataSource = &DataSource{
+	dataSource = DataSource{
 		Type: "prometheus",
 		UID:  "${DS_PROMETHEUS}",
 	}
@@ -86,30 +86,18 @@ func generatePanels() []Panel {
 			Type:       "row",
 			Title:      fmt.Sprintf("sk8l: %s overview", K8Namespace),
 			DataSource: dataSource,
-			GridPos: &GridPos{
-				H: 1,
-				W: 24,
+			GridPos: GridPos{
 				X: 0,
 				Y: 0,
+				H: 1,
+				W: 24,
 			},
 			Targets: make([]*Target, 0),
 		},
-		{
-			Title:      "completed / registered / failed cronjobs totals",
-			DataSource: dataSource,
-			GridPos: &GridPos{
-				H: 8,
-				W: 12,
-				X: 0,
-				Y: 1,
-			},
-			Targets: totalsMetrics,
-			Options: &Option{
-				Calcs: "last",
-			},
-		},
+		cronjobsTotalsTimeseries(totalsMetrics),
 		totalsBarGaugePanel(),
 		allStateTimelines(),
+		allStatusHistory(),
 	}
 
 	cronJobRowPanels := generateCronJobRowPanels(metricsNamesMap)
@@ -160,21 +148,21 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 
 		i := len(*cronJobRowPanels)
 
-		var rowI, rowM, failureY uint16
+		var rowY, panelY, failureY uint16
 
-		rowI = uint16((i + 1) * 9)
-		rowM = rowI + 1
-		failureY = rowM + 8
+		rowY = uint16((i + 1) * 10)
+		panelY = rowY + 1
+		failureY = panelY + 8
 		emptyRowTargets := make([]*Target, 0)
 
 		row = Panel{
 			Type:  "row",
 			Title: "${cronjob}",
-			GridPos: &GridPos{
+			GridPos: GridPos{
+				X: 0,
+				Y: rowY,
 				H: 1,
 				W: 24,
-				X: 0,
-				Y: rowI,
 			},
 			Targets:    emptyRowTargets,
 			DataSource: dataSource,
@@ -217,14 +205,14 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 			cronjobTotalsPanel := Panel{
 				Title:      a,
 				DataSource: dataSource,
-				GridPos: &GridPos{
+				GridPos: GridPos{
+					X: 0,
+					Y: panelY,
 					H: 8,
 					W: 12,
-					X: 0,
-					Y: rowM,
 				},
 				Targets: cronjobTotals,
-				Options: &Option{
+				Options: Option{
 					Calcs: "last",
 				},
 			}
@@ -235,14 +223,14 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 			cronjobDurationsPanel := Panel{
 				Title:      b,
 				DataSource: dataSource,
-				GridPos: &GridPos{
+				GridPos: GridPos{
+					X: 12,
+					Y: panelY,
 					H: 8,
 					W: 12,
-					X: 12,
-					Y: rowM,
 				},
 				Targets: cronjobDurations,
-				Options: &Option{
+				Options: Option{
 					Calcs: "max",
 				},
 			}
@@ -262,14 +250,14 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 				Title:      c,
 				Type:       "state-timeline",
 				DataSource: dataSource,
-				GridPos: &GridPos{
-					H: 8,
-					W: 12,
+				GridPos: GridPos{
 					X: 0,
 					Y: failureY,
+					H: 8,
+					W: 12,
 				},
 				Targets: failureTargets,
-				Options: &Option{
+				Options: Option{
 					Calcs: "last",
 				},
 			}
@@ -280,50 +268,27 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 	}
 }
 
-// func totalsStatPanel() Panel {
-//      var totalsStatsTargets = make([]*Target, 0, len(totalStatNames))
-//      for _, totalStatName := range totalStatNames {
-//              legendFmt := "{{__name__}}"
-//              if failingCronjobsMetricRe.MatchString(totalStatName) {
-//                      legendFmt = "failing cronjobs"
-//              }
-
-//              t := &Target{
-//                      Expr:         fmt.Sprintf("%s_%s", MetricPrefix, totalStatName),
-//                      LegendFormat: legendFmt,
-//                      DataSource:   dataSource,
-//              }
-//              totalsStatsTargets = append(totalsStatsTargets, t)
-//      }
-
-//      return Panel{
-//              Type:       "stat",
-//              Title:      fmt.Sprintf("sk8l: %s totals", K8Namespace),
-//              DataSource: dataSource,
-//              GridPos: &GridPos{
-//                      H: 8,
-//                      W: 12,
-//                      X: 12,
-//                      Y: 1,
-//              },
-//              Targets: totalsStatsTargets,
-//              Options: &Option{
-//                      Calcs: "lastNotNull",
-//              },
-//              Override: &Override{
-//                      ID:      "byName",
-//                      Options: "failing cronjobs",
-//              },
-//      }
-// }
+func cronjobsTotalsTimeseries(totalsMetrics []*Target) Panel {
+	return Panel{
+		Title:      "completed / registered / failed cronjobs totals",
+		Type:       "timeseries",
+		DataSource: dataSource,
+		GridPos: GridPos{
+			X: 0,
+			Y: 1,
+			H: 8,
+			W: 12,
+		},
+		Targets: totalsMetrics,
+		Options: Option{
+			Calcs: "last",
+		},
+	}
+}
 
 func totalsBarGaugePanel() Panel {
 	var totalsTargets = make([]*Target, 0, len(totalMetricNames))
 	for _, totalMetricName := range totalMetricNames {
-		// legendFmt := "{{__name__}}"
-		// if failingCronjobsMetricRe.MatchString(totalMetricName) {
-		//      legendFmt = "failing cronjobs"
-		// }
 		legendFmt := strings.TrimSuffix(totalMetricName, "_total")
 		legendFmt = strings.ReplaceAll(legendFmt, "_", " ")
 
@@ -339,20 +304,59 @@ func totalsBarGaugePanel() Panel {
 		Type:       "bargauge",
 		Title:      fmt.Sprintf("sk8l: %s totals", K8Namespace),
 		DataSource: dataSource,
-		GridPos: &GridPos{
-			H: 8,
-			W: 12,
+		GridPos: GridPos{
 			X: 12,
 			Y: 1,
+			H: 8,
+			W: 12,
 		},
 		Targets: totalsTargets,
-		Options: &Option{
+		Options: Option{
 			Calcs: "lastNotNull",
 		},
-		Override: &Override{
+		Override: Override{
 			ID:      "byName",
 			Options: "failing cronjobs",
 		},
+	}
+}
+
+func allStatusHistory() Panel {
+	failureTargets := make([]*Target, 0)
+
+	metricsNamesMap.Range(func(key, value any) bool {
+		metricNames, ok := value.([]string)
+		if !ok {
+			log.Error().
+				Str("component", "dashboards").
+				Str("operation", "allStatusHistory").
+				Msg("value.([]string)")
+		}
+
+		for _, metricName := range metricNames {
+			if failureMetricRe.MatchString(metricName) {
+				failureTarget := &Target{
+					Expr:         metricName,
+					LegendFormat: failureLegendFmt(metricName), // {{__name__}}
+					DataSource:   dataSource,
+				}
+				failureTargets = append(failureTargets, failureTarget)
+			}
+		}
+		return true
+	})
+
+	return Panel{
+		Title:      "status history",
+		Type:       "status-history",
+		DataSource: dataSource,
+		GridPos: GridPos{
+			X: 12,
+			Y: 9,
+			H: 8,
+			W: 12,
+		},
+		Targets: failureTargets,
 	}
 }
 
@@ -370,11 +374,9 @@ func allStateTimelines() Panel {
 
 		for _, metricName := range metricNames {
 			if failureMetricRe.MatchString(metricName) {
-				legendFmt := strings.TrimPrefix(metricName, MetricPrefix)
-				legendFmt = strings.TrimPrefix(legendFmt, "_")
 				failureTarget := &Target{
 					Expr:         metricName,
-					LegendFormat: legendFmt, // {{__name__}}
+					LegendFormat: failureLegendFmt(metricName), // {{__name__}}
 					DataSource:   dataSource,
 				}
 				failureTargets = append(failureTargets, failureTarget)
@@ -384,18 +386,25 @@ func allStateTimelines() Panel {
 	})
 
 	return Panel{
-		Title:      "status overview",
+		Title:      "status timeline",
 		Type:       "state-timeline",
 		DataSource: dataSource,
-		GridPos: &GridPos{
+		GridPos: GridPos{
+			X: 0,
+			Y: 9,
 			H: 8,
 			W: 12,
-			X: 0,
-			Y: 8,
 		},
 		Targets: failureTargets,
-		Options: &Option{
+		Options: Option{
 			Calcs: "last",
 		},
 	}
+}
+
+func failureLegendFmt(metricName string) string {
+	legendFmt := strings.TrimPrefix(metricName, fmt.Sprintf("%s_", MetricPrefix))
+	shorterLegend := strings.TrimSuffix(failureMetricRe.String(), "$")
+	legendFmt = strings.TrimSuffix(legendFmt, fmt.Sprintf("_%s", shorterLegend))
+	return legendFmt
 }

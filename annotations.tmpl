@@ -43,6 +43,12 @@
     },
     {
       "type": "panel",
+      "id": "status-history",
+      "name": "Status history",
+      "version": ""
+    },
+    {
+      "type": "panel",
       "id": "timeseries",
       "name": "Time series",
       "version": ""
@@ -374,15 +380,16 @@
     }
     {{- else if (eq .Type "status-history") }}
     {
-      "id": 323,
-      "type": "status-history",
-      "title": "New panel",
+      {{- if .GridPos }}
+      "gridPos": {{ marshal .GridPos }},
+      {{- else }}
       "gridPos": {
         "x": 12,
         "y": 9,
         "h": 8,
         "w": 12
       },
+      {{- end }}
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -437,10 +444,31 @@
       },
       "transparent": true,
       "pluginVersion": "12.0.2",
-      "targets": [],
+      "targets": [
+        {{- range $targetIndex, $target := .Targets }}
+        {{- if $targetIndex}},{{end}}
+          {
+            "refId": "A{{ $targetIndex }}",
+            "expr": "{{ .Expr }}",
+            "range": true,
+            "instant": false,
+            "datasource": {
+              "type": "{{ .DataSource.Type }}",
+              "uid": "{{ .DataSource.UID }}"
+            },
+            "hide": false,
+            "editorMode": "builder",
+            "legendFormat": "{{ .LegendFormat }}",
+            "useBackend": false,
+            "disableTextWrap": false,
+            "fullMetaSearch": false,
+            "includeNullMetadata": true
+          }
+        {{- end }}
+      ],
       "datasource": {
-        "uid": "PBFA97CFB590B2093",
-        "type": "prometheus"
+        "type": "{{ .DataSource.Type }}",
+        "uid": "{{ .DataSource.UID }}"
       },
       "interval": "5m",
       "options": {
@@ -448,7 +476,7 @@
         "rowHeight": 0.9,
         "colWidth": 0.95,
         "legend": {
-          "showLegend": true,
+          "showLegend": false,
           "displayMode": "list",
           "placement": "bottom"
         },
@@ -457,7 +485,10 @@
           "sort": "none",
           "hideZeros": false
         }
-      }
+      },
+      "id": {{ $panelIndex }},
+      "type": "status-history",
+      "title": "{{ .Title }}"
     }
     {{- else}}
     {
@@ -572,7 +603,7 @@
     {{- end }}
     {{- end }}
   ],
-  "refresh": "1m",
+  "refresh": "5m",
   "schemaVersion": 38,
   "tags": ["sk8l"],
   "templating": {
