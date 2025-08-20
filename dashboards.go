@@ -36,14 +36,14 @@ type Override struct {
 }
 
 type Panel struct {
-	GridPos    GridPos `json:"gridPos"`
 	DataSource DataSource
-	Options    Option
 	Override   Override
+	Options    Option
 	Title      string
 	Type       string
-	Targets    []*Target
 	Repeat     string
+	Targets    []*Target
+	GridPos    GridPos `json:"gridPos"`
 }
 
 var (
@@ -52,18 +52,11 @@ var (
 		UID:  "${DS_PROMETHEUS}",
 	}
 
-	durationRe              = regexp.MustCompile(`duration_seconds$`)
-	failureMetricRe         = regexp.MustCompile(`failure_total$`)
-	failingCronjobsMetricRe = regexp.MustCompile(`failing_cronjobs_total$`)
+	durationRe      = regexp.MustCompile(`duration_seconds$`)
+	failureMetricRe = regexp.MustCompile(`failure_total$`)
 
 	totalMetricNames = []string{
 		registeredCronjobsOpts.Name,
-		completedCronjobsOpts.Name,
-		runningCronjobsOpts.Name,
-		failingCronjobsOpts.Name,
-	}
-
-	totalStatNames = []string{
 		completedCronjobsOpts.Name,
 		runningCronjobsOpts.Name,
 		failingCronjobsOpts.Name,
@@ -239,7 +232,7 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 
 		if failureMetricName != "" {
 			failureTargets := []*Target{
-				&Target{
+				{
 					Expr:         failureMetricName,
 					LegendFormat: "failure total", // {{ __name__ }}
 					DataSource:   dataSource,
