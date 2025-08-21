@@ -1,7 +1,7 @@
 apiVersion: v2
 name: sk8l
-version: 0.21.0
-appVersion: 0.20.0
+version: 0.22.0
+appVersion: 0.21.0
 description: |
   sk8l is a Cronjob/Job monitoring and visualization tool in Kubernetes. It enables users to monitor Cronjob/Job status by collecting metrics from the configured targets and publish them to prometheus.
 icon: https://sk8l.io/charts/logo.png
@@ -24,7 +24,7 @@ maintainers:
 annotations:
   artifacthub.io/images: |
     - name: sk8l-api
-      image: danroux/sk8l-api:v0.17.0
+      image: danroux/sk8l-api:v0.18.0
     - name: sk8l-ui
       image: danroux/sk8l-ui:v0.18.0
     - name: envoy
@@ -32,36 +32,28 @@ annotations:
   artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: "api: Add JobResponse.WithSidecarContainers"
+      description: "ci/dependabot: docker:(deps): bump alpine from 3.21.3 to 3.22.1"
     - kind: changed
-      description: "ci/dependabot: docker:(deps): bump golang from 1.24.2 to 1.24.3"
+      description: "ci/dependabot: docker:(deps): bump golang from 1.24.3 to 1.25.0"
     - kind: changed
-      description: "ci/dependabot: gha:(deps): bump docker/build-push-action from 6.15.0 to 6.16.0"
+      description: "ci/dependabot: gha:(deps): bump actions/checkout from 4.2.2 to 5.0.0"
     - kind: changed
-      description: "gha/chart: Automate helm chart release with GHA"
+      description: "ci/dependabot: gha:(deps): bump actions/setup-go from 5.4.0 to 5.5.0"
     - kind: changed
-      description: "go/deps: Replace github.com/ghodss/yaml with sigs.k8s.io/yaml"
+      description: "ci/dependabot: gha:(deps): bump azure/setup-helm from 4.3.0 to 4.3.1"
     - kind: changed
-      description: "ci/dependabot: docker:(deps): bump cypress/included from 14.3.0 to 14.3.1"
+      description: "ci/dependabot: gha:(deps): bump docker/build-push-action from 6.16.0 to 6.18.0"
     - kind: changed
-      description: "ci/dependabot: docker:(deps): bump cypress/included from 14.3.1 to 14.3.2"
+      description: "ci/dependabot: gha:(deps): bump docker/login-action from 3.4.0 to 3.5.0"
     - kind: changed
-      description: "ci/dependabot: gha:(deps): bump engineerd/setup-kind from 0.5.0 to 0.6.2"
+      description: "ci/dependabot: gha:(deps): bump docker/setup-buildx-action from 3.10.0 to 3.11.0"
     - kind: changed
-      description: "ci/dependabot: npm:(deps): bump @primer/octicons from 19.10.0 to 19.15.1"
+      description: "ci/dependabot: gha:(deps): bump golangci/golangci-lint-action from 6.0.1 to 8.0.0"
     - kind: changed
-      description: "ci/dependabot: npm:(deps): bump rollup from 4.39.0 to 4.40.0"
+      description: "ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.72.0 to 1.72.1"
     - kind: changed
-      description: "ci/dependabot: npm:(deps-dev): bump eslint from 9.24.0 to 9.25.0"
+      description: "ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.72.1 to 1.72.2"
     - kind: changed
-      description: "ci/dependabot: npm:(deps-dev): bump eslint from 9.25.0 to 9.25.1"
+      description: "ci/dependabot: go:(deps): bump k8s.io/client-go from 0.32.3 to 0.33.1"
     - kind: changed
-      description: "ci/dependabot: npm:(deps-dev): bump eslint from 9.25.1 to 9.26.0"
-    - kind: changed
-      description: "ci/dependabot: npm:(deps-dev): bump vite from 6.2.6 to 6.3.0"
-    - kind: changed
-      description: "ci/k8s: Increase kind version, update supported versions and test against them."
-    - kind: changed
-      description: "js/vue.js: Improve status display for jobs with sidecars containers && setup vitest"
-    - kind: changed
-      description: "js: Fix typo in DashboardAnnotationsModal#getDashboardAnnotations"
+      description: "misc: Improve logging, Improve dashboard layout and panel design, go refactorings: still a work in progress"
