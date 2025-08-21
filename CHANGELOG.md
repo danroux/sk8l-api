@@ -1,3 +1,33 @@
+## v0.18.0 (August 21, 2025)
+
+ENHANCEMENTS:
+
+* ci/dependabot: docker:(deps): bump alpine from 3.21.3 to 3.22.1 [[GH-204](https://github.com/danroux/sk8l-api/issues/204)]
+* ci/dependabot: docker:(deps): bump golang from 1.24.3 to 1.25.0 [[GH-207](https://github.com/danroux/sk8l-api/issues/207)]
+* ci/dependabot: gha:(deps): bump actions/checkout from 4.2.2 to 5.0.0 [[GH-218](https://github.com/danroux/sk8l-api/issues/218)]
+* ci/dependabot: gha:(deps): bump actions/setup-go from 5.4.0 to 5.5.0 [[GH-194](https://github.com/danroux/sk8l-api/issues/194)]
+* ci/dependabot: gha:(deps): bump azure/setup-helm from 4.3.0 to 4.3.1 [[GH-219](https://github.com/danroux/sk8l-api/issues/219)]
+* ci/dependabot: gha:(deps): bump docker/build-push-action from 6.16.0 to 6.18.0 [[GH-199](https://github.com/danroux/sk8l-api/issues/199)]
+* ci/dependabot: gha:(deps): bump docker/login-action from 3.4.0 to 3.5.0 [[GH-216](https://github.com/danroux/sk8l-api/issues/216)]
+* ci/dependabot: gha:(deps): bump docker/setup-buildx-action from 3.10.0 to 3.11.0 [[GH-208](https://github.com/danroux/sk8l-api/issues/208)]
+* ci/dependabot: gha:(deps): bump golangci/golangci-lint-action from 6.0.1 to 8.0.0 [[GH-190](https://github.com/danroux/sk8l-api/issues/190)]
+* ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.72.0 to 1.72.1 [[GH-195](https://github.com/danroux/sk8l-api/issues/195)]
+* ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.72.1 to 1.72.2 [[GH-203](https://github.com/danroux/sk8l-api/issues/203)]
+* ci/dependabot: go:(deps): bump k8s.io/client-go from 0.32.3 to 0.33.1 [[GH-185](https://github.com/danroux/sk8l-api/issues/185)]
+
+IMPROVEMENTS:
+
+* misc: Improve logging, Improve dashboard layout and panel design, go refactorings: still a work in progress
+
+- Logging: Use github.com/rs/zerolog to generate json structured logs
+- Dashboards: Update dependencies
+- Dashboards: Add bargauge && status-history panels
+- Dashboards: Use grafana templating features to generate less panels and repeat them per cronjob
+- Dashboards: Add namespace/cronjobs names variables to enable filtering the panels
+- go: Add functions to generate panels cronjobsTotalsTimeseries, totalsBarGaugePanel, allStatusHistory, allStateTimelines
+- go: No longer use go's default mux handler
+- go: improve servers setup/shutdown [[GH-205](https://github.com/danroux/sk8l-api/issues/205)]
+
 ## v0.17.0 (May 19, 2025)
 
 ENHANCEMENTS:
