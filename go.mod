@@ -11,9 +11,9 @@ require (
 	github.com/rs/zerolog v1.34.0
 	google.golang.org/grpc v1.72.2
 	google.golang.org/protobuf v1.36.6
-	k8s.io/api v0.33.1
-	k8s.io/apimachinery v0.33.1
-	k8s.io/client-go v0.33.1
+	k8s.io/api v0.33.4
+	k8s.io/apimachinery v0.33.4
+	k8s.io/client-go v0.33.4
 	sigs.k8s.io/yaml v1.6.0
 )
 
