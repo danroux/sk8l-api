@@ -1,14 +1,14 @@
 ```release-note:enhancement
-ci/dependabot: docker:(deps): bump golang from 1.24.3 to 1.24.4
+ci/dependabot: docker:(deps): bump golang from 1.24.3 to 1.25.0
 
-docker:(deps): bump golang from 1.24.3 to 1.24.4
+docker:(deps): bump golang from 1.24.3 to 1.25.0
 
-Bumps golang from 1.24.3 to 1.24.4.
+Bumps golang from 1.24.3 to 1.25.0.
 
 ---
 updated-dependencies:
 - dependency-name: golang
-  dependency-version: 1.24.4
+  dependency-version: 1.25.0
   dependency-type: direct:production
   update-type: version-update:semver-patch
 ...

@@ -1,14 +1,14 @@
 ```release-note:enhancement
-ci/dependabot: docker:(deps): bump alpine from 3.21.3 to 3.22.0
+ci/dependabot: docker:(deps): bump alpine from 3.21.3 to 3.22.1
 
-docker:(deps): bump alpine from 3.21.3 to 3.22.0
+docker:(deps): bump alpine from 3.21.3 to 3.22.1
 
-Bumps alpine from 3.21.3 to 3.22.0.
+Bumps alpine from 3.21.3 to 3.22.1.
 
 ---
 updated-dependencies:
 - dependency-name: alpine
-  dependency-version: 3.22.0
+  dependency-version: 3.22.1
   dependency-type: direct:production
   update-type: version-update:semver-minor
 ...

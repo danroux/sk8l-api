@@ -5,7 +5,7 @@ gha:(deps): bump docker/setup-buildx-action from 3.10.0 to 3.11.0
 
 Bumps [docker/setup-buildx-action](https://github.com/docker/setup-buildx-action) from 3.10.0 to 3.11.0.
 - [Release notes](https://github.com/docker/setup-buildx-action/releases)
-- [Commits](https://github.com/docker/setup-buildx-action/compare/b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2...18ce135bb5112fa8ce4ed6c17ab05699d7f3a5e0)
+- [Commits](https://github.com/docker/setup-buildx-action/compare/b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2...e468171a9de216ec08956ac3ada2f0791b6bd435)
 
 ---
 updated-dependencies:
