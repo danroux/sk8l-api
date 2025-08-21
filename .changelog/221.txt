@@ -1,0 +1,6 @@
+```release-note:improvement
+go/deps: bump badger/v4 4.7.0 => 4.8.0 protobuf 1.36.6 => 1.36.8
+
+- go:(deps): bump google.golang.org/protobuf from 1.36.6 to 1.36.8
+- go:(deps): bump github.com/dgraph-io/badger/v4 from 4.7.0 to 4.8.0 dependencies
+```
