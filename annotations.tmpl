@@ -18,6 +18,12 @@
       "version": "10.2.2"
     },
     {
+      "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    },
+    {
       "type": "datasource",
       "id": "prometheus",
       "name": "Prometheus",
@@ -33,6 +39,12 @@
       "type": "panel",
       "id": "state-timeline",
       "name": "State timeline",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "status-history",
+      "name": "Status history",
       "version": ""
     },
     {
@@ -60,8 +72,8 @@
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
-  "id": 2,
+  "graphTooltip": 1,
+  "id": null,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -74,6 +86,7 @@
       "panels": [],
       "title": "{{ .Title }}",
       "type": "row"
+      {{- if .Repeat }} ,"repeat": "{{ .Repeat }}", "repeatDirection": "h" {{ end }}
     }
     {{- else if (eq .Type "state-timeline") }}
     {
@@ -125,12 +138,12 @@
       "gridPos": {{ marshal .GridPos }},
       "id": 14,
       "options": {
-        "mergeValues": false,
+        "mergeValues": true,
         "showValue": "auto",
-        "alignValue": "left",
-        "rowHeight": 0.9,
+        "alignValue": "center",
+        "rowHeight": 0.95,
         "legend": {
-          "showLegend": true,
+          "showLegend": false,
           "displayMode": "list",
           "placement": "bottom"
         },
@@ -139,6 +152,7 @@
           "sort": "none"
         }
       },
+      "transparent": true,
       "targets": [
         {{- range $targetIndex, $target := .Targets }}
         {{- if $targetIndex}},{{end}}
@@ -155,13 +169,115 @@
           "instant": false,
           "legendFormat": "{{ .LegendFormat }}",
           "range": true,
-          "refId": "A",
+          "refId": "A{{ $targetIndex }}",
           "useBackend": false
         }
         {{- end }}
       ],
       "title": "{{ .Title }}",
       "type": "state-timeline"
+    }
+    {{- else if (eq .Type "bargauge") }}
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "id": 320,
+      "gridPos": {{ marshal .GridPos }},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#5794F2",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {{ marshal .Override }},
+            "properties": [
+              {
+                "id": "color"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "semi-dark-blue",
+                      "value": null
+                    },
+                    {
+                      "color": "semi-dark-red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "transparent": true,
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {{- range $targetIndex, $target := .Targets }}
+        {{- if $targetIndex}},{{end}}
+        {
+          "datasource": {
+            "type": "{{ .DataSource.Type }}",
+            "uid": "{{ .DataSource.UID }}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "{{ .Expr }}",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "{{ .LegendFormat }}",
+          "range": true,
+          "refId": "A{{ $targetIndex }}",
+          "useBackend": false
+        }
+        {{- end }}
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "vertical",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "maxVizHeight": 300
+      },
+      "title": "{{ .Title }}",
+      "type": "bargauge"
     }
     {{- else if (eq .Type "stat") }}
     {
@@ -235,6 +351,7 @@
         "textMode": "value_and_name",
         "wideLayout": false
       },
+      "transparent": true,
       "pluginVersion": "10.2.2",
       "targets": [
         {{- range $targetIndex, $target := .Targets }}
@@ -261,6 +378,118 @@
       "title": "{{ .Title }}",
       "type": "stat"
     }
+    {{- else if (eq .Type "status-history") }}
+    {
+      {{- if .GridPos }}
+      "gridPos": {{ marshal .GridPos }},
+      {{- else }}
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "h": 8,
+        "w": 12
+      },
+      {{- end }}
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 70,
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "axisPlacement": "auto"
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 1,
+                "to": null,
+                "result": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "X"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "fieldMinMax": false
+        },
+        "overrides": []
+      },
+      "transparent": true,
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {{- range $targetIndex, $target := .Targets }}
+        {{- if $targetIndex}},{{end}}
+          {
+            "refId": "A{{ $targetIndex }}",
+            "expr": "{{ .Expr }}",
+            "range": true,
+            "instant": false,
+            "datasource": {
+              "type": "{{ .DataSource.Type }}",
+              "uid": "{{ .DataSource.UID }}"
+            },
+            "hide": false,
+            "editorMode": "builder",
+            "legendFormat": "{{ .LegendFormat }}",
+            "useBackend": false,
+            "disableTextWrap": false,
+            "fullMetaSearch": false,
+            "includeNullMetadata": true
+          }
+        {{- end }}
+      ],
+      "datasource": {
+        "type": "{{ .DataSource.Type }}",
+        "uid": "{{ .DataSource.UID }}"
+      },
+      "interval": "5m",
+      "options": {
+        "showValue": "auto",
+        "rowHeight": 0.9,
+        "colWidth": 0.95,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none",
+          "hideZeros": false
+        }
+      },
+      "id": {{ $panelIndex }},
+      "type": "status-history",
+      "title": "{{ .Title }}"
+    }
     {{- else}}
     {
       "datasource": {
@@ -280,7 +509,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 50,
+            "fillOpacity": 40,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -288,13 +517,13 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "stepAfter",
+            "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": true,
             "stacking": {
               "group": "A",
@@ -346,6 +575,7 @@
           "sort": "none"
         }
       },
+      "transparent": true,
       "targets": [
         {{- range $targetIndex, $target := .Targets }}
         {{- if $targetIndex}},{{end}}
@@ -373,11 +603,43 @@
     {{- end }}
     {{- end }}
   ],
-  "refresh": "10s",
+  "refresh": "5m",
   "schemaVersion": 38,
-  "tags": [],
+  "tags": ["sk8l"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "text": "sk8l",
+          "value": "sk8l"
+        },
+        "hide": 0,
+        "label": "namespace",
+        "name": "namespace",
+        "query": "sk8l",
+        "skipUrlSync": true,
+        "type": "constant"
+      },
+      {
+        "type": "query",
+        "name": "cronjob",
+        "label": "Cronjob Name",
+        "datasource": "Prometheus",
+        "refresh": 2,
+        "query": {
+          "query": "label_values(__name__)",
+          "refId": "StandardVariableQuery"
+        },
+        "regex": "^sk8l_[^_]+_([^_]+(?:_[^_]+)*)_(?:completion|duration_seconds|failure)_total$",
+        "sort": 1,
+        "multi": true,
+        "name": "cronjob",
+        "includeAll": true,
+        "allValue": ".*",
+        "allFormat": "regex",
+        "hide": 0
+      }
+    ]
   },
   "time": {
     "from": "now-1h",

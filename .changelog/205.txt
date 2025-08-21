@@ -1,0 +1,12 @@
+```release-note:improvement
+misc: Improve logging, Improve dashboard layout and panel design, go refactorings: still a work in progress
+
+- Logging: Use github.com/rs/zerolog to generate json structured logs
+- Dashboards: Update dependencies
+- Dashboards: Add bargauge && status-history panels
+- Dashboards: Use grafana templating features to generate less panels and repeat them per cronjob
+- Dashboards: Add namespace/cronjobs names variables to enable filtering the panels
+- go: Add functions to generate panels cronjobsTotalsTimeseries, totalsBarGaugePanel, allStatusHistory, allStateTimelines
+- go: No longer use go's default mux handler
+- go: improve servers setup/shutdown
+```

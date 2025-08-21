@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"log"
+
 	"net"
 	"net/http"
 	"os"
@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/protos"
-	badger "github.com/dgraph-io/badger/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog/log"
 	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -41,23 +41,22 @@ var (
 )
 
 func main() {
+	setupZeroLog()
 	certPool := x509.NewCertPool()
 	serverTLSConfig, err := setupTLS(certFile, certKeyFile, caFile, certPool)
 	if err != nil {
-		log.Fatal("Error: setupTLS:", err)
+		log.Fatal().Err(err).Msg("setupTLS")
 	}
 
 	target := fmt.Sprintf("0.0.0.0:%s", APIPort)
 	conn, err := net.Listen("tcp", target)
-
 	if err != nil {
-		log.Fatal("tlsListen error:", err)
+		log.Fatal().Err(err).Msg("tlsListen")
 	}
 
 	healthConn, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", APIHealthPort))
-
 	if err != nil {
-		log.Fatal("Health Probe Listen error:", err)
+		log.Fatal().Err(err).Msg("Health Probe Listen")
 	}
 
 	serverCreds := credentials.NewTLS(serverTLSConfig)
@@ -66,84 +65,80 @@ func main() {
 	grpcS := grpc.NewServer(creds)
 	probeS := grpc.NewServer()
 
-	log.Printf("grpcS creds %v", creds)
-	k8sClient := NewK8sClient(WithNamespace(K8Namespace))
+	cronjobDBStore := NewCronJobDBStore(WithDefaultK8sClient(K8Namespace))
 
-	db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
-
-	cronjobDBStore := &CronJobDBStore{
-		K8sClient: k8sClient,
-		DB:        db,
-	}
-
-	sk8lServer := &Sk8lServer{
-		Target:         target,
-		CronJobDBStore: cronjobDBStore,
-		Options: []grpc.DialOption{
-			grpc.WithTransportCredentials(serverCreds),
-		},
+	sk8lServer := NewSk8lServer(
+		target,
+		cronjobDBStore,
+		grpc.WithTransportCredentials(serverCreds),
+	)
+	if err != nil {
+		log.Fatal().Err(err).Msg("NewSk8lServer")
 	}
 
 	healthgrpc.RegisterHealthServer(probeS, sk8lServer)
 	protos.RegisterCronjobServer(grpcS, sk8lServer)
 
-	http.Handle("/metrics", promhttp.Handler())
-
+	mux := &http.ServeMux{}
+	mux.Handle("/metrics", promhttp.Handler())
 	httpS := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%s", MetricsPort),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  ReadTimeout * time.Second,
 		WriteTimeout: WriteTimeout * time.Second,
 		TLSConfig:    serverTLSConfig,
+		Handler:      mux,
 	}
-	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+	// logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+	log.Info().
+		Msg(fmt.Sprintf("Starting %s server %s on %s", "sk8l", Version(), conn.Addr().String()))
 
-	logger.Printf("Starting %s server %s on %s", "sk8l", Version(), conn.Addr().String())
-
+	errCh := make(chan error, 3)
 	go func() {
-		err = httpS.ListenAndServeTLS(certFile, certKeyFile)
-	}()
-
-	if err != nil {
-		log.Fatal("httpS error", err)
-	}
-
-	go func() {
-		err = probeS.Serve(healthConn)
-
-		if err != nil {
-			log.Fatal("httpS error", err)
+		if err := httpS.ListenAndServeTLS(certFile, certKeyFile); err != nil {
+			errCh <- fmt.Errorf("httpS error: %w", err)
 		}
 	}()
 
 	go func() {
-		err = grpcS.Serve(conn)
-		if err != nil {
-			log.Fatal("grpcS error", err)
+		if err := probeS.Serve(healthConn); err != nil {
+			errCh <- fmt.Errorf("probeS error: %w", err)
 		}
 	}()
 
-	x := context.Background()
-	metricsCxt, metricsCancel := context.WithCancel(x)
+	go func() {
+		if err := grpcS.Serve(conn); err != nil {
+			errCh <- fmt.Errorf("grpcS error: %w", err)
+		}
+	}()
+
+	rootCtx := context.Background()
+	metricsCxt, metricsCancel := context.WithCancel(rootCtx)
 	sk8lServer.Run(metricsCxt)
 
 	// Servers shutdown
-	log.Printf("Shutdown: setting up")
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	log.Info().Msg("Shutdown: setting up")
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
-	sig := <-c
+	select {
+	case err := <-errCh:
+		log.Error().Err(err).
+			Msg("Shutdown: sk8l shutting down... got error during server startup")
+	case sig := <-quit:
+		log.Info().
+			Msg(fmt.Sprintf("Shutdown: Got %v signal. sk8l will shut down shortly", sig))
+	}
 
-	log.Printf("Shutdown: Got %v signal. sk8l will shut down shortly\n", sig)
-
-	ctx, cancel := context.WithTimeout(x, 5*time.Second)
-	defer cancel()
-	if err := httpS.Shutdown(ctx); err != nil {
-		log.Printf("Shutdown: Server forced to shutdown: %v\n", err)
+	shutdownCtx, shutdownCancel := context.WithTimeout(rootCtx, 5*time.Second)
+	defer shutdownCancel()
+	if err := httpS.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("Shutdown: error during httpS shutdown")
 	}
 
 	metricsCancel()
 	grpcS.GracefulStop()
+	probeS.GracefulStop()
 
-	log.Println("Shutdown: sk8l has stopped")
+	log.Info().Msg("Shutdown: sk8l has stopped")
 }

@@ -3,10 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v4"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
 	batchv1 "k8s.io/api/batch/v1"
@@ -20,6 +21,61 @@ type CronJobDBStore struct {
 	// K8sClient *K8sClient
 	K8sClient Sk8lK8sClientInterface
 	*badger.DB
+	l zerolog.Logger
+}
+
+type CronJobDBStoreOptionFn func(*CronJobDBStore)
+
+func NewCronJobDBStore(optsFn ...CronJobDBStoreOptionFn) *CronJobDBStore {
+	cjdbs := &CronJobDBStore{
+		l: log.With().Str("component", "db_store").Logger(),
+	}
+
+	for _, opt := range optsFn {
+		opt(cjdbs)
+	}
+
+	if cjdbs.K8sClient == nil {
+		cjdbs.l.Fatal().Msg("NewCronJobDBStore: K8sClient must be provided.")
+	}
+
+	if cjdbs.DB == nil {
+		cjdbs.l.Info().Msg("NewCronJobDBStore: DB not provided, setting default one.")
+		dbFn := WithDefaultDB()
+		dbFn(cjdbs)
+	}
+
+	return cjdbs
+}
+
+func WithDB(db *badger.DB) CronJobDBStoreOptionFn {
+	return func(cjdbs *CronJobDBStore) { cjdbs.DB = db }
+}
+
+func WithK8sClient(k8sClient *K8sClient) CronJobDBStoreOptionFn {
+	return func(cjdbs *CronJobDBStore) {
+		cjdbs.K8sClient = k8sClient
+	}
+}
+
+func WithDefaultK8sClient(k8sNamespace string) CronJobDBStoreOptionFn {
+	k8sClient := NewK8sClient(
+		WithNamespace(k8sNamespace),
+		WithLogger(log.With().Str("component", "k8s").Logger()),
+	)
+
+	return WithK8sClient(k8sClient)
+}
+
+func WithDefaultDB() CronJobDBStoreOptionFn {
+	badgerLogger := NewBadgerLogger(zerolog.GlobalLevel())
+	badgerOpts := badger.DefaultOptions("/tmp/badger").WithLogger(badgerLogger)
+	db, err := badger.Open(badgerOpts)
+	if err != nil {
+		badgerLogger.Fatal().Err(err).Msg("failed to open Badger DB")
+	}
+
+	return WithDB(db)
 }
 
 func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
@@ -33,7 +89,7 @@ func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error
 				entry := badger.NewEntry(key, apiResult).WithTTL(time.Second * badgerTTL)
 				err = txn.SetEntry(entry)
 				if err != nil {
-					log.Println("Error: getAndStore#txn.SetEntry", err)
+					c.l.Error().Err(err).Msg("Error: getAndStore#txn.SetEntry")
 					return fmt.Errorf("sk8l#getAndStore: txn.SetEntry() failed: %w", err)
 				}
 				valueResponse = append([]byte{}, apiResult...)
@@ -77,7 +133,7 @@ func (c *CronJobDBStore) get(key []byte) ([]byte, error) {
 		})
 
 		if err != nil {
-			log.Println("Error: get#current.Value", err)
+			c.l.Error().Err(err).Msg("get#current.Value")
 			return fmt.Errorf("sk8l#get: current.Value() failed: %w", err)
 		}
 
@@ -96,7 +152,7 @@ func (c *CronJobDBStore) findCronjobs() *batchv1.CronJobList {
 
 	if err != nil {
 		if !errors.Is(err, badger.ErrKeyNotFound) {
-			log.Println("Error: findCronjobs#s.get", err)
+			c.l.Error().Err(err).Msg("findCronjobs#s.get")
 		}
 	}
 
@@ -105,7 +161,7 @@ func (c *CronJobDBStore) findCronjobs() *batchv1.CronJobList {
 
 	err = proto.Unmarshal(cronjobs, cronjobListV2)
 	if err != nil {
-		log.Println("Error: findCronjobs#proto.Unmarshal", err)
+		c.l.Error().Err(err).Msg("findCronjobs#proto.Unmarshal")
 	}
 
 	return cronjobList
@@ -126,7 +182,7 @@ func (c *CronJobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batc
 	cronjobValue, err := c.getAndStore(key, gCjCall)
 
 	if err != nil {
-		log.Println("Error: findCronjob#s.getAndStore", err)
+		c.l.Error().Err(err).Msg("findCronjob#s.getAndStore")
 	}
 
 	cronjob := &batchv1.CronJob{}
@@ -134,7 +190,7 @@ func (c *CronJobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batc
 	err = proto.Unmarshal(cronjobValue, cronjobV2)
 
 	if err != nil {
-		log.Println("Error: findCronjob#proton.Unmarshal", err)
+		c.l.Error().Err(err).Msg("findCronjob#proton.Unmarshal")
 	}
 
 	return cronjob
@@ -145,7 +201,7 @@ func (c *CronJobDBStore) findJobs() *batchv1.JobList {
 
 	if err != nil {
 		if !errors.Is(err, badger.ErrKeyNotFound) {
-			log.Println("Error: findCronjobs#s.get", err)
+			c.l.Error().Err(err).Msg("findCronjobs#s.get")
 		}
 	}
 
@@ -154,7 +210,7 @@ func (c *CronJobDBStore) findJobs() *batchv1.JobList {
 
 	err = proto.Unmarshal(jobs, jobListV2)
 	if err != nil {
-		log.Println("Error: findJobs#proto.Unmarshal", err)
+		c.l.Error().Err(err).Msg("findJobs#proto.Unmarshal")
 	}
 
 	// filter out jobs that belong to cronjobs
