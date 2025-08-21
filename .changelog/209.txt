@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump reproducible-containers/buildkit-cache-dance from 3.2.0 to 3.3.0
+
+gha:(deps): bump reproducible-containers/buildkit-cache-dance
+
+Bumps [reproducible-containers/buildkit-cache-dance](https://github.com/reproducible-containers/buildkit-cache-dance) from 3.2.0 to 3.3.0.
+- [Release notes](https://github.com/reproducible-containers/buildkit-cache-dance/releases)
+- [Commits](https://github.com/reproducible-containers/buildkit-cache-dance/compare/v3.2.0...v3.3.0)
+
+---
+updated-dependencies:
+- dependency-name: reproducible-containers/buildkit-cache-dance
+  dependency-version: 3.3.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
