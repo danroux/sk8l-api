@@ -1,0 +1,20 @@
+```release-note:enhancement
+ci/dependabot: go:(deps): bump sigs.k8s.io/yaml from 1.4.0 to 1.5.0
+
+go:(deps): bump sigs.k8s.io/yaml from 1.4.0 to 1.5.0
+
+Bumps [sigs.k8s.io/yaml](https://github.com/kubernetes-sigs/yaml) from 1.4.0 to 1.5.0.
+- [Release notes](https://github.com/kubernetes-sigs/yaml/releases)
+- [Changelog](https://github.com/kubernetes-sigs/yaml/blob/master/RELEASE.md)
+- [Commits](https://github.com/kubernetes-sigs/yaml/compare/v1.4.0...v1.5.0)
+
+---
+updated-dependencies:
+- dependency-name: sigs.k8s.io/yaml
+  dependency-version: 1.5.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
