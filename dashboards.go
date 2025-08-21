@@ -161,11 +161,8 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 			DataSource: dataSource,
 			Repeat:     "cronjob",
 		}
-
 		*cronJobRowPanels = append(*cronJobRowPanels, row)
 
-		// sk8l_${namespace}_${cronjob}_completion_total
-		// sk8l_${namespace}_${cronjob}_failure_total
 		for _, metricName := range metricNames {
 			if durationRe.MatchString(metricName) {
 				target = &Target{
@@ -234,7 +231,7 @@ func individualPanelsGenerator(cronJobRowPanels *[]Panel) func(key, value any) b
 			failureTargets := []*Target{
 				{
 					Expr:         failureMetricName,
-					LegendFormat: "failure total", // {{ __name__ }}
+					LegendFormat: "failure total",
 					DataSource:   dataSource,
 				},
 			}
