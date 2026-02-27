@@ -1,0 +1,20 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump actions/checkout from 5.0.0 to 5.0.1
+
+gha:(deps): bump actions/checkout from 5.0.0 to 5.0.1
+
+Bumps [actions/checkout](https://github.com/actions/checkout) from 5.0.0 to 5.0.1.
+- [Release notes](https://github.com/actions/checkout/releases)
+- [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)
+- [Commits](https://github.com/actions/checkout/compare/08c6903cd8c0fde910a37f88322edcfb5dd907a8...93cb6efe18208431cddfb8368fd83d5badbf9bfd)
+
+---
+updated-dependencies:
+- dependency-name: actions/checkout
+  dependency-version: 5.0.1
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
