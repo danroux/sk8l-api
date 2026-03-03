@@ -738,18 +738,19 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 		return fmt.Errorf("sk8l#collectCronjobs: proto.Unmarshal() failed: %w", err)
 	}
 
+	//revive:disable:identical-switch-branches
 	switch event.Type {
-	case watch.Added:
-		filterCronJobsList(storedCjList, eventCronJob)
-		storedCjList.Items = append(storedCjList.Items, *eventCronJob)
-	case watch.Modified:
+	case watch.Added, watch.Modified:
 		filterCronJobsList(storedCjList, eventCronJob)
 		storedCjList.Items = append(storedCjList.Items, *eventCronJob)
 	case watch.Deleted:
 		filterCronJobsList(storedCjList, eventCronJob)
 	case watch.Bookmark, watch.Error:
 		// no-op: explicitly ignored
+	default:
+		// default case to satisfy revive
 	}
+	//revive:enable:identical-switch-branches
 
 	result, err := proto.Marshal(storedCjListV2)
 	if err != nil {
@@ -778,18 +779,19 @@ func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, even
 		return fmt.Errorf("sk8l#collectJobs: proto.Unmarshal() failed: %w", err)
 	}
 
+	//revive:disable:identical-switch-branches
 	switch event.Type {
-	case watch.Added:
-		filterStoredJobList(storedJList, eventJob)
-		storedJList.Items = append(storedJList.Items, *eventJob)
-	case watch.Modified:
+	case watch.Added, watch.Modified:
 		filterStoredJobList(storedJList, eventJob)
 		storedJList.Items = append(storedJList.Items, *eventJob)
 	case watch.Deleted:
 		filterStoredJobList(storedJList, eventJob)
 	case watch.Bookmark, watch.Error:
 		// no-op: explicitly ignored
+	default:
+		// default case to satisfy revive
 	}
+	//revive:enable:identical-switch-branches
 
 	result, err := proto.Marshal(storedJListV2)
 	if err != nil {
@@ -1151,7 +1153,7 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 	var command bytes.Buffer
 	for _, container := range cronJob.Spec.JobTemplate.Spec.Template.Spec.InitContainers {
 		for _, ccmd := range container.Command {
-			_, err := command.WriteString(fmt.Sprintf("%s ", ccmd))
+			_, err := fmt.Fprintf(&command, "%s ", ccmd)
 			if err != nil {
 				log.Error().
 					Err(err).
@@ -1166,7 +1168,7 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 	containersCommands := make([]string, 0, n)
 	for _, container := range cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers {
 		for _, ccmd := range container.Command {
-			_, err := command.WriteString(fmt.Sprintf("%s ", ccmd))
+			_, err := fmt.Fprintf(&command, "%s ", ccmd)
 			if err != nil {
 				log.Error().
 					Err(err).
@@ -1181,7 +1183,7 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 	ephemeralContainersinersCommands := make([]string, 0, n)
 	for _, container := range cronJob.Spec.JobTemplate.Spec.Template.Spec.EphemeralContainers {
 		for _, ccmd := range container.Command {
-			_, err := command.WriteString(fmt.Sprintf("%s ", ccmd))
+			_, err := fmt.Fprintf(&command, "%s ", ccmd)
 			if err != nil {
 				log.Error().
 					Err(err).
