@@ -49,12 +49,16 @@ func main() {
 	}
 
 	target := fmt.Sprintf("0.0.0.0:%s", APIPort)
-	conn, err := net.Listen("tcp", target)
+	lc := net.ListenConfig{}
+
+	rootCtx := context.Background()
+	ln, err := lc.Listen(rootCtx, "tcp", target)
 	if err != nil {
 		log.Fatal().Err(err).Msg("tlsListen")
 	}
 
-	healthConn, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", APIHealthPort))
+	healthTarget := fmt.Sprintf("0.0.0.0:%s", APIHealthPort)
+	healthLn, err := lc.Listen(rootCtx, "tcp", healthTarget)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Health Probe Listen")
 	}
@@ -91,7 +95,7 @@ func main() {
 	}
 	// logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 	log.Info().
-		Msg(fmt.Sprintf("Starting %s server %s on %s", "sk8l", Version(), conn.Addr().String()))
+		Msg(fmt.Sprintf("Starting %s server %s on %s", "sk8l", Version(), ln.Addr().String()))
 
 	errCh := make(chan error, 3)
 	go func() {
@@ -101,18 +105,17 @@ func main() {
 	}()
 
 	go func() {
-		if err := probeS.Serve(healthConn); err != nil {
+		if err := probeS.Serve(healthLn); err != nil {
 			errCh <- fmt.Errorf("probeS error: %w", err)
 		}
 	}()
 
 	go func() {
-		if err := grpcS.Serve(conn); err != nil {
+		if err := grpcS.Serve(ln); err != nil {
 			errCh <- fmt.Errorf("grpcS error: %w", err)
 		}
 	}()
 
-	rootCtx := context.Background()
 	metricsCxt, metricsCancel := context.WithCancel(rootCtx)
 	sk8lServer.Run(metricsCxt)
 
