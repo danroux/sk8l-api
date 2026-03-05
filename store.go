@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"time"
@@ -8,8 +9,6 @@ import (
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/protoadapt"
 	batchv1 "k8s.io/api/batch/v1"
 )
 
@@ -155,15 +154,11 @@ func (c *CronJobDBStore) findCronjobs() *batchv1.CronJobList {
 			c.l.Error().Err(err).Msg("findCronjobs#s.get")
 		}
 	}
-
 	cronjobList := &batchv1.CronJobList{}
-	cronjobListV2 := protoadapt.MessageV2Of(cronjobList)
-
-	err = proto.Unmarshal(cronjobs, cronjobListV2)
+	_, _, err = k8sSerializer.Decode(cronjobs, nil, cronjobList)
 	if err != nil {
-		c.l.Error().Err(err).Msg("findCronjobs#proto.Unmarshal")
+		c.l.Error().Err(err).Msg("findCronjobs#k8sSerializer.Decode")
 	}
-
 	return cronjobList
 }
 
@@ -172,9 +167,12 @@ func (c *CronJobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batc
 		cronjobName := cronjobName
 		cronjobNamespace := cronjobNamespace
 		cronjob := c.K8sClient.GetCronjob(cronjobNamespace, cronjobName)
-		cronjobV2 := protoadapt.MessageV2Of(cronjob)
-		cronjobValue, _ := proto.Marshal(cronjobV2)
-		return cronjobValue
+		var buf bytes.Buffer
+		if err := k8sSerializer.Encode(cronjob, &buf); err != nil {
+			c.l.Error().Err(err).Msg("findCronjob#k8sSerializer.Encode")
+			return nil
+		}
+		return buf.Bytes()
 	}
 
 	cacheKey := fmt.Sprintf(cronjobsKeyFmt, cronjobNamespace, cronjobName)
@@ -186,33 +184,25 @@ func (c *CronJobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batc
 	}
 
 	cronjob := &batchv1.CronJob{}
-	cronjobV2 := protoadapt.MessageV2Of(cronjob)
-	err = proto.Unmarshal(cronjobValue, cronjobV2)
-
+	_, _, err = k8sSerializer.Decode(cronjobValue, nil, cronjob)
 	if err != nil {
-		c.l.Error().Err(err).Msg("findCronjob#proton.Unmarshal")
+		c.l.Error().Err(err).Msg("findCronjob#k8sSerializer.Decode")
 	}
-
 	return cronjob
 }
 
 func (c *CronJobDBStore) findJobs() *batchv1.JobList {
 	jobs, err := c.get(jobsCacheKey)
-
 	if err != nil {
 		if !errors.Is(err, badger.ErrKeyNotFound) {
 			c.l.Error().Err(err).Msg("findCronjobs#s.get")
 		}
 	}
-
 	jobList := &batchv1.JobList{}
-	jobListV2 := protoadapt.MessageV2Of(jobList)
-
-	err = proto.Unmarshal(jobs, jobListV2)
+	_, _, err = k8sSerializer.Decode(jobs, nil, jobList)
 	if err != nil {
-		c.l.Error().Err(err).Msg("findJobs#proto.Unmarshal")
+		c.l.Error().Err(err).Msg("findJobs#k8sSerializer.Decode")
 	}
-
 	// filter out jobs that belong to cronjobs
 	jobTasks := make([]batchv1.Job, 0, len(jobList.Items))
 	for _, job := range jobList.Items {
@@ -220,10 +210,7 @@ func (c *CronJobDBStore) findJobs() *batchv1.JobList {
 			jobTasks = append(jobTasks, job)
 		}
 	}
-
-	jobTaskList := &batchv1.JobList{
+	return &batchv1.JobList{
 		Items: jobTasks,
 	}
-
-	return jobTaskList
 }

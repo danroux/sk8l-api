@@ -19,7 +19,6 @@ import (
 	badger "github.com/dgraph-io/badger/v4"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/protoadapt"
 	gyaml "sigs.k8s.io/yaml"
 
 	// structpb "google.golang.org/protobuf/types/known/structpb".
@@ -29,8 +28,10 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sproto "k8s.io/apimachinery/pkg/runtime/serializer/protobuf"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes/scheme"
 )
 
 //go:embed annotations.tmpl
@@ -49,6 +50,7 @@ var (
 	jobsCacheKey       = []byte("sk8l_jobs")
 	badgerTTL          = time.Duration(badgerTTLSeconds)
 	refreshInterval    = time.Second * refreshSeconds
+	k8sSerializer      = k8sproto.NewSerializer(scheme.Scheme, scheme.Scheme)
 )
 
 type Sk8lServer struct {
@@ -361,20 +363,15 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 	fKey := fmt.Sprintf(jobPodsKeyFmt, job.Name)
 	key := []byte(fKey)
 	collection := &corev1.PodList{}
-	collectionV2 := protoadapt.MessageV2Of(collection)
-
 	err := s.DB.View(func(txn *badger.Txn) error {
 		current, err := txn.Get(key)
-
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return nil
 		} else if err != nil {
 			return fmt.Errorf("sk8l#findJobPodsForJob: txn.Get() failed: %w", err)
 		}
-
 		err = current.Value(func(val []byte) error {
-			err = proto.Unmarshal(val, collectionV2)
-
+			_, _, err = k8sSerializer.Decode(val, nil, collection)
 			if err != nil {
 				log.Error().
 					Err(err).
@@ -393,7 +390,6 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 				Msg("current.Value")
 			return fmt.Errorf("sk8l#findJobPodsForJob: current.Value() failed: %w", err)
 		}
-
 		return nil
 	})
 
@@ -629,10 +625,8 @@ func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv
 		cjList := &batchv1.CronJobList{
 			Items: []batchv1.CronJob{cronJob},
 		}
-
-		msgV2 := protoadapt.MessageV2Of(cjList)
-		result, err := proto.Marshal(msgV2)
-		if err != nil {
+		var buf bytes.Buffer
+		if err := k8sSerializer.Encode(cjList, &buf); err != nil {
 			log.Error().
 				Err(err).
 				Str("operation", "handleCronJobEvent").
@@ -640,7 +634,7 @@ func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv
 			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectCronjobs", err)
 		}
 
-		mashErr := storeEntry(txn, cronjobsCacheKey, result, "sk8l#collectCronjobs")
+		mashErr := storeEntry(txn, cronjobsCacheKey, buf.Bytes(), "sk8l#collectCronjobs")
 		return mashErr
 	}
 
@@ -661,29 +655,23 @@ func handleJobEvent(txn *badger.Txn, event watch.Event, eventJob *batchv1.Job) e
 		jList := &batchv1.JobList{
 			Items: []batchv1.Job{*eventJob},
 		}
-
-		msgV2 := protoadapt.MessageV2Of(jList)
-		result, err := proto.Marshal(msgV2)
-		if err != nil {
+		var buf bytes.Buffer
+		if err := k8sSerializer.Encode(jList, &buf); err != nil {
 			log.Error().
 				Err(err).
 				Str("operation", "handleJobEvent").
-				Msg("proto.Marshal")
-			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectJobs", err)
+				Msg("k8sSerializer.Encode")
+			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectJobs", err)
 		}
-
-		mashErr := storeEntry(txn, jobsCacheKey, result, "sk8l#collectJobs")
+		mashErr := storeEntry(txn, jobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 		return mashErr
 	}
-
 	err = item.Value(func(stored []byte) error {
 		return updateStoredJobList(txn, stored, event, eventJob)
 	})
-
 	if err != nil {
 		return fmt.Errorf("sk8l#collectJobs: item.Value() failed: %w", err)
 	}
-
 	return nil
 }
 
@@ -695,18 +683,17 @@ func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) er
 		podList := &corev1.PodList{
 			Items: []corev1.Pod{*eventPod},
 		}
+		var buf bytes.Buffer
+		err = k8sSerializer.Encode(podList, &buf)
 
-		msgV2 := protoadapt.MessageV2Of(podList)
-		result, err := proto.Marshal(msgV2)
 		if err != nil {
 			log.Error().
 				Err(err).
 				Str("operation", "handlePodEvent").
-				Msg("proto.Marshal")
-			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectPods", err)
+				Msg("k8sSerializer.Encode")
+			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectPods", err)
 		}
-
-		setEntryErr := storeEntry(txn, key, result, "sk8l#collectPods")
+		setEntryErr := storeEntry(txn, key, buf.Bytes(), "sk8l#collectPods")
 		return setEntryErr
 	}
 
@@ -726,16 +713,13 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 		Str("operation", "updateStoredCronjobList").
 		Msg(fmt.Sprintf("Updating with %s", eventCronJob.Name))
 	storedCjList := &batchv1.CronJobList{}
-
-	storedCjListV2 := protoadapt.MessageV2Of(storedCjList)
-	err := proto.Unmarshal(stored, storedCjListV2)
-
+	_, _, err := k8sSerializer.Decode(stored, nil, storedCjList)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredCronjobList").
 			Msg("proto.Unmarshal")
-		return fmt.Errorf("sk8l#collectCronjobs: proto.Unmarshal() failed: %w", err)
+		return fmt.Errorf("sk8l#collectCronjobs: Decode() failed: %w", err)
 	}
 
 	//revive:disable:identical-switch-branches
@@ -752,31 +736,29 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 	}
 	//revive:enable:identical-switch-branches
 
-	result, err := proto.Marshal(storedCjListV2)
+	var buf bytes.Buffer
+	err = k8sSerializer.Encode(storedCjList, &buf)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredCronjobList").
-			Msg("proto.Marshal")
-		return fmt.Errorf("sk8l#collectCronjobs: proto.Marshal() failed: %w", err)
+			Msg("k8sSerializer.Encode")
+		return fmt.Errorf("sk8l#collectCronjobs: Encode() failed: %w", err)
 	}
 
-	setEntryErr := storeEntry(txn, cronjobsCacheKey, result, "sk8l#collectJobs")
+	setEntryErr := storeEntry(txn, cronjobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 	return setEntryErr
 }
 
 func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, eventJob *batchv1.Job) error {
 	storedJList := &batchv1.JobList{}
-
-	storedJListV2 := protoadapt.MessageV2Of(storedJList)
-	err := proto.Unmarshal(stored, storedJListV2)
-
+	_, _, err := k8sSerializer.Decode(stored, nil, storedJList)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredJobList").
-			Msg("proto.Unmarshal")
-		return fmt.Errorf("sk8l#collectJobs: proto.Unmarshal() failed: %w", err)
+			Msg("k8sSerializer.Decode")
+		return fmt.Errorf("sk8l#collectJobs: Decode() failed: %w", err)
 	}
 
 	//revive:disable:identical-switch-branches
@@ -793,42 +775,39 @@ func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, even
 	}
 	//revive:enable:identical-switch-branches
 
-	result, err := proto.Marshal(storedJListV2)
+	var buf bytes.Buffer
+	err = k8sSerializer.Encode(storedJList, &buf)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredJobList").
-			Msg("proto.Marshal")
-		return fmt.Errorf("sk8l#collectJobs: proto.Marshal() failed: %w", err)
+			Msg("k8sSerializer.Encode")
+		return fmt.Errorf("sk8l#collectJobs: Encode() failed: %w", err)
 	}
-
-	setEntryErr := storeEntry(txn, jobsCacheKey, result, "sk8l#collectJobs")
+	setEntryErr := storeEntry(txn, jobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 	return setEntryErr
 }
 
 func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *corev1.Pod) error {
 	podList := &corev1.PodList{}
-	podListV2 := protoadapt.MessageV2Of(podList)
-	err := proto.Unmarshal(stored, podListV2)
-
+	_, _, err := k8sSerializer.Decode(stored, nil, podList)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredPodList").
-			Msg("proto.Unmarshal")
+			Msg("k8sSerializer.Decode")
+		return fmt.Errorf("operation#k8sSerializer.Decode: %w", err)
 	}
-
 	podList.Items = append(podList.Items, *eventPod)
-	result, err := proto.Marshal(podListV2)
-
-	if err != nil {
+	var buf bytes.Buffer
+	if err := k8sSerializer.Encode(podList, &buf); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredPodList").
-			Msg("proto.Marshal")
+			Msg("k8sSerializer.Encode")
+		return fmt.Errorf("operation#k8sSerializer.Encode: %w", err)
 	}
-
-	setEntryErr := storeEntry(txn, key, result, "sk8l#collectPods")
+	setEntryErr := storeEntry(txn, key, buf.Bytes(), "sk8l#collectPods")
 	return setEntryErr
 }
 
