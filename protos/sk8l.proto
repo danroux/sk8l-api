@@ -1,4 +1,4 @@
- // Copyright 2023 DR
+// Copyright 2023 DR
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,11 +20,8 @@ package sk8l;
 // https://github.com/kubernetes/api/blob/master/core/v1/generated.proto
 // import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
 // import "k8s.io/apimachinery/pkg/apis/core/v1/generated.proto";
-import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
 // https://github.com/protocolbuffers/protobuf/issues/2388
 // import "google/protobuf/struct.proto";
-import "k8s.io/api/batch/v1/generated.proto";
-import "k8s.io/api/core/v1/generated.proto";
 import "sk8l_custom.proto";
 
 service Cronjob {
@@ -67,16 +64,182 @@ message DashboardAnnotationsResponse {
   string annotations = 1;
 };
 
-message CronjobsResponse  {
+// ---- Shared slim types (replacing k8s proto imports) ----
+
+message OwnerReferenceResponse {
+  string apiVersion = 1;
+  string kind = 2;
+  string name = 3;
+  string uid = 4;
+  bool controller = 5;
+}
+
+message ObjectMetaResponse {
+  string name = 1;
+  string namespace = 2;
+  string uid = 3;
+  map<string, string> labels = 4;
+  map<string, string> annotations = 5;
+  string creationTimestamp = 6;
+  int64 generation = 7;
+  repeated OwnerReferenceResponse ownerReferences = 8;
+}
+
+message ContainerStateTerminatedResponse {
+  int32 exitCode = 1;
+  int32 signal = 2;
+  string reason = 3;
+  string message = 4;
+  string startedAt = 5;
+  string finishedAt = 6;
+  string containerID = 7;
+}
+
+message ContainerStateWaitingResponse {
+  string reason = 1;
+  string message = 2;
+}
+
+message ContainerStateRunningResponse {
+  string startedAt = 1;
+}
+
+message ContainerStateResponse {
+  ContainerStateWaitingResponse waiting = 1;
+  ContainerStateRunningResponse running = 2;
+  ContainerStateTerminatedResponse terminated = 3;
+}
+
+message ContainerStatusResponse {
+  string name = 1;
+  ContainerStateResponse state = 2;
+  ContainerStateResponse lastState = 3;
+  bool ready = 4;
+  int32 restartCount = 5;
+  string image = 6;
+  string imageID = 7;
+  string containerID = 8;
+  bool started = 9;
+}
+
+message PodConditionResponse {
+  string type = 1;
+  string status = 2;
+  string lastProbeTime = 3;
+  string lastTransitionTime = 4;
+  string reason = 5;
+  string message = 6;
+}
+
+message PodStatusResponse {
+  string phase = 1;
+  repeated PodConditionResponse conditions = 2;
+  string message = 3;
+  string reason = 4;
+  string hostIP = 5;
+  string podIP = 6;
+  string startTime = 7;
+  repeated ContainerStatusResponse containerStatuses = 8;
+  repeated ContainerStatusResponse initContainerStatuses = 9;
+  repeated ContainerStatusResponse ephemeralContainerStatuses = 10;
+  string qosClass = 11;
+}
+
+message ContainerPortResponse {
+  string name = 1;
+  int32 containerPort = 2;
+  string protocol = 3;
+}
+
+message EnvVarResponse {
+  string name = 1;
+  string value = 2;
+}
+
+message VolumeMountResponse {
+  string name = 1;
+  bool readOnly = 2;
+  string mountPath = 3;
+}
+
+message ResourcesResponse {
+  map<string, string> limits = 1;
+  map<string, string> requests = 2;
+}
+
+message ContainerSpecResponse {
+  string name = 1;
+  string image = 2;
+  repeated string command = 3;
+  repeated string args = 4;
+  repeated ContainerPortResponse ports = 5;
+  repeated EnvVarResponse env = 6;
+  ResourcesResponse resources = 7;
+  repeated VolumeMountResponse volumeMounts = 8;
+  string imagePullPolicy = 9;
+  string workingDir = 10;
+}
+
+message PodSpecResponse {
+  repeated ContainerSpecResponse containers = 1;
+  repeated ContainerSpecResponse initContainers = 2;
+  repeated ContainerSpecResponse ephemeralContainers = 3;
+  string restartPolicy = 4;
+  string serviceAccountName = 5;
+  string nodeName = 6;
+  map<string, string> nodeSelector = 7;
+  int64 terminationGracePeriodSeconds = 8;
+}
+
+message JobConditionResponse {
+  string type = 1;
+  string status = 2;
+  string lastProbeTime = 3;
+  string lastTransitionTime = 4;
+  string reason = 5;
+  string message = 6;
+}
+
+message JobStatusResponse {
+  int32 active = 1;
+  int32 succeeded = 2;
+  int32 failed = 3;
+  string startTime = 4;
+  string completionTime = 5;
+  repeated JobConditionResponse conditions = 6;
+  int32 ready = 7;
+}
+
+message JobSpecResponse {
+  int32 parallelism = 1;
+  int32 completions = 2;
+  int64 activeDeadlineSeconds = 3;
+  int32 backoffLimit = 4;
+  string completionMode = 5;
+  bool suspend = 6;
+}
+
+message CronJobSpecResponse {
+  string schedule = 1;
+  string timezone = 2;
+  string concurrencyPolicy = 3;
+  bool suspend = 4;
+  int32 successfulJobsHistoryLimit = 5;
+  int32 failedJobsHistoryLimit = 6;
+}
+
+// ---- Main messages ----
+
+message CronjobsResponse {
   repeated CronjobResponse cronjobs = 5 [json_name="cronjobs"];
   repeated JobResponse activeJobs = 4 [json_name="active_jobs"];
   repeated PodResponse jobsPods = 3 [json_name="jobs_pods"];
 }
 
 message JobResponse {
-  k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
-  k8s.io.api.batch.v1.JobSpec spec = 2;
-  k8s.io.api.batch.v1.JobStatus jobStatus = 3; // remove?
+  ObjectMetaResponse metadata = 1;
+  JobSpecResponse spec = 2;
+  JobStatusResponse jobStatus = 3; // remove?
   string name = 4 [json_name="name"];
   string namespace = 5 [json_name="namespace"];
   string creationTimestamp = 6 [json_name="creation_timestamp"];
@@ -88,13 +251,13 @@ message JobResponse {
   sk8l_custom.JobStatus status = 11 [json_name="status"];
   bool succeeded = 12 [json_name="succeeded"];
   bool failed = 13 [json_name="failure"];
-  k8s.io.api.batch.v1.JobCondition failureCondition = 14 [json_name="failure_condition"];
+  JobConditionResponse failureCondition = 14 [json_name="failure_condition"];
   repeated PodResponse pods = 15 [json_name="pods"];
   repeated TerminationReason terminationReasons = 16 [json_name="termination_reasons"];
   bool withSidecarContainers = 17 [json_name="with_sidecar_containers"];
 }
 
-message JobsResponse  {
+message JobsResponse {
   repeated JobResponse jobs = 1 [json_name="jobs"];
 }
 
@@ -111,15 +274,15 @@ message PodYAMLResponse {
 }
 
 message PodResponse {
-  k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
-  k8s.io.api.core.v1.PodSpec spec = 2;
-  k8s.io.api.core.v1.PodStatus status = 3;
+  ObjectMetaResponse metadata = 1;
+  PodSpecResponse spec = 2;
+  PodStatusResponse status = 3;
   string phase = 4;
-  TerminatedContainers terminatedContainers= 5 [json_name="terminated_containers"];
+  TerminatedContainers terminatedContainers = 5 [json_name="terminated_containers"];
   TerminatedContainers failedContainers = 6 [json_name="failed_containers"];
   bool failed = 7;
   repeated TerminationReason terminationReasons = 8 [json_name="termination_reasons"];
-  k8s.io.apimachinery.pkg.apis.meta.v1.Time FinishedAt = 9 [json_name="finished_at"];
+  string FinishedAt = 9 [json_name="finished_at"];
 }
 
 message ContainerCommands {
@@ -127,14 +290,14 @@ message ContainerCommands {
 }
 
 message ContainerResponse {
-  k8s.io.api.core.v1.ContainerStatus status = 1;
+  ContainerStatusResponse status = 1;
   string phase = 2;
-  repeated k8s.io.api.core.v1.PodCondition conditions = 3;
+  repeated PodConditionResponse conditions = 3;
   TerminationReason terminatedReason = 4;
 }
 
 message TerminationReason {
-  k8s.io.api.core.v1.ContainerStateTerminated terminationDetails = 1;
+  ContainerStateTerminatedResponse terminationDetails = 1 [json_name="termination_details"];
   string containerName = 2 [json_name="container_name"];
 }
 
@@ -161,8 +324,8 @@ message CronjobResponse {
   repeated PodResponse jobsPods = 14 [json_name="jobs_pods"];
   int64 lastDuration = 15 [json_name="last_duration"];
   int64 currentDuration = 16 [json_name="current_duration"];
-  k8s.io.api.batch.v1.CronJobSpec spec = 17 [json_name="spec"];
-  bool failed = 18  [json_name="failed"];
+  CronJobSpecResponse spec = 17 [json_name="spec"];
+  bool failed = 18 [json_name="failed"];
 }
 
 message CronjobPodsResponse {
@@ -171,10 +334,10 @@ message CronjobPodsResponse {
 }
 
 message JobList {
-  repeated k8s.io.api.batch.v1.Job Items = 1;
+  // google.protobuf.ListValue Jobs = 1;
+  repeated JobResponse Items = 1;
 }
 
 message MappedJobs {
-  // google.protobuf.ListValue Jobs = 1;
   map<string, JobList> JobLists = 1;
 }

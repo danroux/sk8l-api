@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/danroux/sk8l/protos"
 	"github.com/rs/zerolog"
@@ -27,7 +26,6 @@ type Sk8lK8sClientInterface interface {
 	GetPod(jobNamespace, podName string) *corev1.Pod
 	GetJob(jobNamespace, jobName string) *batchv1.Job
 	GetAllJobs() *batchv1.JobList
-	GetAllJobsMapped() *protos.MappedJobs
 	Namespace() string
 }
 
@@ -64,7 +62,7 @@ func NewK8sClient(options ...ClientOption) *K8sClient {
 	if err != nil {
 		panic(err.Error())
 	}
-	// creates the clientset
+
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(err.Error())
@@ -96,7 +94,6 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 			Err(err).
 			Str("operation", "GetCronjob").
 			Msg(fmt.Sprintf("Cronjob %s not found in default namespace", cronjobName))
-		// return err
 	case errors.As(err, &statusError):
 		kc.l.Error().
 			Err(err).
@@ -118,7 +115,6 @@ func (kc *K8sClient) WatchCronjobs() watch.Interface {
 	ctx := context.Background()
 
 	watcher, err := kc.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
-
 	if err != nil {
 		panic(err.Error())
 	}
@@ -130,7 +126,6 @@ func (kc *K8sClient) WatchJobs() watch.Interface {
 	ctx := context.Background()
 
 	watcher, err := kc.BatchV1().Jobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
-
 	if err != nil {
 		panic(err.Error())
 	}
@@ -150,9 +145,6 @@ func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 	ctx := context.TODO()
 	pod, err := kc.CoreV1().Pods(jobNamespace).Get(ctx, podName, metav1.GetOptions{})
 
-	// Examples for error handling:
-	// - Use helper functions e.g. errors.IsNotFound()
-	// - And/or cast to StatusError and use its properties like e.g. ErrStatus.Message
 	var statusError *k8serrors.StatusError
 	switch {
 	case k8serrors.IsNotFound(err):
@@ -160,7 +152,6 @@ func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 			Err(err).
 			Str("operation", "GetPod").
 			Msg(fmt.Sprintf("Pod %s not found in default namespace", podName))
-		// return err
 	case errors.As(err, &statusError):
 		log.Printf("Error getting Pod %v\n", statusError.ErrStatus.Message)
 		kc.l.Error().
@@ -195,7 +186,6 @@ func (kc *K8sClient) GetAllJobs() *batchv1.JobList {
 	// Or specify namespace to get pods in particular namespace
 	// Limit: 10, // need to fix this - last duration / current duration get messed up
 	jobs, err := kc.BatchV1().Jobs(kc.namespace).List(ctx, metav1.ListOptions{})
-
 	if err != nil {
 		panic(err.Error())
 	}
@@ -203,38 +193,28 @@ func (kc *K8sClient) GetAllJobs() *batchv1.JobList {
 	kc.l.Info().
 		Str("operation", "GetAllJobs").
 		Msg(fmt.Sprintf("There are %d jobs in the cluster", len(jobs.Items)))
-	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
+
 	return jobs
 }
 
+// Deprecated: GetAllJobsMapped is no longer used. Use GetAllJobs via findJobsMapped instead.
 func (kc *K8sClient) GetAllJobsMapped() *protos.MappedJobs {
-	ctx := context.TODO()
-
-	// get pods in all the namespaces by omitting namespace
-	// Or specify namespace to get pods in particular namespace
-	// Limit: 10, // need to fix this - last duration / current duration get messed up
-	jobs, err := kc.BatchV1().Jobs(kc.namespace).List(ctx, metav1.ListOptions{})
-
-	if err != nil {
-		panic(err.Error())
-	}
-
-	kc.l.Info().
-		Str("operation", "GetAllJobsMapped").
-		Msg(fmt.Sprintf("There are %d jobs in the cluster", len(jobs.Items)))
-	// log.Printf("There are %d jobs in the cluster for %s\n", len(filteredJobs), jobUID, uuids)
+	jobs := kc.GetAllJobs()
 
 	cronjobNames := []string{}
-	// for _, cronjob := range cronJobList.Items {
-	//      cronjobNames = append(cronjobNames, cronjob.Name)
-	// }
-
 	jobsMapped := make(map[string][]*batchv1.Job)
-	for _, job := range jobs.Items {
+	for i := range jobs.Items {
+		job := &jobs.Items[i]
 		for _, owr := range job.ObjectMeta.OwnerReferences {
-			target := jobsMapped[owr.Name]
-			jobsMapped[owr.Name] = append(target, &job)
-			if !slices.Contains(cronjobNames, owr.Name) {
+			jobsMapped[owr.Name] = append(jobsMapped[owr.Name], job)
+			found := false
+			for _, n := range cronjobNames {
+				if n == owr.Name {
+					found = true
+					break
+				}
+			}
+			if !found {
 				cronjobNames = append(cronjobNames, owr.Name)
 			}
 		}
@@ -242,10 +222,17 @@ func (kc *K8sClient) GetAllJobsMapped() *protos.MappedJobs {
 
 	x := &protos.MappedJobs{}
 	x.JobLists = make(map[string]*protos.JobList)
-
 	for _, name := range cronjobNames {
+		items := make([]*protos.JobResponse, 0, len(jobsMapped[name]))
+		for _, j := range jobsMapped[name] {
+			items = append(items, &protos.JobResponse{
+				Name:      j.Name,
+				Namespace: j.Namespace,
+				Uuid:      string(j.UID),
+			})
+		}
 		x.JobLists[name] = &protos.JobList{
-			Items: jobsMapped[name],
+			Items: items,
 		}
 	}
 

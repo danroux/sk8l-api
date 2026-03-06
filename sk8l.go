@@ -18,10 +18,7 @@ import (
 	"github.com/danroux/sk8l/protos"
 	badger "github.com/dgraph-io/badger/v4"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/proto"
 	gyaml "sigs.k8s.io/yaml"
-
-	// structpb "google.golang.org/protobuf/types/known/structpb".
 
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -56,7 +53,6 @@ var (
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
-	// CronJobDBStore CronJobStore
 	*CronJobDBStore
 	target      string
 	dialOptions []grpc.DialOption
@@ -142,8 +138,6 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		}
 
 		select {
-		// https://grpc.io/docs/guides/cancellation/
-		// https://learn.microsoft.com/en-us/aspnet/core/grpc/performance?view=aspnetcore-9.0
 		case <-stream.Context().Done():
 			err := stream.Context().Err()
 			log.Error().
@@ -191,9 +185,7 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 
 		slices.SortFunc(cronjobResponse.JobsPods,
 			func(a, b *protos.PodResponse) int {
-				aStartTime := a.Status.StartTime
-				bStartTime := b.Status.StartTime
-				return aStartTime.Compare(bStartTime.Time)
+				return strings.Compare(a.Status.StartTime, b.Status.StartTime)
 			})
 
 		cronjobPodsResponse := &protos.CronjobPodsResponse{
@@ -304,13 +296,10 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 
 	var tmplFile = "annotations.tmpl"
 	t := template.New(tmplFile)
-	// t = t.Funcs(template.FuncMap{"StringsJoin": strings.Join})
 	t = t.Funcs(template.FuncMap{"marshal": func(v any) string {
 		a, _ := json.Marshal(v)
 		return string(a)
-	},
-	},
-	)
+	}})
 	t = template.Must(t.ParseFS(content, tmplFile))
 
 	var b bytes.Buffer
@@ -329,14 +318,18 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	return response, nil
 }
 
-func (s *Sk8lServer) findJobsMapped() *protos.MappedJobs {
-	jobsCall := func() []byte {
-		result := s.K8sClient.GetAllJobsMapped()
-		value, _ := proto.Marshal(result)
-		return value
-	}
-
-	jobs, err := s.getAndStore(jobsMappedCacheKey, jobsCall)
+func (s *Sk8lServer) findJobsMapped() map[string][]*batchv1.Job {
+	jobs, err := s.getAndStore(jobsMappedCacheKey, func() []byte {
+		jobList := s.K8sClient.GetAllJobs()
+		var buf bytes.Buffer
+		if err := k8sSerializer.Encode(jobList, &buf); err != nil {
+			log.Error().
+				Err(err).
+				Str("operation", "findJobsMapped").
+				Msg("k8sSerializer.Encode")
+		}
+		return buf.Bytes()
+	})
 
 	if err != nil {
 		log.Error().
@@ -345,18 +338,22 @@ func (s *Sk8lServer) findJobsMapped() *protos.MappedJobs {
 			Msg("getAndStore")
 	}
 
-	mappedJobs := &protos.MappedJobs{}
-
-	err = proto.Unmarshal(jobs, mappedJobs)
-
-	if err != nil {
+	jobList := &batchv1.JobList{}
+	if _, _, err := k8sSerializer.Decode(jobs, nil, jobList); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "findJobsMapped").
-			Msg("proto.Unmarshal")
+			Msg("k8sSerializer.Decode")
 	}
 
-	return mappedJobs
+	mapped := make(map[string][]*batchv1.Job)
+	for i := range jobList.Items {
+		job := &jobList.Items[i]
+		for _, owr := range job.OwnerReferences {
+			mapped[owr.Name] = append(mapped[owr.Name], job)
+		}
+	}
+	return mapped
 }
 
 func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
@@ -379,7 +376,6 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 					Msg("proto.Unmarshal")
 				return fmt.Errorf("sk8l#findJobPodsForJob: proto.Unmarshal() failed: %w", err)
 			}
-
 			return nil
 		})
 
@@ -401,7 +397,6 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 	}
 
 	podItems := []corev1.Pod{}
-
 	podMap := make(map[string][]corev1.Pod)
 	for _, pod := range collection.Items {
 		for _, ownr := range pod.OwnerReferences {
@@ -416,16 +411,11 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 			func(a, b corev1.Pod) int {
 				return cmp.Compare(a.ResourceVersion, b.ResourceVersion)
 			})
-
 		latestVersion := pods[len(pods)-1]
 		podItems = append(podItems, latestVersion)
 	}
 
-	podList := &corev1.PodList{
-		Items: podItems,
-	}
-
-	return podList
+	return &corev1.PodList{Items: podItems}
 }
 
 // Revisit this. JobConditions are not being used yet anywhere.
@@ -433,30 +423,34 @@ func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
 func jobFailed(
 	job *batchv1.Job,
 	jobPodsResponses []*protos.PodResponse,
-) (bool, *batchv1.JobCondition, []*batchv1.JobCondition) {
-	var jobFailed bool
-	var failureCondition *batchv1.JobCondition
-
+) (bool, *protos.JobConditionResponse, []*protos.JobCondition) {
+	var failed bool
+	var failureCondition *protos.JobConditionResponse
 	n := len(job.Status.Conditions)
-	jobConditions := make([]*batchv1.JobCondition, 0, n)
+	jobConditions := make([]*protos.JobCondition, 0, n)
 	for i := range job.Status.Conditions {
 		jobCondition := job.Status.Conditions[i]
-		if !jobFailed {
+		if !failed {
 			if jobCondition.Type == batchv1.JobFailed {
-				jobFailed = true
-				failureCondition = &jobCondition
+				failed = true
+				failureCondition = mapJobCondition(&jobCondition)
 			}
 		}
-		jobConditions = append(jobConditions, &jobCondition)
+		jobConditions = append(jobConditions, &protos.JobCondition{
+			Type:               string(jobCondition.Type),
+			Status:             string(jobCondition.Status),
+			LastProbeTime:      timeToString(&jobCondition.LastProbeTime),
+			LastTransitionTime: timeToString(&jobCondition.LastTransitionTime),
+			Reason:             jobCondition.Reason,
+			Message:            jobCondition.Message,
+		})
 	}
-
 	for _, pr := range jobPodsResponses {
 		if pr.Failed {
-			jobFailed = true
+			failed = true
 		}
 	}
-
-	return jobFailed, failureCondition, jobConditions
+	return failed, failureCondition, jobConditions
 }
 
 func (s *Sk8lServer) jobWithSidecarContainer(batchJob *batchv1.Job) bool {
@@ -465,48 +459,44 @@ func (s *Sk8lServer) jobWithSidecarContainer(batchJob *batchv1.Job) bool {
 			return true
 		}
 	}
-
 	return false
 }
 
 func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse {
 	jobPodsForJob := s.findJobPodsForJob(batchJob)
 	jobPodsResponses := buildJobPodsResponses(jobPodsForJob)
-
 	jobFailed, failureCondition, jobConditions := jobFailed(batchJob, jobPodsResponses)
-
 	duration := toDuration(batchJob, jobFailed, failureCondition)
 	durationInS := toDurationInS(batchJob, jobFailed, failureCondition)
 	completionTimeInS := toCompletionTimeInS(batchJob)
-
 	terminationReasons := make([]*protos.TerminationReason, 0)
-
 	for _, podResponse := range jobPodsResponses {
 		terminationReasons = append(terminationReasons, podResponse.TerminationReasons...)
 	}
-
 	jobWithSidecar := s.jobWithSidecarContainer(batchJob)
 
+	startTimeInS := int64(0)
+	if batchJob.Status.StartTime != nil {
+		startTimeInS = batchJob.Status.StartTime.Unix()
+	}
+
+	customStatus := mapCustomJobStatus(batchJob.Status)
+	customStatus.StartTimeInS = startTimeInS
+	customStatus.CompletionTimeInS = completionTimeInS
+	customStatus.Conditions = jobConditions
+
 	jobResponse := &protos.JobResponse{
-		Name:              batchJob.Name,
-		Namespace:         batchJob.Namespace,
-		Uuid:              string(batchJob.UID),
-		CreationTimestamp: batchJob.GetCreationTimestamp().UTC().Format(time.RFC3339),
-		Generation:        batchJob.Generation,
-		Duration:          duration.String(),
-		DurationInS:       durationInS,
-		Spec:              &batchJob.Spec,
-		Status: &protos.JobStatus{
-			StartTime:         batchJob.Status.StartTime,
-			StartTimeInS:      batchJob.Status.StartTime.Unix(),
-			CompletionTime:    batchJob.Status.CompletionTime,
-			CompletionTimeInS: completionTimeInS,
-			Active:            &batchJob.Status.Active,
-			Failed:            &batchJob.Status.Failed,
-			Ready:             batchJob.Status.Ready,
-			Succeeded:         &batchJob.Status.Succeeded,
-			Conditions:        jobConditions,
-		},
+		Name:                  batchJob.Name,
+		Namespace:             batchJob.Namespace,
+		Uuid:                  string(batchJob.UID),
+		CreationTimestamp:     batchJob.GetCreationTimestamp().UTC().Format(time.RFC3339),
+		Generation:            batchJob.Generation,
+		Duration:              duration.String(),
+		DurationInS:           durationInS,
+		Metadata:              mapObjectMeta(batchJob.ObjectMeta),
+		Spec:                  mapJobSpec(batchJob.Spec),
+		JobStatus:             mapJobStatus(batchJob.Status),
+		Status:                customStatus,
 		Succeeded:             jobSucceeded(batchJob),
 		Failed:                jobFailed,
 		FailureCondition:      failureCondition,
@@ -514,7 +504,6 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 		TerminationReasons:    terminationReasons,
 		WithSidecarContainers: jobWithSidecar,
 	}
-
 	return jobResponse
 }
 
@@ -526,17 +515,14 @@ func (s *Sk8lServer) collectCronjobs() {
 			event, more := <-x.ResultChan()
 			if more {
 				eventCronjob, ok := event.Object.(*batchv1.CronJob)
-
 				if !ok {
 					log.Error().
 						Str("operation", "collectCronjobs").
 						Msg("event.Object.(*batchv1.CronJob)")
 				}
-
 				err := s.DB.Update(func(txn *badger.Txn) error {
 					return handleCronJobEvent(txn, event, eventCronjob)
 				})
-
 				if err != nil {
 					panic(err)
 				}
@@ -558,17 +544,14 @@ func (s *Sk8lServer) collectJobs() {
 			event, more := <-x.ResultChan()
 			if more {
 				eventJob, ok := event.Object.(*batchv1.Job)
-
 				if !ok {
 					log.Error().
 						Str("operation", "collectPods").
 						Msg("event.Object.(*batchv1.Job)")
 				}
-
 				err := s.DB.Update(func(txn *badger.Txn) error {
 					return handleJobEvent(txn, event, eventJob)
 				})
-
 				if err != nil {
 					panic(err)
 				}
@@ -590,17 +573,14 @@ func (s *Sk8lServer) collectPods() {
 			event, more := <-x.ResultChan()
 			if more {
 				eventPod, ok := event.Object.(*corev1.Pod)
-
 				if !ok {
 					log.Error().
 						Str("operation", "collectPods").
 						Msg("event.Object.(*corev1.Pod)")
 				}
-
 				err := s.DB.Update(func(txn *badger.Txn) error {
 					return handlePodEvent(txn, event, eventPod)
 				})
-
 				if err != nil {
 					panic(err)
 				}
@@ -630,22 +610,18 @@ func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv
 			log.Error().
 				Err(err).
 				Str("operation", "handleCronJobEvent").
-				Msg("proto.Marshal")
-			return fmt.Errorf("%s: proto.Marshal() failed: %w", "sk8l#collectCronjobs", err)
+				Msg("k8sSerializer.Encode")
+			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectCronjobs", err)
 		}
-
-		mashErr := storeEntry(txn, cronjobsCacheKey, buf.Bytes(), "sk8l#collectCronjobs")
-		return mashErr
+		return storeEntry(txn, cronjobsCacheKey, buf.Bytes(), "sk8l#collectCronjobs")
 	}
 
 	err = item.Value(func(stored []byte) error {
 		return updateStoredCronjobList(txn, stored, event, eventCronJob)
 	})
-
 	if err != nil {
 		return fmt.Errorf("sk8l#collectCronjobs: item.Value() failed: %w", err)
 	}
-
 	return nil
 }
 
@@ -663,8 +639,7 @@ func handleJobEvent(txn *badger.Txn, event watch.Event, eventJob *batchv1.Job) e
 				Msg("k8sSerializer.Encode")
 			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectJobs", err)
 		}
-		mashErr := storeEntry(txn, jobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
-		return mashErr
+		return storeEntry(txn, jobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 	}
 	err = item.Value(func(stored []byte) error {
 		return updateStoredJobList(txn, stored, event, eventJob)
@@ -684,27 +659,22 @@ func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) er
 			Items: []corev1.Pod{*eventPod},
 		}
 		var buf bytes.Buffer
-		err = k8sSerializer.Encode(podList, &buf)
-
-		if err != nil {
+		if err = k8sSerializer.Encode(podList, &buf); err != nil {
 			log.Error().
 				Err(err).
 				Str("operation", "handlePodEvent").
 				Msg("k8sSerializer.Encode")
 			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectPods", err)
 		}
-		setEntryErr := storeEntry(txn, key, buf.Bytes(), "sk8l#collectPods")
-		return setEntryErr
+		return storeEntry(txn, key, buf.Bytes(), "sk8l#collectPods")
 	}
 
 	err = item.Value(func(val []byte) error {
 		return updateStoredPodList(txn, val, key, eventPod)
 	})
-
 	if err != nil {
 		return fmt.Errorf("sk8l#collectPods: item.Value() failed: %w", err)
 	}
-
 	return nil
 }
 
@@ -718,7 +688,7 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredCronjobList").
-			Msg("proto.Unmarshal")
+			Msg("k8sSerializer.Decode")
 		return fmt.Errorf("sk8l#collectCronjobs: Decode() failed: %w", err)
 	}
 
@@ -737,17 +707,14 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 	//revive:enable:identical-switch-branches
 
 	var buf bytes.Buffer
-	err = k8sSerializer.Encode(storedCjList, &buf)
-	if err != nil {
+	if err = k8sSerializer.Encode(storedCjList, &buf); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredCronjobList").
 			Msg("k8sSerializer.Encode")
 		return fmt.Errorf("sk8l#collectCronjobs: Encode() failed: %w", err)
 	}
-
-	setEntryErr := storeEntry(txn, cronjobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
-	return setEntryErr
+	return storeEntry(txn, cronjobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 }
 
 func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, eventJob *batchv1.Job) error {
@@ -776,16 +743,14 @@ func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, even
 	//revive:enable:identical-switch-branches
 
 	var buf bytes.Buffer
-	err = k8sSerializer.Encode(storedJList, &buf)
-	if err != nil {
+	if err = k8sSerializer.Encode(storedJList, &buf); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredJobList").
 			Msg("k8sSerializer.Encode")
 		return fmt.Errorf("sk8l#collectJobs: Encode() failed: %w", err)
 	}
-	setEntryErr := storeEntry(txn, jobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
-	return setEntryErr
+	return storeEntry(txn, jobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 }
 
 func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *corev1.Pod) error {
@@ -807,12 +772,10 @@ func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *c
 			Msg("k8sSerializer.Encode")
 		return fmt.Errorf("operation#k8sSerializer.Encode: %w", err)
 	}
-	setEntryErr := storeEntry(txn, key, buf.Bytes(), "sk8l#collectPods")
-	return setEntryErr
+	return storeEntry(txn, key, buf.Bytes(), "sk8l#collectPods")
 }
 
 func filterCronJobsList(storedCjList *batchv1.CronJobList, eventCronJob *batchv1.CronJob) {
-	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
 	log.Info().
 		Str("operation", "filterCronJobsList").
 		Msg(fmt.Sprintf("filtering out %s", eventCronJob.Name))
@@ -826,7 +789,6 @@ func filterCronJobsList(storedCjList *batchv1.CronJobList, eventCronJob *batchv1
 }
 
 func filterStoredJobList(storedJList *batchv1.JobList, eventJob *batchv1.Job) {
-	// to avoid duplicates if the process is restarted and on "MODIFIED" to get the updated version of the resource
 	jList := &batchv1.JobList{}
 	for _, job := range storedJList.Items {
 		if job.Name != eventJob.Name {
@@ -861,7 +823,6 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(
 	wg := sync.WaitGroup{}
 	wg.Add(jn)
 
-	// go through all jobs and get the ones that match the jobUID(owner)
 	for _, batchJob := range jobs {
 		go func(batchJob *batchv1.Job) {
 			defer wg.Done()
@@ -869,7 +830,7 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(
 			allJobsForCronJob = append(allJobsForCronJob, jobResponse)
 			allJobPodsForCronjob = append(allJobPodsForCronjob, jobResponse.Pods...)
 
-			if *jobResponse.Status.Active > 0 {
+			if jobResponse.Status.Active > 0 {
 				runningJobs = append(runningJobs, jobResponse)
 			}
 
@@ -899,12 +860,11 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(
 	return allJobsForCronJob, allJobPodsForCronjob, runningJobs, runningPods
 }
 
-func (s *Sk8lServer) jobsForCronjob(jobsMapped *protos.MappedJobs, cronjobName string) []*batchv1.Job {
-	if jobsMapped.JobLists[cronjobName] == nil {
-		return []*batchv1.Job{}
+func (s *Sk8lServer) jobsForCronjob(jobsMapped map[string][]*batchv1.Job, cronjobName string) []*batchv1.Job {
+	if jobs, ok := jobsMapped[cronjobName]; ok {
+		return jobs
 	}
-
-	return jobsMapped.JobLists[cronjobName].Items
+	return []*batchv1.Job{}
 }
 
 func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*batchv1.Job) *protos.CronjobResponse {
@@ -915,7 +875,6 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 
 	lastDuration := getLastDuration(allJobsForCronJob)
 	currentDuration := getCurrentDuration(runningJobs)
-
 	commands := buildCronJobCommand(cronJob)
 	lastSuccessfulTime, lastScheduleTime := buildLastTimes(cronJob)
 
@@ -927,7 +886,7 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 		}
 	}
 
-	cjr := &protos.CronjobResponse{
+	return &protos.CronjobResponse{
 		Name:               cronJob.Name,
 		Namespace:          cronJob.Namespace,
 		Uid:                string(cronJob.UID),
@@ -943,11 +902,9 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 		RunningJobs:        runningJobs,
 		RunningJobsPods:    runningJobPods,
 		JobsPods:           jobPodsForCronJob,
-		Spec:               &cronJob.Spec,
+		Spec:               mapCronJobSpec(cronJob.Spec),
 		Failed:             cjFailed,
 	}
-
-	return cjr
 }
 
 func collectTerminatedAndFailedContainers(
@@ -959,33 +916,36 @@ func collectTerminatedAndFailedContainers(
 	failedContainers = make([]*protos.ContainerResponse, 0)
 
 	for _, containerStatus := range statuses {
-		// ephStates = append(ephStates, container.State)
-		// if container.State.Waiting != nil && container.State.Waiting.Reason == "Error" {
-		//      failedEphContainers = append(failedEphContainers, &container)
-		// }
-
-		podConditions := []*corev1.PodCondition{}
+		podConditions := make([]*protos.PodConditionResponse, 0, len(pod.Status.Conditions))
 		for _, pc := range pod.Status.Conditions {
-			podConditions = append(podConditions, &pc)
+			podConditions = append(podConditions, &protos.PodConditionResponse{
+				Type:               string(pc.Type),
+				Status:             string(pc.Status),
+				LastProbeTime:      timeToString(&pc.LastProbeTime),
+				LastTransitionTime: timeToString(&pc.LastTransitionTime),
+				Reason:             pc.Reason,
+				Message:            pc.Message,
+			})
 		}
+
+		mappedStatus := mapContainerStatus(containerStatus)
 
 		if containerStatus.State.Waiting != nil {
 			cr := &protos.ContainerResponse{
-				Status:     &containerStatus,
+				Status:     mappedStatus,
 				Phase:      string(pod.Status.Phase),
 				Conditions: podConditions,
 			}
 			terminatedContainers = append(terminatedContainers, cr)
 
 			if containerStatus.State.Waiting.Reason == "CreateContainerConfigError" {
-				waitingTerminated := &corev1.ContainerStateTerminated{
-					Message:    containerStatus.State.Waiting.Message,
-					Reason:     containerStatus.State.Waiting.Reason,
-					FinishedAt: *pod.Status.StartTime,
-				}
 				cr.TerminatedReason = &protos.TerminationReason{
-					TerminationDetails: waitingTerminated,
-					ContainerName:      cr.Status.Name,
+					TerminationDetails: &protos.ContainerStateTerminatedResponse{
+						Message:    containerStatus.State.Waiting.Message,
+						Reason:     containerStatus.State.Waiting.Reason,
+						FinishedAt: timeToString(pod.Status.StartTime),
+					},
+					ContainerName: mappedStatus.Name,
 				}
 				*terminationReasons = append(*terminationReasons, cr.TerminatedReason)
 				failedContainers = append(failedContainers, cr)
@@ -994,7 +954,7 @@ func collectTerminatedAndFailedContainers(
 
 		if containerStatus.State.Terminated != nil {
 			cr := &protos.ContainerResponse{
-				Status:     &containerStatus,
+				Status:     mappedStatus,
 				Phase:      string(pod.Status.Phase),
 				Conditions: podConditions,
 			}
@@ -1002,8 +962,8 @@ func collectTerminatedAndFailedContainers(
 
 			if containerStatus.State.Terminated.Reason == "Error" {
 				cr.TerminatedReason = &protos.TerminationReason{
-					TerminationDetails: containerStatus.State.Terminated,
-					ContainerName:      cr.Status.Name,
+					TerminationDetails: mapContainerStateTerminated(containerStatus.State.Terminated),
+					ContainerName:      mappedStatus.Name,
 				}
 				*terminationReasons = append(*terminationReasons, cr.TerminatedReason)
 				failedContainers = append(failedContainers, cr)
@@ -1054,37 +1014,34 @@ func terminatedAndFailedContainersResponses(
 func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 	n := len(gJobPods.Items)
 	jobPodsResponses := make([]*protos.PodResponse, 0, n)
-
-	// ephStates := make([]corev1.ContainerState, 0)
 	for _, pod := range gJobPods.Items {
-		// jobPodsForJob.Items[0].Status.ContainerStatuses
-		// jobPodsForJob.Items[0].Status.InitContainerStatuses
 		terminatedContainers, failedContainers := terminatedAndFailedContainersResponses(&pod)
 		failed := len(failedContainers.TerminationReasons) > 0
-
-		var containerTerminatedState *corev1.ContainerStateTerminated
 		containerFinishedAtTimes := make([]*metav1.Time, 0)
 		for _, x := range terminatedContainers.Containers {
-			containerTerminatedState = x.Status.State.Terminated
-			if containerTerminatedState != nil && !containerTerminatedState.FinishedAt.Time.IsZero() {
-				containerFinishedAtTimes = append(containerFinishedAtTimes, &containerTerminatedState.FinishedAt)
+			if x.TerminatedReason != nil && x.TerminatedReason.TerminationDetails != nil {
+				finishedAt := x.TerminatedReason.TerminationDetails.FinishedAt
+				if finishedAt != "" {
+					t, err := time.Parse(time.RFC3339, finishedAt)
+					if err == nil && !t.IsZero() {
+						mt := metav1.NewTime(t)
+						containerFinishedAtTimes = append(containerFinishedAtTimes, &mt)
+					}
+				}
 			}
 		}
-
-		var finishedAt *metav1.Time
+		var finishedAt string
 		if len(containerFinishedAtTimes) > 0 {
 			slices.SortFunc(containerFinishedAtTimes,
-				func(aFinishedAtTime, bFinishedAtTime *metav1.Time) int {
-					return aFinishedAtTime.Compare(bFinishedAtTime.Time)
+				func(a, b *metav1.Time) int {
+					return a.Compare(b.Time)
 				})
-
-			finishedAt = containerFinishedAtTimes[len(containerFinishedAtTimes)-1]
+			finishedAt = timeToString(containerFinishedAtTimes[len(containerFinishedAtTimes)-1])
 		}
-
 		podResponse := &protos.PodResponse{
-			Metadata:             &pod.ObjectMeta,
-			Spec:                 &pod.Spec,
-			Status:               &pod.Status,
+			Metadata:             mapObjectMeta(pod.ObjectMeta),
+			Spec:                 mapPodSpec(pod.Spec),
+			Status:               mapPodStatus(pod.Status),
 			TerminatedContainers: terminatedContainers,
 			FailedContainers:     failedContainers,
 			Failed:               failed,
@@ -1094,38 +1051,24 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 		}
 		jobPodsResponses = append(jobPodsResponses, podResponse)
 	}
-
 	return jobPodsResponses
 }
 
 func jobSucceeded(job *batchv1.Job) bool {
-	// The completion time is only set when the job finishes successfully.
 	return job.Status.CompletionTime != nil
 }
 
 func buildLastTimes(cronJob batchv1.CronJob) (lastSuccessfulTime string, lastScheduleTime string) {
-	// var lastSuccessfulTime string
-	// var lastScheduleTime string
 	if cronJob.Status.LastSuccessfulTime != nil {
 		lastSuccessfulTime = cronJob.Status.LastSuccessfulTime.UTC().Format(time.RFC3339)
 	}
-
 	if cronJob.Status.LastScheduleTime != nil {
 		lastScheduleTime = cronJob.Status.LastScheduleTime.UTC().Format(time.RFC3339)
 	}
-
 	return lastSuccessfulTime, lastScheduleTime
 }
 
 func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCommands {
-	// cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers
-	// cronJob.Spec.JobTemplate.Spec.Template.Spec.InitContainers.Image
-	// cronJob.Spec.JobTemplate.Spec.Template.Spec.InitContainers.Command
-	// spec:
-	//   backoffLimit:6
-	//   commentmpletionMode: NonIndexed
-	//   completions: 1
-	//   parallelism: 1
 	commands := make(map[string]*protos.ContainerCommands)
 	n := len(cronJob.Spec.JobTemplate.Spec.Template.Spec.InitContainers)
 	initContainersCommands := make([]string, 0, n)
@@ -1159,7 +1102,7 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 		command.Reset()
 	}
 
-	ephemeralContainersinersCommands := make([]string, 0, n)
+	ephemeralContainersCommands := make([]string, 0, n)
 	for _, container := range cronJob.Spec.JobTemplate.Spec.Template.Spec.EphemeralContainers {
 		for _, ccmd := range container.Command {
 			_, err := fmt.Fprintf(&command, "%s ", ccmd)
@@ -1170,19 +1113,13 @@ func buildCronJobCommand(cronJob batchv1.CronJob) map[string]*protos.ContainerCo
 					Msg("EphemeralContainers: command.WriteString")
 			}
 		}
-		ephemeralContainersinersCommands = append(ephemeralContainersinersCommands, command.String())
+		ephemeralContainersCommands = append(ephemeralContainersCommands, command.String())
 		command.Reset()
 	}
 
-	commands["InitContainers"] = &protos.ContainerCommands{
-		Commands: initContainersCommands,
-	}
-	commands["Containers"] = &protos.ContainerCommands{
-		Commands: containersCommands,
-	}
-	commands["EphemeralContainers"] = &protos.ContainerCommands{
-		Commands: ephemeralContainersinersCommands,
-	}
+	commands["InitContainers"] = &protos.ContainerCommands{Commands: initContainersCommands}
+	commands["Containers"] = &protos.ContainerCommands{Commands: containersCommands}
+	commands["EphemeralContainers"] = &protos.ContainerCommands{Commands: ephemeralContainersCommands}
 
 	return commands
 }
@@ -1195,7 +1132,6 @@ func getCurrentDuration(runningJobsForCronJob []*protos.JobResponse) int64 {
 			lastDuration = last.DurationInS
 		}
 	}
-
 	return lastDuration
 }
 
@@ -1211,37 +1147,33 @@ func getLastDuration(allJobsForCronJob []*protos.JobResponse) int64 {
 		last := allJobsForCronJob[len(allJobsForCronJob)-i]
 		lastDuration = last.DurationInS
 	}
-
 	return lastDuration
 }
 
-func toDuration(job *batchv1.Job, jobFailed bool, failureCondition *batchv1.JobCondition) time.Duration {
+func toDuration(job *batchv1.Job, jobFailed bool, failureCondition *protos.JobConditionResponse) time.Duration {
 	var d time.Duration
-
 	status := job.Status
 	if jobFailed && failureCondition != nil {
-		d = failureCondition.LastTransitionTime.Sub(status.StartTime.Time)
-		return d
+		lastTransition, err := time.Parse(time.RFC3339, failureCondition.LastTransitionTime)
+		if err == nil && status.StartTime != nil {
+			d = lastTransition.Sub(status.StartTime.Time)
+			return d
+		}
 	}
-
 	if status.StartTime == nil {
 		return d
 	}
-
 	switch status.CompletionTime {
 	case nil:
 		d = time.Since(status.StartTime.Time)
 	default:
 		d = status.CompletionTime.Sub(status.StartTime.Time)
 	}
-
 	return d
-	// return duration.HumanDuration(d)
 }
 
-func toDurationInS(job *batchv1.Job, jobFailed bool, failureCondition *batchv1.JobCondition) int64 {
+func toDurationInS(job *batchv1.Job, jobFailed bool, failureCondition *protos.JobConditionResponse) int64 {
 	d := toDuration(job, jobFailed, failureCondition)
-
 	return int64(d.Seconds())
 }
 
@@ -1249,6 +1181,5 @@ func toCompletionTimeInS(job *batchv1.Job) int64 {
 	if job.Status.CompletionTime != nil {
 		return job.Status.CompletionTime.Unix()
 	}
-
 	return int64(0)
 }
