@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -29,8 +30,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/protoadapt"
 )
 
 const bufSize = 1 << 20
@@ -51,19 +50,18 @@ func setupBadger(t *testing.T) *badger.DB {
 }
 
 func putCronjobsToBadger(t *testing.T, db *badger.DB, cronjobList *batchv1.CronJobList) {
-	cronjobListV2 := protoadapt.MessageV2Of(cronjobList)
-	data, err := proto.Marshal(cronjobListV2)
-	if err != nil {
-		t.Fatalf("failed to marshal cronjob list: %v", err)
+	var buf bytes.Buffer
+	if err := k8sSerializer.Encode(cronjobList, &buf); err != nil {
+		t.Fatalf("failed to encode cronjob list: %v", err)
 	}
-
-	err = db.Update(func(txn *badger.Txn) error {
-		return txn.Set(cronjobsCacheKey, data)
+	err := db.Update(func(txn *badger.Txn) error {
+		return txn.Set(cronjobsCacheKey, buf.Bytes())
 	})
 	if err != nil {
 		t.Fatalf("failed to write cronjobs to badger: %v", err)
 	}
 }
+
 func bufDialer(context.Context, string) (net.Conn, error) {
 	conn, err := lis.Dial()
 	if err != nil {

@@ -131,7 +131,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 							cronjobFailingJobs++
 						}
 
-						if job.Status.CompletionTime != nil {
+						if job.Status.CompletionTime != "" {
 							cronjobCompletions++
 						}
 
@@ -153,7 +153,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer) {
 							sanitizedJobName,
 						)
 
-						if *job.Status.Active > 0 {
+						if job.Status.Active > 0 {
 							jobDuration = float64(job.DurationInS)
 						} else {
 							jobDuration = float64(0)

@@ -109,7 +109,27 @@ func (b *CronjobResponseBuilder) WithCurrentDuration(dur int64) *CronjobResponse
 }
 
 func (b *CronjobResponseBuilder) WithSpec(spec *v11.CronJobSpec) *CronjobResponseBuilder {
-	b.cronjob.Spec = spec
+	suspend := spec.Suspend != nil && *spec.Suspend
+	successfulJobsHistoryLimit := int32(0)
+	if spec.SuccessfulJobsHistoryLimit != nil {
+		successfulJobsHistoryLimit = *spec.SuccessfulJobsHistoryLimit
+	}
+	failedJobsHistoryLimit := int32(0)
+	if spec.FailedJobsHistoryLimit != nil {
+		failedJobsHistoryLimit = *spec.FailedJobsHistoryLimit
+	}
+	timezone := ""
+	if spec.TimeZone != nil {
+		timezone = *spec.TimeZone
+	}
+	b.cronjob.Spec = &protos.CronJobSpecResponse{
+		Schedule:                   spec.Schedule,
+		Timezone:                   timezone,
+		ConcurrencyPolicy:          string(spec.ConcurrencyPolicy),
+		Suspend:                    suspend,
+		SuccessfulJobsHistoryLimit: successfulJobsHistoryLimit,
+		FailedJobsHistoryLimit:     failedJobsHistoryLimit,
+	}
 	return b
 }
 
