@@ -3,7 +3,7 @@ module github.com/danroux/sk8l
 go 1.25.0
 
 require (
-	github.com/dgraph-io/badger/v4 v4.8.0
+	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/google/go-cmp v0.7.0
 	github.com/prometheus/client_golang v1.23.0
 	github.com/rs/zerolog v1.34.0
