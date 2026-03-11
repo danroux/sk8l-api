@@ -1,0 +1,3 @@
+```release-note:improvement
+k8s/protos: Add podIps to PodStatusResponse
+```
