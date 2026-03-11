@@ -129,6 +129,13 @@ func mapPodStatus(s corev1.PodStatus) *protos.PodStatusResponse {
 		InitContainerStatuses:      mapContainerStatuses(s.InitContainerStatuses),
 		EphemeralContainerStatuses: mapContainerStatuses(s.EphemeralContainerStatuses),
 		QosClass:                   string(s.QOSClass),
+		PodIPs: func() []string {
+			ips := make([]string, 0, len(s.PodIPs))
+			for _, ip := range s.PodIPs {
+				ips = append(ips, ip.IP)
+			}
+			return ips
+		}(),
 	}
 }
 

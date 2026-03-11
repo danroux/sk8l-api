@@ -143,6 +143,7 @@ message PodStatusResponse {
   repeated ContainerStatusResponse initContainerStatuses = 9;
   repeated ContainerStatusResponse ephemeralContainerStatuses = 10;
   string qosClass = 11;
+  repeated string podIPs = 12;
 }
 
 message ContainerPortResponse {
