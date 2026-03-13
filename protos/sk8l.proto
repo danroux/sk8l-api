@@ -227,6 +227,7 @@ message CronJobSpecResponse {
   bool suspend = 4;
   int32 successfulJobsHistoryLimit = 5;
   int32 failedJobsHistoryLimit = 6;
+  int64 startingDeadlineSeconds = 7;
 }
 
 // ---- Main messages ----

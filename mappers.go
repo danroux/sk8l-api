@@ -345,6 +345,10 @@ func mapCronJobSpec(s batchv1.CronJobSpec) *protos.CronJobSpecResponse {
 	if s.TimeZone != nil {
 		timezone = *s.TimeZone
 	}
+	startingDeadlineSeconds := int64(0)
+	if s.StartingDeadlineSeconds != nil {
+		startingDeadlineSeconds = *s.StartingDeadlineSeconds
+	}
 	return &protos.CronJobSpecResponse{
 		Schedule:                   s.Schedule,
 		Timezone:                   timezone,
@@ -352,6 +356,7 @@ func mapCronJobSpec(s batchv1.CronJobSpec) *protos.CronJobSpecResponse {
 		Suspend:                    suspend,
 		SuccessfulJobsHistoryLimit: successfulJobsHistoryLimit,
 		FailedJobsHistoryLimit:     failedJobsHistoryLimit,
+		StartingDeadlineSeconds:    startingDeadlineSeconds,
 	}
 }
 
