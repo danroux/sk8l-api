@@ -1,3 +1,5 @@
+// Package main provides the Kubernetes client implementation and interface
+// for interacting with the Kubernetes API to retrieve cronjob, job and pod data.
 package main
 
 import (

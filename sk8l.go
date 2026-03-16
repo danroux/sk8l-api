@@ -15,6 +15,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/danroux/sk8l/internal/dashboard"
 	"github.com/danroux/sk8l/protos"
 	badger "github.com/dgraph-io/badger/v4"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -54,17 +55,27 @@ type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
 	*CronJobDBStore
-	target      string
-	dialOptions []grpc.DialOption
+	dashboardGen    *dashboard.Generator
+	metricsNamesMap *sync.Map
+	target          string
+	dialOptions     []grpc.DialOption
 }
 
 type APICall (func() []byte)
 
-func NewSk8lServer(target string, cronJobDBStore *CronJobDBStore, dialOptions ...grpc.DialOption) *Sk8lServer {
+func NewSk8lServer(
+	target string,
+	cronJobDBStore *CronJobDBStore,
+	dashboardGen *dashboard.Generator,
+	metricsNamesMap *sync.Map,
+	dialOptions ...grpc.DialOption,
+) *Sk8lServer {
 	return &Sk8lServer{
-		target:         target,
-		CronJobDBStore: cronJobDBStore,
-		dialOptions:    dialOptions,
+		target:          target,
+		CronJobDBStore:  cronJobDBStore,
+		dashboardGen:    dashboardGen,
+		metricsNamesMap: metricsNamesMap,
+		dialOptions:     dialOptions,
 	}
 }
 
@@ -105,7 +116,7 @@ func (s *Sk8lServer) Run(metricsCxt context.Context) {
 	s.collectCronjobs()
 	s.collectJobs()
 	s.collectPods()
-	recordMetrics(metricsCxt, s)
+	recordMetrics(metricsCxt, s, s.metricsNamesMap)
 }
 
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
@@ -292,7 +303,7 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	context.Context,
 	*protos.DashboardAnnotationsRequest,
 ) (*protos.DashboardAnnotationsResponse, error) {
-	panels := generatePanels()
+	panels := s.dashboardGen.GeneratePanels(s.metricsNamesMap)
 
 	var tmplFile = "annotations.tmpl"
 	t := template.New(tmplFile)
@@ -303,19 +314,16 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	t = template.Must(t.ParseFS(content, tmplFile))
 
 	var b bytes.Buffer
-	err := t.Execute(&b, panels)
-	if err != nil {
+	if err := t.Execute(&b, panels); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "sk8l#GetDashboardAnnotations").
 			Msg("executing template")
 	}
 
-	response := &protos.DashboardAnnotationsResponse{
+	return &protos.DashboardAnnotationsResponse{
 		Annotations: b.String(),
-	}
-
-	return response, nil
+	}, nil
 }
 
 func (s *Sk8lServer) findJobsMapped() map[string][]*batchv1.Job {
