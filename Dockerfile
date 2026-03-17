@@ -18,6 +18,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,id=gomodcache go mod download -x
 
 COPY *.go .
 COPY protos/ ./protos
+COPY internal/ ./internal
 COPY Makefile .
 COPY annotations.tmpl .
 

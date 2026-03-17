@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
 	"os"
 	"regexp"
 	"sync"
@@ -20,7 +19,6 @@ import (
 )
 
 var (
-	metricsNamesMap     = &sync.Map{}
 	namespace           = os.Getenv("K8_NAMESPACE")
 	optNamespace        = "sk8l"
 	summaryMap          = &sync.Map{}
@@ -63,9 +61,16 @@ var (
 	durationKey            string
 	failuresKey            string
 	metricNameRegex        = regexp.MustCompile(`_*[^0-9A-Za-z_]+_*`)
+
+	TotalMetricNames = []string{
+		registeredCronjobsOpts.Name,
+		completedCronjobsOpts.Name,
+		runningCronjobsOpts.Name,
+		failingCronjobsOpts.Name,
+	}
 )
 
-func recordMetrics(ctx context.Context, svr *Sk8lServer) {
+func recordMetrics(ctx context.Context, svr *Sk8lServer, metricsNamesMap *sync.Map) {
 	conn, err := grpc.NewClient(svr.GetTarget(), svr.GetDialOptions()...)
 	if err != nil {
 		panic(fmt.Sprintf("grpc.NewClient(%s) failed: %v", svr.GetTarget(), err))
