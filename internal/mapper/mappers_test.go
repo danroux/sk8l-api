@@ -11,11 +11,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	testTime1000 = "2024-01-15T10:00:00Z"
+	testTime1030 = "2024-01-15T10:30:00Z"
+)
+
 func TestTimeToString(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    *metav1.Time
 		expected string
+		input    *metav1.Time
 	}{
 		{
 			name:     "nil time returns empty string",
@@ -30,7 +35,7 @@ func TestTimeToString(t *testing.T) {
 		{
 			name:     "valid time returns RFC3339",
 			input:    &metav1.Time{Time: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)},
-			expected: "2024-01-15T10:30:00Z",
+			expected: testTime1030,
 		},
 	}
 
@@ -121,8 +126,8 @@ func TestMapObjectMeta(t *testing.T) {
 	if result.Annotations["note"] != "test" {
 		t.Errorf("expected Annotation note=test, got %q", result.Annotations["note"])
 	}
-	if result.CreationTimestamp != "2024-01-15T10:30:00Z" {
-		t.Errorf("expected CreationTimestamp %q, got %q", "2024-01-15T10:30:00Z", result.CreationTimestamp)
+	if result.CreationTimestamp != testTime1030 {
+		t.Errorf("expected CreationTimestamp %q, got %q", testTime1030, result.CreationTimestamp)
 	}
 	if result.Generation != 3 {
 		t.Errorf("expected Generation 3, got %d", result.Generation)
@@ -137,10 +142,10 @@ func TestMapContainerStateTerminated(t *testing.T) {
 	finishedAt := metav1.NewTime(time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC))
 
 	tests := []struct {
-		name     string
 		input    *corev1.ContainerStateTerminated
-		wantNil  bool
+		name     string
 		wantExit int32
+		wantNil  bool
 	}{
 		{
 			name:    "nil returns nil",
@@ -181,11 +186,11 @@ func TestMapContainerStateTerminated(t *testing.T) {
 			if result.Reason != "Error" {
 				t.Errorf("expected Reason %q, got %q", "Error", result.Reason)
 			}
-			if result.StartedAt != "2024-01-15T10:00:00Z" {
-				t.Errorf("expected StartedAt %q, got %q", "2024-01-15T10:00:00Z", result.StartedAt)
+			if result.StartedAt != testTime1000 {
+				t.Errorf("expected StartedAt %q, got %q", testTime1000, result.StartedAt)
 			}
-			if result.FinishedAt != "2024-01-15T10:30:00Z" {
-				t.Errorf("expected FinishedAt %q, got %q", "2024-01-15T10:30:00Z", result.FinishedAt)
+			if result.FinishedAt != testTime1030 {
+				t.Errorf("expected FinishedAt %q, got %q", testTime1030, result.FinishedAt)
 			}
 			if result.ContainerID != "docker://abc123" {
 				t.Errorf("expected ContainerID %q, got %q", "docker://abc123", result.ContainerID)
@@ -198,10 +203,10 @@ func TestMapContainerState(t *testing.T) {
 	startedAt := metav1.NewTime(time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC))
 
 	tests := []struct {
-		name          string
-		input         corev1.ContainerState
-		wantWaiting   bool
-		wantRunning   bool
+		input          corev1.ContainerState
+		name           string
+		wantWaiting    bool
+		wantRunning    bool
 		wantTerminated bool
 	}{
 		{
@@ -256,8 +261,8 @@ func TestMapContainerStatus(t *testing.T) {
 	started := true
 
 	tests := []struct {
-		name        string
 		input       corev1.ContainerStatus
+		name        string
 		wantStarted bool
 	}{
 		{
@@ -323,8 +328,8 @@ func TestMapPodStatus(t *testing.T) {
 	if result.PodIP != "10.0.0.1" {
 		t.Errorf("expected PodIP %q, got %q", "10.0.0.1", result.PodIP)
 	}
-	if result.StartTime != "2024-01-15T10:00:00Z" {
-		t.Errorf("expected StartTime %q, got %q", "2024-01-15T10:00:00Z", result.StartTime)
+	if result.StartTime != testTime1000 {
+		t.Errorf("expected StartTime %q, got %q", testTime1000, result.StartTime)
 	}
 	if result.QosClass != "Burstable" {
 		t.Errorf("expected QosClass %q, got %q", "Burstable", result.QosClass)
@@ -416,15 +421,13 @@ func TestMapPodSpec(t *testing.T) {
 	tgps := int64(30)
 
 	tests := []struct {
-		name    string
 		input   corev1.PodSpec
+		name    string
 		wantTGP int64
 	}{
 		{
-			name: "nil TerminationGracePeriodSeconds defaults to 0",
-			input: corev1.PodSpec{
-				TerminationGracePeriodSeconds: nil,
-			},
+			name:    "nil TerminationGracePeriodSeconds defaults to 0",
+			input:   corev1.PodSpec{TerminationGracePeriodSeconds: nil},
 			wantTGP: 0,
 		},
 		{
@@ -484,8 +487,8 @@ func TestMapJobCondition(t *testing.T) {
 	lastTransition := metav1.NewTime(time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC))
 
 	tests := []struct {
-		name    string
 		input   *batchv1.JobCondition
+		name    string
 		wantNil bool
 	}{
 		{
@@ -525,11 +528,11 @@ func TestMapJobCondition(t *testing.T) {
 			if result.Reason != "BackoffLimitExceeded" {
 				t.Errorf("expected Reason %q, got %q", "BackoffLimitExceeded", result.Reason)
 			}
-			if result.LastProbeTime != "2024-01-15T10:00:00Z" {
-				t.Errorf("expected LastProbeTime %q, got %q", "2024-01-15T10:00:00Z", result.LastProbeTime)
+			if result.LastProbeTime != testTime1000 {
+				t.Errorf("expected LastProbeTime %q, got %q", testTime1000, result.LastProbeTime)
 			}
-			if result.LastTransitionTime != "2024-01-15T10:30:00Z" {
-				t.Errorf("expected LastTransitionTime %q, got %q", "2024-01-15T10:30:00Z", result.LastTransitionTime)
+			if result.LastTransitionTime != testTime1030 {
+				t.Errorf("expected LastTransitionTime %q, got %q", testTime1030, result.LastTransitionTime)
 			}
 		})
 	}
@@ -557,11 +560,11 @@ func TestMapJobStatus(t *testing.T) {
 	if result.Succeeded != 3 {
 		t.Errorf("expected Succeeded 3, got %d", result.Succeeded)
 	}
-	if result.StartTime != "2024-01-15T10:00:00Z" {
-		t.Errorf("expected StartTime %q, got %q", "2024-01-15T10:00:00Z", result.StartTime)
+	if result.StartTime != testTime1000 {
+		t.Errorf("expected StartTime %q, got %q", testTime1000, result.StartTime)
 	}
-	if result.CompletionTime != "2024-01-15T10:30:00Z" {
-		t.Errorf("expected CompletionTime %q, got %q", "2024-01-15T10:30:00Z", result.CompletionTime)
+	if result.CompletionTime != testTime1030 {
+		t.Errorf("expected CompletionTime %q, got %q", testTime1030, result.CompletionTime)
 	}
 	if result.Ready != 2 {
 		t.Errorf("expected Ready 2, got %d", result.Ready)
@@ -574,17 +577,17 @@ func TestMapJobSpec(t *testing.T) {
 	activeDeadlineSeconds := int64(300)
 	backoffLimit := int32(3)
 	suspend := true
-	completionMode := batchv1.CompletionMode(batchv1.IndexedCompletion)
+	completionMode := batchv1.IndexedCompletion
 
 	tests := []struct {
-		name               string
 		input              batchv1.JobSpec
+		name               string
+		wantCompletionMode string
 		wantParallelism    int32
 		wantCompletions    int32
-		wantDeadline       int64
 		wantBackoff        int32
+		wantDeadline       int64
 		wantSuspend        bool
-		wantCompletionMode string
 	}{
 		{
 			name:               "nil pointers default to zero values",
@@ -648,15 +651,15 @@ func TestMapCronJobSpec(t *testing.T) {
 	startingDeadlineSeconds := int64(60)
 
 	tests := []struct {
-		name                       string
 		input                      batchv1.CronJobSpec
+		name                       string
 		wantSchedule               string
 		wantTimezone               string
 		wantConcurrencyPolicy      string
-		wantSuspend                bool
 		wantSuccessfulHistoryLimit int32
 		wantFailedHistoryLimit     int32
 		wantStartingDeadline       int64
+		wantSuspend                bool
 	}{
 		{
 			name:         "nil pointers default to zero values",
@@ -714,11 +717,11 @@ func TestMapCronJobSpec(t *testing.T) {
 
 func TestMapUncountedTerminatedPods(t *testing.T) {
 	tests := []struct {
-		name        string
 		input       *batchv1.UncountedTerminatedPods
-		wantNil     bool
+		name        string
 		wantSuccLen int
 		wantFailLen int
+		wantNil     bool
 	}{
 		{
 			name:    "nil returns nil",
@@ -763,8 +766,8 @@ func TestMapCustomJobStatus(t *testing.T) {
 	ready := int32(2)
 
 	tests := []struct {
-		name            string
 		input           batchv1.JobStatus
+		name            string
 		wantTerminating int32
 		wantReady       int32
 		wantUTPNil      bool
@@ -822,8 +825,8 @@ func TestMapCustomJobConditions(t *testing.T) {
 	lastTransition := metav1.NewTime(time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC))
 
 	tests := []struct {
-		name    string
 		input   []batchv1.JobCondition
+		name    string
 		wantLen int
 	}{
 		{
@@ -866,11 +869,11 @@ func TestMapCustomJobConditions(t *testing.T) {
 			if c.Reason != "Completed" {
 				t.Errorf("expected Reason %q, got %q", "Completed", c.Reason)
 			}
-			if c.LastProbeTime != "2024-01-15T10:00:00Z" {
-				t.Errorf("expected LastProbeTime %q, got %q", "2024-01-15T10:00:00Z", c.LastProbeTime)
+			if c.LastProbeTime != testTime1000 {
+				t.Errorf("expected LastProbeTime %q, got %q", testTime1000, c.LastProbeTime)
 			}
-			if c.LastTransitionTime != "2024-01-15T10:30:00Z" {
-				t.Errorf("expected LastTransitionTime %q, got %q", "2024-01-15T10:30:00Z", c.LastTransitionTime)
+			if c.LastTransitionTime != testTime1030 {
+				t.Errorf("expected LastTransitionTime %q, got %q", testTime1030, c.LastTransitionTime)
 			}
 		})
 	}
