@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"github.com/danroux/sk8l/internal/mapper"
 	"github.com/danroux/sk8l/protos"
 	v11 "k8s.io/api/batch/v1"
 )
@@ -109,27 +110,7 @@ func (b *CronjobResponseBuilder) WithCurrentDuration(dur int64) *CronjobResponse
 }
 
 func (b *CronjobResponseBuilder) WithSpec(spec *v11.CronJobSpec) *CronjobResponseBuilder {
-	suspend := spec.Suspend != nil && *spec.Suspend
-	successfulJobsHistoryLimit := int32(0)
-	if spec.SuccessfulJobsHistoryLimit != nil {
-		successfulJobsHistoryLimit = *spec.SuccessfulJobsHistoryLimit
-	}
-	failedJobsHistoryLimit := int32(0)
-	if spec.FailedJobsHistoryLimit != nil {
-		failedJobsHistoryLimit = *spec.FailedJobsHistoryLimit
-	}
-	timezone := ""
-	if spec.TimeZone != nil {
-		timezone = *spec.TimeZone
-	}
-	b.cronjob.Spec = &protos.CronJobSpecResponse{
-		Schedule:                   spec.Schedule,
-		Timezone:                   timezone,
-		ConcurrencyPolicy:          string(spec.ConcurrencyPolicy),
-		Suspend:                    suspend,
-		SuccessfulJobsHistoryLimit: successfulJobsHistoryLimit,
-		FailedJobsHistoryLimit:     failedJobsHistoryLimit,
-	}
+	b.cronjob.Spec = mapper.MapCronJobSpec(*spec)
 	return b
 }
 

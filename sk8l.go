@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/internal/dashboard"
+	"github.com/danroux/sk8l/internal/mapper"
 	"github.com/danroux/sk8l/protos"
 	badger "github.com/dgraph-io/badger/v4"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -441,14 +442,14 @@ func jobFailed(
 		if !failed {
 			if jobCondition.Type == batchv1.JobFailed {
 				failed = true
-				failureCondition = mapJobCondition(&jobCondition)
+				failureCondition = mapper.MapJobCondition(&jobCondition)
 			}
 		}
 		jobConditions = append(jobConditions, &protos.JobCondition{
 			Type:               string(jobCondition.Type),
 			Status:             string(jobCondition.Status),
-			LastProbeTime:      timeToString(&jobCondition.LastProbeTime),
-			LastTransitionTime: timeToString(&jobCondition.LastTransitionTime),
+			LastProbeTime:      mapper.TimeToString(&jobCondition.LastProbeTime),
+			LastTransitionTime: mapper.TimeToString(&jobCondition.LastTransitionTime),
 			Reason:             jobCondition.Reason,
 			Message:            jobCondition.Message,
 		})
@@ -488,7 +489,7 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 		startTimeInS = batchJob.Status.StartTime.Unix()
 	}
 
-	customStatus := mapCustomJobStatus(batchJob.Status)
+	customStatus := mapper.MapCustomJobStatus(batchJob.Status)
 	customStatus.StartTimeInS = startTimeInS
 	customStatus.CompletionTimeInS = completionTimeInS
 	customStatus.Conditions = jobConditions
@@ -501,9 +502,9 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 		Generation:            batchJob.Generation,
 		Duration:              duration.String(),
 		DurationInS:           durationInS,
-		Metadata:              mapObjectMeta(batchJob.ObjectMeta),
-		Spec:                  mapJobSpec(batchJob.Spec),
-		JobStatus:             mapJobStatus(batchJob.Status),
+		Metadata:              mapper.MapObjectMeta(batchJob.ObjectMeta),
+		Spec:                  mapper.MapJobSpec(batchJob.Spec),
+		JobStatus:             mapper.MapJobStatus(batchJob.Status),
 		Status:                customStatus,
 		Succeeded:             jobSucceeded(batchJob),
 		Failed:                jobFailed,
@@ -910,7 +911,7 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 		RunningJobs:        runningJobs,
 		RunningJobsPods:    runningJobPods,
 		JobsPods:           jobPodsForCronJob,
-		Spec:               mapCronJobSpec(cronJob.Spec),
+		Spec:               mapper.MapCronJobSpec(cronJob.Spec),
 		Failed:             cjFailed,
 	}
 }
@@ -929,14 +930,14 @@ func collectTerminatedAndFailedContainers(
 			podConditions = append(podConditions, &protos.PodConditionResponse{
 				Type:               string(pc.Type),
 				Status:             string(pc.Status),
-				LastProbeTime:      timeToString(&pc.LastProbeTime),
-				LastTransitionTime: timeToString(&pc.LastTransitionTime),
+				LastProbeTime:      mapper.TimeToString(&pc.LastProbeTime),
+				LastTransitionTime: mapper.TimeToString(&pc.LastTransitionTime),
 				Reason:             pc.Reason,
 				Message:            pc.Message,
 			})
 		}
 
-		mappedStatus := mapContainerStatus(containerStatus)
+		mappedStatus := mapper.MapContainerStatus(containerStatus)
 
 		if containerStatus.State.Waiting != nil {
 			cr := &protos.ContainerResponse{
@@ -951,7 +952,7 @@ func collectTerminatedAndFailedContainers(
 					TerminationDetails: &protos.ContainerStateTerminatedResponse{
 						Message:    containerStatus.State.Waiting.Message,
 						Reason:     containerStatus.State.Waiting.Reason,
-						FinishedAt: timeToString(pod.Status.StartTime),
+						FinishedAt: mapper.TimeToString(pod.Status.StartTime),
 					},
 					ContainerName: mappedStatus.Name,
 				}
@@ -970,7 +971,7 @@ func collectTerminatedAndFailedContainers(
 
 			if containerStatus.State.Terminated.Reason == "Error" {
 				cr.TerminatedReason = &protos.TerminationReason{
-					TerminationDetails: mapContainerStateTerminated(containerStatus.State.Terminated),
+					TerminationDetails: mapper.MapContainerStateTerminated(containerStatus.State.Terminated),
 					ContainerName:      mappedStatus.Name,
 				}
 				*terminationReasons = append(*terminationReasons, cr.TerminatedReason)
@@ -1044,12 +1045,12 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 				func(a, b *metav1.Time) int {
 					return a.Compare(b.Time)
 				})
-			finishedAt = timeToString(containerFinishedAtTimes[len(containerFinishedAtTimes)-1])
+			finishedAt = mapper.TimeToString(containerFinishedAtTimes[len(containerFinishedAtTimes)-1])
 		}
 		podResponse := &protos.PodResponse{
-			Metadata:             mapObjectMeta(pod.ObjectMeta),
-			Spec:                 mapPodSpec(pod.Spec),
-			Status:               mapPodStatus(pod.Status),
+			Metadata:             mapper.MapObjectMeta(pod.ObjectMeta),
+			Spec:                 mapper.MapPodSpec(pod.Spec),
+			Status:               mapper.MapPodStatus(pod.Status),
 			TerminatedContainers: terminatedContainers,
 			FailedContainers:     failedContainers,
 			Failed:               failed,
