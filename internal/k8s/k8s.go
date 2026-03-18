@@ -1,13 +1,12 @@
-// Package main provides the Kubernetes client implementation and interface
+// Package k8s provides the Kubernetes client implementation and interface
 // for interacting with the Kubernetes API to retrieve cronjob, job and pod data.
-package main
+package k8s
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
-	"github.com/danroux/sk8l/protos"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
@@ -19,8 +18,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-type Sk8lK8sClientInterface interface {
-	kubernetes.Interface
+type ClientInterface interface {
 	GetCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob
 	WatchCronjobs() watch.Interface
 	WatchJobs() watch.Interface
@@ -31,30 +29,30 @@ type Sk8lK8sClientInterface interface {
 	Namespace() string
 }
 
-type K8sClient struct {
+type Client struct {
 	kubernetes.Interface
 	l         zerolog.Logger
 	namespace string
 }
 
-var _ Sk8lK8sClientInterface = (*K8sClient)(nil)
+var _ ClientInterface = (*Client)(nil)
 
 // A ClientOption is used to configure a Client.
-type ClientOption func(*K8sClient)
+type ClientOption func(*Client)
 
 func WithNamespace(namespace string) ClientOption {
-	return func(kc *K8sClient) {
+	return func(kc *Client) {
 		kc.namespace = namespace
 	}
 }
 
 func WithLogger(l zerolog.Logger) ClientOption {
-	return func(kc *K8sClient) {
+	return func(kc *Client) {
 		kc.l = l
 	}
 }
 
-func NewK8sClient(options ...ClientOption) *K8sClient {
+func NewClient(options ...ClientOption) *Client {
 	config, err := rest.InClusterConfig()
 	config.ContentConfig = rest.ContentConfig{
 		AcceptContentTypes: "application/vnd.kubernetes.protobuf,application/json",
@@ -70,22 +68,22 @@ func NewK8sClient(options ...ClientOption) *K8sClient {
 		panic(err.Error())
 	}
 
-	k8sClient := &K8sClient{
+	kc := &Client{
 		Interface: clientset,
 	}
 
 	for _, optionFn := range options {
-		optionFn(k8sClient)
+		optionFn(kc)
 	}
 
-	return k8sClient
+	return kc
 }
 
-func (kc *K8sClient) Namespace() string {
+func (kc *Client) Namespace() string {
 	return kc.namespace
 }
 
-func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
+func (kc *Client) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
 	ctx := context.TODO()
 	cronJob, err := kc.BatchV1().CronJobs(cronjobNamespace).Get(ctx, cronjobName, metav1.GetOptions{})
 
@@ -113,7 +111,7 @@ func (kc *K8sClient) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.C
 	return cronJob
 }
 
-func (kc *K8sClient) WatchCronjobs() watch.Interface {
+func (kc *Client) WatchCronjobs() watch.Interface {
 	ctx := context.Background()
 
 	watcher, err := kc.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
@@ -124,7 +122,7 @@ func (kc *K8sClient) WatchCronjobs() watch.Interface {
 	return watcher
 }
 
-func (kc *K8sClient) WatchJobs() watch.Interface {
+func (kc *Client) WatchJobs() watch.Interface {
 	ctx := context.Background()
 
 	watcher, err := kc.BatchV1().Jobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
@@ -135,15 +133,18 @@ func (kc *K8sClient) WatchJobs() watch.Interface {
 	return watcher
 }
 
-func (kc *K8sClient) WatchPods() watch.Interface {
+func (kc *Client) WatchPods() watch.Interface {
 	ctx := context.Background()
 
-	watcher, _ := kc.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
+	watcher, err := kc.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
 
 	return watcher
 }
 
-func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
+func (kc *Client) GetPod(jobNamespace, podName string) *corev1.Pod {
 	ctx := context.TODO()
 	pod, err := kc.CoreV1().Pods(jobNamespace).Get(ctx, podName, metav1.GetOptions{})
 
@@ -171,7 +172,7 @@ func (kc *K8sClient) GetPod(jobNamespace, podName string) *corev1.Pod {
 	return pod
 }
 
-func (kc *K8sClient) GetJob(jobNamespace, jobName string) *batchv1.Job {
+func (kc *Client) GetJob(jobNamespace, jobName string) *batchv1.Job {
 	ctx := context.TODO()
 	job, err := kc.BatchV1().Jobs(jobNamespace).Get(ctx, jobName, metav1.GetOptions{})
 	if err != nil {
@@ -181,7 +182,7 @@ func (kc *K8sClient) GetJob(jobNamespace, jobName string) *batchv1.Job {
 	return job
 }
 
-func (kc *K8sClient) GetAllJobs() *batchv1.JobList {
+func (kc *Client) GetAllJobs() *batchv1.JobList {
 	ctx := context.TODO()
 
 	// get pods in all the namespaces by omitting namespace
@@ -197,46 +198,4 @@ func (kc *K8sClient) GetAllJobs() *batchv1.JobList {
 		Msg(fmt.Sprintf("There are %d jobs in the cluster", len(jobs.Items)))
 
 	return jobs
-}
-
-// Deprecated: GetAllJobsMapped is no longer used. Use GetAllJobs via findJobsMapped instead.
-func (kc *K8sClient) GetAllJobsMapped() *protos.MappedJobs {
-	jobs := kc.GetAllJobs()
-
-	cronjobNames := []string{}
-	jobsMapped := make(map[string][]*batchv1.Job)
-	for i := range jobs.Items {
-		job := &jobs.Items[i]
-		for _, owr := range job.ObjectMeta.OwnerReferences {
-			jobsMapped[owr.Name] = append(jobsMapped[owr.Name], job)
-			found := false
-			for _, n := range cronjobNames {
-				if n == owr.Name {
-					found = true
-					break
-				}
-			}
-			if !found {
-				cronjobNames = append(cronjobNames, owr.Name)
-			}
-		}
-	}
-
-	x := &protos.MappedJobs{}
-	x.JobLists = make(map[string]*protos.JobList)
-	for _, name := range cronjobNames {
-		items := make([]*protos.JobResponse, 0, len(jobsMapped[name]))
-		for _, j := range jobsMapped[name] {
-			items = append(items, &protos.JobResponse{
-				Name:      j.Name,
-				Namespace: j.Namespace,
-				Uuid:      string(j.UID),
-			})
-		}
-		x.JobLists[name] = &protos.JobList{
-			Items: items,
-		}
-	}
-
-	return x
 }
