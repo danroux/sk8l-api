@@ -1,0 +1,3 @@
+```release-note:improvement
+refactor: Extract internal/mapper package and update callers
+```

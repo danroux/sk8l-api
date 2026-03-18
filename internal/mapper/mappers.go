@@ -1,4 +1,5 @@
-package main
+// Package mapper provides functions for converting Kubernetes API types to protobuf response types.
+package mapper
 
 import (
 	"time"
@@ -9,14 +10,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func timeToString(t *metav1.Time) string {
+func TimeToString(t *metav1.Time) string {
 	if t == nil || t.IsZero() {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
 }
 
-func mapOwnerReferences(refs []metav1.OwnerReference) []*protos.OwnerReferenceResponse {
+func MapOwnerReferences(refs []metav1.OwnerReference) []*protos.OwnerReferenceResponse {
 	result := make([]*protos.OwnerReferenceResponse, 0, len(refs))
 	for _, r := range refs {
 		ctrl := r.Controller != nil && *r.Controller
@@ -31,7 +32,7 @@ func mapOwnerReferences(refs []metav1.OwnerReference) []*protos.OwnerReferenceRe
 	return result
 }
 
-func mapObjectMeta(m metav1.ObjectMeta) *protos.ObjectMetaResponse {
+func MapObjectMeta(m metav1.ObjectMeta) *protos.ObjectMetaResponse {
 	return &protos.ObjectMetaResponse{
 		Name:              m.Name,
 		Namespace:         m.Namespace,
@@ -40,11 +41,11 @@ func mapObjectMeta(m metav1.ObjectMeta) *protos.ObjectMetaResponse {
 		Annotations:       m.Annotations,
 		CreationTimestamp: m.CreationTimestamp.UTC().Format(time.RFC3339),
 		Generation:        m.Generation,
-		OwnerReferences:   mapOwnerReferences(m.OwnerReferences),
+		OwnerReferences:   MapOwnerReferences(m.OwnerReferences),
 	}
 }
 
-func mapContainerStateTerminated(t *corev1.ContainerStateTerminated) *protos.ContainerStateTerminatedResponse {
+func MapContainerStateTerminated(t *corev1.ContainerStateTerminated) *protos.ContainerStateTerminatedResponse {
 	if t == nil {
 		return nil
 	}
@@ -53,13 +54,13 @@ func mapContainerStateTerminated(t *corev1.ContainerStateTerminated) *protos.Con
 		Signal:      t.Signal,
 		Reason:      t.Reason,
 		Message:     t.Message,
-		StartedAt:   timeToString(&t.StartedAt),
-		FinishedAt:  timeToString(&t.FinishedAt),
+		StartedAt:   TimeToString(&t.StartedAt),
+		FinishedAt:  TimeToString(&t.FinishedAt),
 		ContainerID: t.ContainerID,
 	}
 }
 
-func mapContainerState(s corev1.ContainerState) *protos.ContainerStateResponse {
+func MapContainerState(s corev1.ContainerState) *protos.ContainerStateResponse {
 	r := &protos.ContainerStateResponse{}
 	if s.Waiting != nil {
 		r.Waiting = &protos.ContainerStateWaitingResponse{
@@ -69,21 +70,21 @@ func mapContainerState(s corev1.ContainerState) *protos.ContainerStateResponse {
 	}
 	if s.Running != nil {
 		r.Running = &protos.ContainerStateRunningResponse{
-			StartedAt: timeToString(&s.Running.StartedAt),
+			StartedAt: TimeToString(&s.Running.StartedAt),
 		}
 	}
 	if s.Terminated != nil {
-		r.Terminated = mapContainerStateTerminated(s.Terminated)
+		r.Terminated = MapContainerStateTerminated(s.Terminated)
 	}
 	return r
 }
 
-func mapContainerStatus(cs corev1.ContainerStatus) *protos.ContainerStatusResponse {
+func MapContainerStatus(cs corev1.ContainerStatus) *protos.ContainerStatusResponse {
 	started := cs.Started != nil && *cs.Started
 	return &protos.ContainerStatusResponse{
 		Name:         cs.Name,
-		State:        mapContainerState(cs.State),
-		LastState:    mapContainerState(cs.LastTerminationState),
+		State:        MapContainerState(cs.State),
+		LastState:    MapContainerState(cs.LastTerminationState),
 		Ready:        cs.Ready,
 		RestartCount: cs.RestartCount,
 		Image:        cs.Image,
@@ -93,22 +94,22 @@ func mapContainerStatus(cs corev1.ContainerStatus) *protos.ContainerStatusRespon
 	}
 }
 
-func mapContainerStatuses(css []corev1.ContainerStatus) []*protos.ContainerStatusResponse {
+func MapContainerStatuses(css []corev1.ContainerStatus) []*protos.ContainerStatusResponse {
 	result := make([]*protos.ContainerStatusResponse, 0, len(css))
 	for _, cs := range css {
-		result = append(result, mapContainerStatus(cs))
+		result = append(result, MapContainerStatus(cs))
 	}
 	return result
 }
 
-func mapPodConditions(conditions []corev1.PodCondition) []*protos.PodConditionResponse {
+func MapPodConditions(conditions []corev1.PodCondition) []*protos.PodConditionResponse {
 	result := make([]*protos.PodConditionResponse, 0, len(conditions))
 	for _, c := range conditions {
 		result = append(result, &protos.PodConditionResponse{
 			Type:               string(c.Type),
 			Status:             string(c.Status),
-			LastProbeTime:      timeToString(&c.LastProbeTime),
-			LastTransitionTime: timeToString(&c.LastTransitionTime),
+			LastProbeTime:      TimeToString(&c.LastProbeTime),
+			LastTransitionTime: TimeToString(&c.LastTransitionTime),
 			Reason:             c.Reason,
 			Message:            c.Message,
 		})
@@ -116,30 +117,28 @@ func mapPodConditions(conditions []corev1.PodCondition) []*protos.PodConditionRe
 	return result
 }
 
-func mapPodStatus(s corev1.PodStatus) *protos.PodStatusResponse {
+func MapPodStatus(s corev1.PodStatus) *protos.PodStatusResponse {
+	ips := make([]string, 0, len(s.PodIPs))
+	for _, ip := range s.PodIPs {
+		ips = append(ips, ip.IP)
+	}
 	return &protos.PodStatusResponse{
 		Phase:                      string(s.Phase),
-		Conditions:                 mapPodConditions(s.Conditions),
+		Conditions:                 MapPodConditions(s.Conditions),
 		Message:                    s.Message,
 		Reason:                     s.Reason,
 		HostIP:                     s.HostIP,
 		PodIP:                      s.PodIP,
-		StartTime:                  timeToString(s.StartTime),
-		ContainerStatuses:          mapContainerStatuses(s.ContainerStatuses),
-		InitContainerStatuses:      mapContainerStatuses(s.InitContainerStatuses),
-		EphemeralContainerStatuses: mapContainerStatuses(s.EphemeralContainerStatuses),
+		StartTime:                  TimeToString(s.StartTime),
+		ContainerStatuses:          MapContainerStatuses(s.ContainerStatuses),
+		InitContainerStatuses:      MapContainerStatuses(s.InitContainerStatuses),
+		EphemeralContainerStatuses: MapContainerStatuses(s.EphemeralContainerStatuses),
 		QosClass:                   string(s.QOSClass),
-		PodIPs: func() []string {
-			ips := make([]string, 0, len(s.PodIPs))
-			for _, ip := range s.PodIPs {
-				ips = append(ips, ip.IP)
-			}
-			return ips
-		}(),
+		PodIPs:                     ips,
 	}
 }
 
-func mapEnvVars(envs []corev1.EnvVar) []*protos.EnvVarResponse {
+func MapEnvVars(envs []corev1.EnvVar) []*protos.EnvVarResponse {
 	result := make([]*protos.EnvVarResponse, 0, len(envs))
 	for _, e := range envs {
 		result = append(result, &protos.EnvVarResponse{
@@ -150,7 +149,7 @@ func mapEnvVars(envs []corev1.EnvVar) []*protos.EnvVarResponse {
 	return result
 }
 
-func mapVolumeMounts(mounts []corev1.VolumeMount) []*protos.VolumeMountResponse {
+func MapVolumeMounts(mounts []corev1.VolumeMount) []*protos.VolumeMountResponse {
 	result := make([]*protos.VolumeMountResponse, 0, len(mounts))
 	for _, m := range mounts {
 		result = append(result, &protos.VolumeMountResponse{
@@ -162,7 +161,7 @@ func mapVolumeMounts(mounts []corev1.VolumeMount) []*protos.VolumeMountResponse 
 	return result
 }
 
-func mapContainerPorts(ports []corev1.ContainerPort) []*protos.ContainerPortResponse {
+func MapContainerPorts(ports []corev1.ContainerPort) []*protos.ContainerPortResponse {
 	result := make([]*protos.ContainerPortResponse, 0, len(ports))
 	for _, p := range ports {
 		result = append(result, &protos.ContainerPortResponse{
@@ -174,7 +173,7 @@ func mapContainerPorts(ports []corev1.ContainerPort) []*protos.ContainerPortResp
 	return result
 }
 
-func mapResources(r corev1.ResourceRequirements) *protos.ResourcesResponse {
+func MapResources(r corev1.ResourceRequirements) *protos.ResourcesResponse {
 	limits := make(map[string]string)
 	requests := make(map[string]string)
 	for k, v := range r.Limits {
@@ -189,22 +188,22 @@ func mapResources(r corev1.ResourceRequirements) *protos.ResourcesResponse {
 	}
 }
 
-func mapContainer(c corev1.Container) *protos.ContainerSpecResponse {
+func MapContainer(c corev1.Container) *protos.ContainerSpecResponse {
 	return &protos.ContainerSpecResponse{
 		Name:            c.Name,
 		Image:           c.Image,
 		Command:         c.Command,
 		Args:            c.Args,
-		Ports:           mapContainerPorts(c.Ports),
-		Env:             mapEnvVars(c.Env),
-		Resources:       mapResources(c.Resources),
-		VolumeMounts:    mapVolumeMounts(c.VolumeMounts),
+		Ports:           MapContainerPorts(c.Ports),
+		Env:             MapEnvVars(c.Env),
+		Resources:       MapResources(c.Resources),
+		VolumeMounts:    MapVolumeMounts(c.VolumeMounts),
 		ImagePullPolicy: string(c.ImagePullPolicy),
 		WorkingDir:      c.WorkingDir,
 	}
 }
 
-func mapEphemeralContainer(c corev1.EphemeralContainer) *protos.ContainerSpecResponse {
+func MapEphemeralContainer(c corev1.EphemeralContainer) *protos.ContainerSpecResponse {
 	return &protos.ContainerSpecResponse{
 		Name:            c.Name,
 		Image:           c.Image,
@@ -215,31 +214,31 @@ func mapEphemeralContainer(c corev1.EphemeralContainer) *protos.ContainerSpecRes
 	}
 }
 
-func mapContainers(containers []corev1.Container) []*protos.ContainerSpecResponse {
+func MapContainers(containers []corev1.Container) []*protos.ContainerSpecResponse {
 	result := make([]*protos.ContainerSpecResponse, 0, len(containers))
 	for _, c := range containers {
-		result = append(result, mapContainer(c))
+		result = append(result, MapContainer(c))
 	}
 	return result
 }
 
-func mapEphemeralContainers(containers []corev1.EphemeralContainer) []*protos.ContainerSpecResponse {
+func MapEphemeralContainers(containers []corev1.EphemeralContainer) []*protos.ContainerSpecResponse {
 	result := make([]*protos.ContainerSpecResponse, 0, len(containers))
 	for _, c := range containers {
-		result = append(result, mapEphemeralContainer(c))
+		result = append(result, MapEphemeralContainer(c))
 	}
 	return result
 }
 
-func mapPodSpec(s corev1.PodSpec) *protos.PodSpecResponse {
+func MapPodSpec(s corev1.PodSpec) *protos.PodSpecResponse {
 	tgps := int64(0)
 	if s.TerminationGracePeriodSeconds != nil {
 		tgps = *s.TerminationGracePeriodSeconds
 	}
 	return &protos.PodSpecResponse{
-		Containers:                    mapContainers(s.Containers),
-		InitContainers:                mapContainers(s.InitContainers),
-		EphemeralContainers:           mapEphemeralContainers(s.EphemeralContainers),
+		Containers:                    MapContainers(s.Containers),
+		InitContainers:                MapContainers(s.InitContainers),
+		EphemeralContainers:           MapEphemeralContainers(s.EphemeralContainers),
 		RestartPolicy:                 string(s.RestartPolicy),
 		ServiceAccountName:            s.ServiceAccountName,
 		NodeName:                      s.NodeName,
@@ -248,14 +247,14 @@ func mapPodSpec(s corev1.PodSpec) *protos.PodSpecResponse {
 	}
 }
 
-func mapJobConditions(conditions []batchv1.JobCondition) []*protos.JobConditionResponse {
+func MapJobConditions(conditions []batchv1.JobCondition) []*protos.JobConditionResponse {
 	result := make([]*protos.JobConditionResponse, 0, len(conditions))
 	for _, c := range conditions {
 		result = append(result, &protos.JobConditionResponse{
 			Type:               string(c.Type),
 			Status:             string(c.Status),
-			LastProbeTime:      timeToString(&c.LastProbeTime),
-			LastTransitionTime: timeToString(&c.LastTransitionTime),
+			LastProbeTime:      TimeToString(&c.LastProbeTime),
+			LastTransitionTime: TimeToString(&c.LastTransitionTime),
 			Reason:             c.Reason,
 			Message:            c.Message,
 		})
@@ -263,7 +262,7 @@ func mapJobConditions(conditions []batchv1.JobCondition) []*protos.JobConditionR
 	return result
 }
 
-func mapJobStatus(s batchv1.JobStatus) *protos.JobStatusResponse {
+func MapJobStatus(s batchv1.JobStatus) *protos.JobStatusResponse {
 	ready := int32(0)
 	if s.Ready != nil {
 		ready = *s.Ready
@@ -272,14 +271,14 @@ func mapJobStatus(s batchv1.JobStatus) *protos.JobStatusResponse {
 		Active:         s.Active,
 		Succeeded:      s.Succeeded,
 		Failed:         s.Failed,
-		StartTime:      timeToString(s.StartTime),
-		CompletionTime: timeToString(s.CompletionTime),
-		Conditions:     mapJobConditions(s.Conditions),
+		StartTime:      TimeToString(s.StartTime),
+		CompletionTime: TimeToString(s.CompletionTime),
+		Conditions:     MapJobConditions(s.Conditions),
 		Ready:          ready,
 	}
 }
 
-func mapJobSpec(s batchv1.JobSpec) *protos.JobSpecResponse {
+func MapJobSpec(s batchv1.JobSpec) *protos.JobSpecResponse {
 	parallelism := int32(0)
 	if s.Parallelism != nil {
 		parallelism = *s.Parallelism
@@ -314,21 +313,21 @@ func mapJobSpec(s batchv1.JobSpec) *protos.JobSpecResponse {
 	}
 }
 
-func mapJobCondition(c *batchv1.JobCondition) *protos.JobConditionResponse {
+func MapJobCondition(c *batchv1.JobCondition) *protos.JobConditionResponse {
 	if c == nil {
 		return nil
 	}
 	return &protos.JobConditionResponse{
 		Type:               string(c.Type),
 		Status:             string(c.Status),
-		LastProbeTime:      timeToString(&c.LastProbeTime),
-		LastTransitionTime: timeToString(&c.LastTransitionTime),
+		LastProbeTime:      TimeToString(&c.LastProbeTime),
+		LastTransitionTime: TimeToString(&c.LastTransitionTime),
 		Reason:             c.Reason,
 		Message:            c.Message,
 	}
 }
 
-func mapCronJobSpec(s batchv1.CronJobSpec) *protos.CronJobSpecResponse {
+func MapCronJobSpec(s batchv1.CronJobSpec) *protos.CronJobSpecResponse {
 	suspend := false
 	if s.Suspend != nil {
 		suspend = *s.Suspend
@@ -360,7 +359,7 @@ func mapCronJobSpec(s batchv1.CronJobSpec) *protos.CronJobSpecResponse {
 	}
 }
 
-func mapUncountedTerminatedPods(u *batchv1.UncountedTerminatedPods) *protos.UncountedTerminatedPods {
+func MapUncountedTerminatedPods(u *batchv1.UncountedTerminatedPods) *protos.UncountedTerminatedPods {
 	if u == nil {
 		return nil
 	}
@@ -378,14 +377,14 @@ func mapUncountedTerminatedPods(u *batchv1.UncountedTerminatedPods) *protos.Unco
 	}
 }
 
-func mapCustomJobConditions(conditions []batchv1.JobCondition) []*protos.JobCondition {
+func MapCustomJobConditions(conditions []batchv1.JobCondition) []*protos.JobCondition {
 	result := make([]*protos.JobCondition, 0, len(conditions))
 	for _, c := range conditions {
 		result = append(result, &protos.JobCondition{
 			Type:               string(c.Type),
 			Status:             string(c.Status),
-			LastProbeTime:      timeToString(&c.LastProbeTime),
-			LastTransitionTime: timeToString(&c.LastTransitionTime),
+			LastProbeTime:      TimeToString(&c.LastProbeTime),
+			LastTransitionTime: TimeToString(&c.LastTransitionTime),
 			Reason:             c.Reason,
 			Message:            c.Message,
 		})
@@ -393,7 +392,7 @@ func mapCustomJobConditions(conditions []batchv1.JobCondition) []*protos.JobCond
 	return result
 }
 
-func mapCustomJobStatus(s batchv1.JobStatus) *protos.JobStatus {
+func MapCustomJobStatus(s batchv1.JobStatus) *protos.JobStatus {
 	terminating := int32(0)
 	if s.Terminating != nil {
 		terminating = *s.Terminating
@@ -403,15 +402,15 @@ func mapCustomJobStatus(s batchv1.JobStatus) *protos.JobStatus {
 		ready = *s.Ready
 	}
 	return &protos.JobStatus{
-		Conditions:              mapCustomJobConditions(s.Conditions),
-		StartTime:               timeToString(s.StartTime),
-		CompletionTime:          timeToString(s.CompletionTime),
+		Conditions:              MapCustomJobConditions(s.Conditions),
+		StartTime:               TimeToString(s.StartTime),
+		CompletionTime:          TimeToString(s.CompletionTime),
 		Active:                  s.Active,
 		Succeeded:               s.Succeeded,
 		Failed:                  s.Failed,
 		Terminating:             terminating,
 		CompletedIndexes:        s.CompletedIndexes,
-		UncountedTerminatedPods: mapUncountedTerminatedPods(s.UncountedTerminatedPods),
+		UncountedTerminatedPods: MapUncountedTerminatedPods(s.UncountedTerminatedPods),
 		Ready:                   ready,
 	}
 }
