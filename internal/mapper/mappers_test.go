@@ -18,9 +18,9 @@ const (
 
 func TestTimeToString(t *testing.T) {
 	tests := []struct {
+		input    *metav1.Time
 		name     string
 		expected string
-		input    *metav1.Time
 	}{
 		{
 			name:     "nil time returns empty string",
@@ -583,10 +583,10 @@ func TestMapJobSpec(t *testing.T) {
 		input              batchv1.JobSpec
 		name               string
 		wantCompletionMode string
+		wantDeadline       int64
 		wantParallelism    int32
 		wantCompletions    int32
 		wantBackoff        int32
-		wantDeadline       int64
 		wantSuspend        bool
 	}{
 		{
@@ -825,8 +825,8 @@ func TestMapCustomJobConditions(t *testing.T) {
 	lastTransition := metav1.NewTime(time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC))
 
 	tests := []struct {
-		input   []batchv1.JobCondition
 		name    string
+		input   []batchv1.JobCondition
 		wantLen int
 	}{
 		{
