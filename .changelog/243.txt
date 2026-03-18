@@ -1,0 +1,5 @@
+```release-note:improvement
+refactor: Extract internal/k8s package
+
+Thread ctx through k8s.ClientInterface && fix watcher shutdown
+```

@@ -1,3 +1,4 @@
+// Package main is the entry point for the sk8l gRPC server.
 package main
 
 import (

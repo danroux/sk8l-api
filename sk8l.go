@@ -114,16 +114,17 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 }
 
 func (s *Sk8lServer) Run(metricsCxt context.Context) {
-	s.collectCronjobs()
-	s.collectJobs()
-	s.collectPods()
+	s.collectCronjobs(metricsCxt)
+	s.collectJobs(metricsCxt)
+	s.collectPods(metricsCxt)
 	recordMetrics(metricsCxt, s, s.metricsNamesMap)
 }
 
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
 	for {
+		ctx := stream.Context()
 		cronJobList := s.findCronjobs()
-		jobsMapped := s.findJobsMapped()
+		jobsMapped := s.findJobsMapped(ctx)
 
 		n := len(cronJobList.Items)
 		cronjobs := make([]*protos.CronjobResponse, 0, n)
@@ -168,9 +169,10 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
 	for {
-		cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
+		ctx := stream.Context()
+		cronjob := s.findCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 
-		jobsMapped := s.findJobsMapped()
+		jobsMapped := s.findJobsMapped(ctx)
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
 		cronJobResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
 		if err := stream.Send(cronJobResponse); err != nil {
@@ -183,9 +185,10 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
 	for {
-		cronjob := s.findCronjob(in.CronjobNamespace, in.CronjobName)
+		ctx := stream.Context()
+		cronjob := s.findCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 
-		jobsMapped := s.findJobsMapped()
+		jobsMapped := s.findJobsMapped(ctx)
 		jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
 
 		cronjobResponse := s.cronJobResponse(*cronjob, jobs)
@@ -241,7 +244,7 @@ func (s *Sk8lServer) GetCronjobYAML(
 	ctx context.Context,
 	in *protos.CronjobRequest,
 ) (*protos.CronjobYAMLResponse, error) {
-	cronjob := s.K8sClient.GetCronjob(in.CronjobNamespace, in.CronjobName)
+	cronjob := s.K8sClient.GetCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 	prettyJSON, err := json.MarshalIndent(cronjob, "", "  ")
 
 	if err != nil {
@@ -261,7 +264,7 @@ func (s *Sk8lServer) GetCronjobYAML(
 }
 
 func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*protos.JobYAMLResponse, error) {
-	job := s.K8sClient.GetJob(in.JobNamespace, in.JobName)
+	job := s.K8sClient.GetJob(ctx, in.JobNamespace, in.JobName)
 	prettyJSON, err := json.MarshalIndent(job, "", "  ")
 
 	if err != nil {
@@ -281,7 +284,7 @@ func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*pr
 }
 
 func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*protos.PodYAMLResponse, error) {
-	pod := s.K8sClient.GetPod(in.PodNamespace, in.PodName)
+	pod := s.K8sClient.GetPod(ctx, in.PodNamespace, in.PodName)
 	prettyJSON, err := json.MarshalIndent(pod, "", "  ")
 
 	if err != nil {
@@ -327,9 +330,9 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	}, nil
 }
 
-func (s *Sk8lServer) findJobsMapped() map[string][]*batchv1.Job {
+func (s *Sk8lServer) findJobsMapped(ctx context.Context) map[string][]*batchv1.Job {
 	jobs, err := s.getAndStore(jobsMappedCacheKey, func() []byte {
-		jobList := s.K8sClient.GetAllJobs()
+		jobList := s.K8sClient.GetAllJobs(ctx)
 		var buf bytes.Buffer
 		if err := k8sSerializer.Encode(jobList, &buf); err != nil {
 			log.Error().
@@ -516,8 +519,8 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 	return jobResponse
 }
 
-func (s *Sk8lServer) collectCronjobs() {
-	x := s.K8sClient.WatchCronjobs()
+func (s *Sk8lServer) collectCronjobs(ctx context.Context) {
+	x := s.K8sClient.WatchCronjobs(ctx)
 
 	go func() {
 		for {
@@ -536,17 +539,25 @@ func (s *Sk8lServer) collectCronjobs() {
 					panic(err)
 				}
 			} else {
-				x = s.K8sClient.WatchCronjobs()
-				log.Error().
-					Str("operation", "collectCronjobs").
-					Msg("WatchCronjobs: Received all Cronjobs. Opening again")
+				select {
+				case <-ctx.Done():
+					log.Info().
+						Str("operation", "collectCronjobs").
+						Msg("context canceled, stopping watcher")
+					return
+				default:
+					x = s.K8sClient.WatchCronjobs(ctx)
+					log.Error().
+						Str("operation", "collectCronjobs").
+						Msg("WatchCronjobs: Received all Cronjobs. Opening again")
+				}
 			}
 		}
 	}()
 }
 
-func (s *Sk8lServer) collectJobs() {
-	x := s.K8sClient.WatchJobs()
+func (s *Sk8lServer) collectJobs(ctx context.Context) {
+	x := s.K8sClient.WatchJobs(ctx)
 
 	go func() {
 		for {
@@ -565,17 +576,25 @@ func (s *Sk8lServer) collectJobs() {
 					panic(err)
 				}
 			} else {
-				x = s.K8sClient.WatchJobs()
-				log.Error().
-					Str("operation", "collectJobs").
-					Msg("WatchJobs: Received all Jobs. Opening again")
+				select {
+				case <-ctx.Done():
+					log.Info().
+						Str("operation", "collectJobs").
+						Msg("context canceled, stopping watcher")
+					return
+				default:
+					x = s.K8sClient.WatchJobs(ctx)
+					log.Error().
+						Str("operation", "collectJobs").
+						Msg("WatchJobs: Received all Jobs. Opening again")
+				}
 			}
 		}
 	}()
 }
 
-func (s *Sk8lServer) collectPods() {
-	x := s.K8sClient.WatchPods()
+func (s *Sk8lServer) collectPods(ctx context.Context) {
+	x := s.K8sClient.WatchPods(ctx)
 
 	go func() {
 		for {
@@ -594,10 +613,18 @@ func (s *Sk8lServer) collectPods() {
 					panic(err)
 				}
 			} else {
-				x = s.K8sClient.WatchPods()
-				log.Error().
-					Str("operation", "collectPods").
-					Msg("WatchJobs: Received all Pods. Opening again")
+				select {
+				case <-ctx.Done():
+					log.Info().
+						Str("operation", "collectPods").
+						Msg("context canceled, stopping watcher")
+					return
+				default:
+					x = s.K8sClient.WatchPods(ctx)
+					log.Error().
+						Str("operation", "collectPods").
+						Msg("WatchJobs: Received all Pods. Opening again")
+				}
 			}
 		}
 	}()

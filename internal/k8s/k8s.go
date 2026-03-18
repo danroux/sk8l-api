@@ -19,13 +19,13 @@ import (
 )
 
 type ClientInterface interface {
-	GetCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob
-	WatchCronjobs() watch.Interface
-	WatchJobs() watch.Interface
-	WatchPods() watch.Interface
-	GetPod(jobNamespace, podName string) *corev1.Pod
-	GetJob(jobNamespace, jobName string) *batchv1.Job
-	GetAllJobs() *batchv1.JobList
+	GetCronjob(ctx context.Context, cronjobNamespace, cronjobName string) *batchv1.CronJob
+	WatchCronjobs(ctx context.Context) watch.Interface
+	WatchJobs(ctx context.Context) watch.Interface
+	WatchPods(ctx context.Context) watch.Interface
+	GetPod(ctx context.Context, jobNamespace, podName string) *corev1.Pod
+	GetJob(ctx context.Context, jobNamespace, jobName string) *batchv1.Job
+	GetAllJobs(ctx context.Context) *batchv1.JobList
 	Namespace() string
 }
 
@@ -79,12 +79,21 @@ func NewClient(options ...ClientOption) *Client {
 	return kc
 }
 
+func NewClientWithInterface(iface kubernetes.Interface, options ...ClientOption) *Client {
+	kc := &Client{
+		Interface: iface,
+	}
+	for _, optionFn := range options {
+		optionFn(kc)
+	}
+	return kc
+}
+
 func (kc *Client) Namespace() string {
 	return kc.namespace
 }
 
-func (kc *Client) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
-	ctx := context.TODO()
+func (kc *Client) GetCronjob(ctx context.Context, cronjobNamespace, cronjobName string) *batchv1.CronJob {
 	cronJob, err := kc.BatchV1().CronJobs(cronjobNamespace).Get(ctx, cronjobName, metav1.GetOptions{})
 
 	var statusError *k8serrors.StatusError
@@ -111,9 +120,7 @@ func (kc *Client) GetCronjob(cronjobNamespace, cronjobName string) *batchv1.Cron
 	return cronJob
 }
 
-func (kc *Client) WatchCronjobs() watch.Interface {
-	ctx := context.Background()
-
+func (kc *Client) WatchCronjobs(ctx context.Context) watch.Interface {
 	watcher, err := kc.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -122,9 +129,7 @@ func (kc *Client) WatchCronjobs() watch.Interface {
 	return watcher
 }
 
-func (kc *Client) WatchJobs() watch.Interface {
-	ctx := context.Background()
-
+func (kc *Client) WatchJobs(ctx context.Context) watch.Interface {
 	watcher, err := kc.BatchV1().Jobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -133,9 +138,7 @@ func (kc *Client) WatchJobs() watch.Interface {
 	return watcher
 }
 
-func (kc *Client) WatchPods() watch.Interface {
-	ctx := context.Background()
-
+func (kc *Client) WatchPods(ctx context.Context) watch.Interface {
 	watcher, err := kc.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -144,8 +147,7 @@ func (kc *Client) WatchPods() watch.Interface {
 	return watcher
 }
 
-func (kc *Client) GetPod(jobNamespace, podName string) *corev1.Pod {
-	ctx := context.TODO()
+func (kc *Client) GetPod(ctx context.Context, jobNamespace, podName string) *corev1.Pod {
 	pod, err := kc.CoreV1().Pods(jobNamespace).Get(ctx, podName, metav1.GetOptions{})
 
 	var statusError *k8serrors.StatusError
@@ -172,8 +174,7 @@ func (kc *Client) GetPod(jobNamespace, podName string) *corev1.Pod {
 	return pod
 }
 
-func (kc *Client) GetJob(jobNamespace, jobName string) *batchv1.Job {
-	ctx := context.TODO()
+func (kc *Client) GetJob(ctx context.Context, jobNamespace, jobName string) *batchv1.Job {
 	job, err := kc.BatchV1().Jobs(jobNamespace).Get(ctx, jobName, metav1.GetOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -182,9 +183,7 @@ func (kc *Client) GetJob(jobNamespace, jobName string) *batchv1.Job {
 	return job
 }
 
-func (kc *Client) GetAllJobs() *batchv1.JobList {
-	ctx := context.TODO()
-
+func (kc *Client) GetAllJobs(ctx context.Context) *batchv1.JobList {
 	// get pods in all the namespaces by omitting namespace
 	// Or specify namespace to get pods in particular namespace
 	// Limit: 10, // need to fix this - last duration / current duration get messed up
