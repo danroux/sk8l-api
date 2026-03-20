@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/protos"
 	"github.com/danroux/sk8l/testutil"
 	badger "github.com/dgraph-io/badger/v4"
@@ -84,7 +85,7 @@ func TestMain(m *testing.M) {
 
 	c := m.Run()
 
-	s.GracefulStop() // s.Stop()
+	s.GracefulStop()
 	lis.Close()
 	os.Exit(c)
 }
@@ -125,9 +126,7 @@ func TestGetCronjobYAML(t *testing.T) {
 		t.Errorf("failed to create CronJob %q in namespace %q: %v", cronjob1.Name, cronjob1.Namespace, err)
 	}
 
-	k8sClient := &K8sClient{
-		Interface: clientSet,
-	}
+	k8sClient := k8s.NewClientWithInterface(clientSet)
 	store := &CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
@@ -217,11 +216,8 @@ func TestGetCronjosbDB(t *testing.T) {
 		WithItems(cronjob1, cronjob2).
 		Build()
 
-		// Put serialized cronjobs into Badger cache
 	clientSet := fake.NewClientset()
-	k8sClient := &K8sClient{
-		Interface: clientSet,
-	}
+	k8sClient := k8s.NewClientWithInterface(clientSet)
 	store := &CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
@@ -257,7 +253,6 @@ func TestGetCronjosbDB(t *testing.T) {
 		}
 	}
 
-	// Assert the response contains the cronjobs in cache
 	if len(cronJobResponse.Cronjobs) != len(cronjobList.Items) {
 		t.Errorf("expected %d cronjobs, got %d", len(cronjobList.Items), len(cronJobResponse.Cronjobs))
 	}
@@ -312,26 +307,19 @@ func TestGetCronjobsService(t *testing.T) {
 
 	clientSet := fake.NewClientset(job, jobTwo, cronjob)
 
-	// watcher setup
-
 	// Prepend a watch reactor for "cronjobs" resource that returns the FakeWatcher
 	clientSet.PrependWatchReactor("cronjobs", func(action cgt.Action) (handled bool, ret watch.Interface, err error) {
 		return true, watcher, nil
 	})
-	// clientSet.PrependWatchReactor("cronjobs", cgt.DefaultWatchReactor(watcher, nil))
-	// watcher setup
 
-	k8sClient := &K8sClient{
-		namespace: "default",
-		Interface: clientSet,
-	}
+	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
 	store := &CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
 	}
 
 	sk8lServer.CronJobDBStore = store
-	sk8lServer.collectCronjobs()
+	sk8lServer.collectCronjobs(context.Background())
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -360,7 +348,6 @@ func TestGetCronjobsService(t *testing.T) {
 		t.Error("expected cronJobs to exist in the cluster")
 	}
 
-	// jobs, err := clientSet.BatchV1().Jobs("default").List(ctx, metav1.ListOptions{})
 	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
 	if err != nil {
 		t.Fatalf("GetCronjobs failed: %v", err)
@@ -379,15 +366,12 @@ func TestGetCronjobsService(t *testing.T) {
 			break
 		}
 
-		// cronJobResponse.Cronjobs = append(cronJobResponse.Cronjobs, cronJobsResponse.Cronjobs...)
 		if len(cronJobsResponse.Cronjobs) >= len(cronJobs.Items) {
-			// Cancel context early to stop streaming
 			cancel()
 			break
 		}
 	}
 
-	// Assert the response contains the cronjobs in cache
 	if len(cronJobsResponse.Cronjobs) != len(cronJobs.Items) {
 		t.Errorf("expected %d cronjobs, got %d", len(cronJobs.Items), len(cronJobsResponse.Cronjobs))
 	}

@@ -2,23 +2,20 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/danroux/sk8l/internal/k8s"
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
 )
 
-type CronJobStore interface {
-	Sk8lK8sClientInterface
-}
-
 type CronJobDBStore struct {
-	// K8sClient *K8sClient
-	K8sClient Sk8lK8sClientInterface
+	K8sClient k8s.ClientInterface
 	*badger.DB
 	l zerolog.Logger
 }
@@ -51,16 +48,16 @@ func WithDB(db *badger.DB) CronJobDBStoreOptionFn {
 	return func(cjdbs *CronJobDBStore) { cjdbs.DB = db }
 }
 
-func WithK8sClient(k8sClient *K8sClient) CronJobDBStoreOptionFn {
+func WithK8sClient(k8sClient *k8s.Client) CronJobDBStoreOptionFn {
 	return func(cjdbs *CronJobDBStore) {
 		cjdbs.K8sClient = k8sClient
 	}
 }
 
 func WithDefaultK8sClient(k8sNamespace string) CronJobDBStoreOptionFn {
-	k8sClient := NewK8sClient(
-		WithNamespace(k8sNamespace),
-		WithLogger(log.With().Str("component", "k8s").Logger()),
+	k8sClient := k8s.NewClient(
+		k8s.WithNamespace(k8sNamespace),
+		k8s.WithLogger(log.With().Str("component", "k8s").Logger()),
 	)
 
 	return WithK8sClient(k8sClient)
@@ -97,7 +94,6 @@ func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error
 		} else {
 			err = item.Value(func(val []byte) error {
 				valueResponse = append([]byte{}, val...)
-
 				return nil
 			})
 		}
@@ -127,7 +123,6 @@ func (c *CronJobDBStore) get(key []byte) ([]byte, error) {
 
 		err = current.Value(func(val []byte) error {
 			valueResponse = append([]byte{}, val...)
-
 			return nil
 		})
 
@@ -162,11 +157,9 @@ func (c *CronJobDBStore) findCronjobs() *batchv1.CronJobList {
 	return cronjobList
 }
 
-func (c *CronJobDBStore) findCronjob(cronjobNamespace, cronjobName string) *batchv1.CronJob {
+func (c *CronJobDBStore) findCronjob(ctx context.Context, cronjobNamespace, cronjobName string) *batchv1.CronJob {
 	gCjCall := func() []byte {
-		cronjobName := cronjobName
-		cronjobNamespace := cronjobNamespace
-		cronjob := c.K8sClient.GetCronjob(cronjobNamespace, cronjobName)
+		cronjob := c.K8sClient.GetCronjob(ctx, cronjobNamespace, cronjobName)
 		var buf bytes.Buffer
 		if err := k8sSerializer.Encode(cronjob, &buf); err != nil {
 			c.l.Error().Err(err).Msg("findCronjob#k8sSerializer.Encode")
@@ -203,7 +196,6 @@ func (c *CronJobDBStore) findJobs() *batchv1.JobList {
 	if err != nil {
 		c.l.Error().Err(err).Msg("findJobs#k8sSerializer.Decode")
 	}
-	// filter out jobs that belong to cronjobs
 	jobTasks := make([]batchv1.Job, 0, len(jobList.Items))
 	for _, job := range jobList.Items {
 		if job.OwnerReferences == nil {
