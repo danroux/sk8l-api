@@ -1,4 +1,5 @@
-package main
+// Package store provides the Badger-backed cache layer for CronJob, Job and Pod data.
+package store
 
 import (
 	"bytes"
@@ -8,11 +9,18 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/internal/k8s"
+	"github.com/danroux/sk8l/internal/logger"
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
+	k8sproto "k8s.io/apimachinery/pkg/runtime/serializer/protobuf"
+	"k8s.io/client-go/kubernetes/scheme"
 )
+
+var k8sSerializer = k8sproto.NewSerializer(scheme.Scheme, scheme.Scheme)
+
+type APICall func() []byte
 
 type CronJobDBStore struct {
 	K8sClient k8s.ClientInterface
@@ -63,8 +71,8 @@ func WithDefaultK8sClient(k8sNamespace string) CronJobDBStoreOptionFn {
 	return WithK8sClient(k8sClient)
 }
 
-func WithDefaultDB() CronJobDBStoreOptionFn {
-	badgerLogger := NewBadgerLogger(zerolog.GlobalLevel())
+func WithDefaultDB(badgerTTL time.Duration) CronJobDBStoreOptionFn {
+	badgerLogger := logger.NewBadgerLogger(zerolog.GlobalLevel())
 	badgerOpts := badger.DefaultOptions("/tmp/badger").WithLogger(badgerLogger)
 	db, err := badger.Open(badgerOpts)
 	if err != nil {
@@ -74,34 +82,30 @@ func WithDefaultDB() CronJobDBStoreOptionFn {
 	return WithDB(db)
 }
 
-func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error) {
+func (c *CronJobDBStore) GetAndStore(key []byte, apiCall APICall, badgerTTL time.Duration) ([]byte, error) {
 	var valueResponse []byte
 	err := c.DB.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
-
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			err = c.DB.Update(func(txn *badger.Txn) error {
-				apiResult := apiCall()
-				entry := badger.NewEntry(key, apiResult).WithTTL(time.Second * badgerTTL)
-				err = txn.SetEntry(entry)
-				if err != nil {
-					c.l.Error().Err(err).Msg("Error: getAndStore#txn.SetEntry")
-					return fmt.Errorf("sk8l#getAndStore: txn.SetEntry() failed: %w", err)
-				}
-				valueResponse = append([]byte{}, apiResult...)
-				return nil
-			})
-		} else {
-			err = item.Value(func(val []byte) error {
-				valueResponse = append([]byte{}, val...)
-				return nil
-			})
-		}
-
-		if err != nil {
+			apiResult := apiCall()
+			entry := badger.NewEntry(key, apiResult).WithTTL(time.Second * badgerTTL)
+			if err = txn.SetEntry(entry); err != nil {
+				c.l.Error().Err(err).Msg("Error: getAndStore#txn.SetEntry")
+				return fmt.Errorf("sk8l#getAndStore: txn.SetEntry() failed: %w", err)
+			}
+			valueResponse = append([]byte{}, apiResult...)
+			return nil
+		} else if err != nil {
 			return fmt.Errorf("sk8l#getAndStore: DB.Update() failed: %w", err)
 		}
 
+		err = item.Value(func(val []byte) error {
+			valueResponse = append([]byte{}, val...)
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("sk8l#getAndStore: DB.Update() failed: %w", err)
+		}
 		return nil
 	})
 
@@ -112,11 +116,10 @@ func (c *CronJobDBStore) getAndStore(key []byte, apiCall APICall) ([]byte, error
 	return valueResponse, nil
 }
 
-func (c *CronJobDBStore) get(key []byte) ([]byte, error) {
+func (c *CronJobDBStore) Get(key []byte) ([]byte, error) {
 	var valueResponse []byte
 	err := c.DB.View(func(txn *badger.Txn) error {
 		current, err := txn.Get(key)
-
 		if err != nil {
 			return fmt.Errorf("sk8l#get: txn.Get() failed: %w", err)
 		}
@@ -125,7 +128,6 @@ func (c *CronJobDBStore) get(key []byte) ([]byte, error) {
 			valueResponse = append([]byte{}, val...)
 			return nil
 		})
-
 		if err != nil {
 			c.l.Error().Err(err).Msg("get#current.Value")
 			return fmt.Errorf("sk8l#get: current.Value() failed: %w", err)
@@ -135,29 +137,29 @@ func (c *CronJobDBStore) get(key []byte) ([]byte, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("sk8l#get: DB.Update() failed: %w", err)
+		return nil, fmt.Errorf("sk8l#get: DB.View() failed: %w", err)
 	}
 
 	return valueResponse, nil
 }
 
-func (c *CronJobDBStore) findCronjobs() *batchv1.CronJobList {
-	cronjobs, err := c.get(cronjobsCacheKey)
-
+func (c *CronJobDBStore) FindCronjobs(cronjobsCacheKey []byte) (*batchv1.CronJobList, error) {
+	cronjobs, err := c.Get(cronjobsCacheKey)
 	if err != nil {
-		if !errors.Is(err, badger.ErrKeyNotFound) {
-			c.l.Error().Err(err).Msg("findCronjobs#s.get")
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return &batchv1.CronJobList{}, nil
 		}
+		return nil, fmt.Errorf("findCronjobs#get: %w", err)
 	}
+
 	cronjobList := &batchv1.CronJobList{}
-	_, _, err = k8sSerializer.Decode(cronjobs, nil, cronjobList)
-	if err != nil {
-		c.l.Error().Err(err).Msg("findCronjobs#k8sSerializer.Decode")
+	if _, _, err = k8sSerializer.Decode(cronjobs, nil, cronjobList); err != nil {
+		return nil, fmt.Errorf("findCronjobs#Decode: %w", err)
 	}
-	return cronjobList
+	return cronjobList, nil
 }
 
-func (c *CronJobDBStore) findCronjob(ctx context.Context, cronjobNamespace, cronjobName string) *batchv1.CronJob {
+func (c *CronJobDBStore) FindCronjob(ctx context.Context, cronjobsKeyFmt, cronjobNamespace, cronjobName string, badgerTTL time.Duration) (*batchv1.CronJob, error) {
 	gCjCall := func() []byte {
 		cronjob := c.K8sClient.GetCronjob(ctx, cronjobNamespace, cronjobName)
 		var buf bytes.Buffer
@@ -168,41 +170,31 @@ func (c *CronJobDBStore) findCronjob(ctx context.Context, cronjobNamespace, cron
 		return buf.Bytes()
 	}
 
-	cacheKey := fmt.Sprintf(cronjobsKeyFmt, cronjobNamespace, cronjobName)
-	key := []byte(cacheKey)
-	cronjobValue, err := c.getAndStore(key, gCjCall)
-
+	cacheKey := []byte(fmt.Sprintf(cronjobsKeyFmt, cronjobNamespace, cronjobName))
+	cronjobValue, err := c.GetAndStore(cacheKey, gCjCall, badgerTTL)
 	if err != nil {
-		c.l.Error().Err(err).Msg("findCronjob#s.getAndStore")
+		return nil, fmt.Errorf("findCronjob#getAndStore: %w", err)
 	}
 
 	cronjob := &batchv1.CronJob{}
-	_, _, err = k8sSerializer.Decode(cronjobValue, nil, cronjob)
-	if err != nil {
-		c.l.Error().Err(err).Msg("findCronjob#k8sSerializer.Decode")
+	if _, _, err = k8sSerializer.Decode(cronjobValue, nil, cronjob); err != nil {
+		return nil, fmt.Errorf("findCronjob#Decode: %w", err)
 	}
-	return cronjob
+	return cronjob, nil
 }
 
-func (c *CronJobDBStore) findJobs() *batchv1.JobList {
-	jobs, err := c.get(jobsCacheKey)
+func (c *CronJobDBStore) FindJobs(jobsCacheKey []byte) (*batchv1.JobList, error) {
+	jobs, err := c.Get(jobsCacheKey)
 	if err != nil {
-		if !errors.Is(err, badger.ErrKeyNotFound) {
-			c.l.Error().Err(err).Msg("findCronjobs#s.get")
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return &batchv1.JobList{}, nil
 		}
+		return nil, fmt.Errorf("findJobs#get: %w", err)
 	}
+
 	jobList := &batchv1.JobList{}
-	_, _, err = k8sSerializer.Decode(jobs, nil, jobList)
-	if err != nil {
-		c.l.Error().Err(err).Msg("findJobs#k8sSerializer.Decode")
+	if _, _, err = k8sSerializer.Decode(jobs, nil, jobList); err != nil {
+		return nil, fmt.Errorf("findJobs#Decode: %w", err)
 	}
-	jobTasks := make([]batchv1.Job, 0, len(jobList.Items))
-	for _, job := range jobList.Items {
-		if job.OwnerReferences == nil {
-			jobTasks = append(jobTasks, job)
-		}
-	}
-	return &batchv1.JobList{
-		Items: jobTasks,
-	}
+	return jobList, nil
 }

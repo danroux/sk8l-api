@@ -1,4 +1,5 @@
-package main
+// Package logger provides zerolog configuration and the Badger logger adapter.
+package logger
 
 import (
 	"fmt"
@@ -7,12 +8,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func setupZeroLog() {
+func SetupZeroLog() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	zerolog.TimestampFieldName = "t"
 	zerolog.LevelFieldName = "l"
 	zerolog.MessageFieldName = "m"
-
 	log.Info().Msg(fmt.Sprintf("log_level %d", zerolog.GlobalLevel()))
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	log.Info().Msg(fmt.Sprintf("log_level %d", zerolog.GlobalLevel()))
@@ -24,7 +24,6 @@ type StandardZeroLogger struct {
 
 func NewBadgerLogger(level zerolog.Level) *StandardZeroLogger {
 	x := log.With().Str("component", "badger").Logger().Level(level)
-
 	return &StandardZeroLogger{
 		Logger: x,
 	}
