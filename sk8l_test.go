@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/internal/k8s"
+	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/protos"
 	"github.com/danroux/sk8l/testutil"
 	badger "github.com/dgraph-io/badger/v4"
@@ -52,11 +53,11 @@ func setupBadger(t *testing.T) *badger.DB {
 
 func putCronjobsToBadger(t *testing.T, db *badger.DB, cronjobList *batchv1.CronJobList) {
 	var buf bytes.Buffer
-	if err := k8sSerializer.Encode(cronjobList, &buf); err != nil {
+	if err := store.K8sSerialize(cronjobList, &buf); err != nil {
 		t.Fatalf("failed to encode cronjob list: %v", err)
 	}
 	err := db.Update(func(txn *badger.Txn) error {
-		return txn.Set(cronjobsCacheKey, buf.Bytes())
+		return txn.Set(store.CronjobsCacheKey, buf.Bytes())
 	})
 	if err != nil {
 		t.Fatalf("failed to write cronjobs to badger: %v", err)
@@ -127,11 +128,11 @@ func TestGetCronjobYAML(t *testing.T) {
 	}
 
 	k8sClient := k8s.NewClientWithInterface(clientSet)
-	store := &CronJobDBStore{
+	st := &store.CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = store
+	sk8lServer.CronJobDBStore = st
 	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
 
 	yamlResp, err := client.GetCronjobYAML(ctx, &protos.CronjobRequest{CronjobName: cronjob1.Name, CronjobNamespace: cronjob1.Namespace})
@@ -218,11 +219,11 @@ func TestGetCronjosbDB(t *testing.T) {
 
 	clientSet := fake.NewClientset()
 	k8sClient := k8s.NewClientWithInterface(clientSet)
-	store := &CronJobDBStore{
+	st := &store.CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = store
+	sk8lServer.CronJobDBStore = st
 	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
 
 	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
@@ -313,12 +314,12 @@ func TestGetCronjobsService(t *testing.T) {
 	})
 
 	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
-	store := &CronJobDBStore{
+	st := &store.CronJobDBStore{
 		DB:        db,
 		K8sClient: k8sClient,
 	}
 
-	sk8lServer.CronJobDBStore = store
+	sk8lServer.CronJobDBStore = st
 	sk8lServer.collectCronjobs(context.Background())
 
 	ctx := context.Background()
