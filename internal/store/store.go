@@ -313,9 +313,16 @@ func (c *CronJobDBStore) FindJobPodsForJob(job *batchv1.Job) (*corev1.PodList, e
 }
 
 func K8sSerialize(obj runtime.Object, buf *bytes.Buffer) error {
-	return k8sSerializer.Encode(obj, buf)
+	if err := k8sSerializer.Encode(obj, buf); err != nil {
+		return fmt.Errorf("k8sSerializer.Encode: %w", err)
+	}
+	return nil
 }
 
 func K8sDeserialize(data []byte, obj runtime.Object) (runtime.Object, *schema.GroupVersionKind, error) {
-	return k8sSerializer.Decode(data, nil, obj)
+	o, gvk, err := k8sSerializer.Decode(data, nil, obj)
+	if err != nil {
+		return nil, nil, fmt.Errorf("k8sSerializer.Decode: %w", err)
+	}
+	return o, gvk, nil
 }
