@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/danroux/sk8l/internal/dashboard"
 	"github.com/danroux/sk8l/internal/mapper"
+	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/protos"
 	badger "github.com/dgraph-io/badger/v4"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -27,46 +27,28 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sproto "k8s.io/apimachinery/pkg/runtime/serializer/protobuf"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes/scheme"
 )
 
 //go:embed annotations.tmpl
 var content embed.FS
 
-const (
-	jobPodsKeyFmt    = "jobs_pods_for_job_%s"
-	cronjobsKeyFmt   = "sk8l_cronjob_%s_%s"
-	badgerTTLSeconds = 15
-	refreshSeconds   = 10
-)
-
-var (
-	cronjobsCacheKey   = []byte("sk8l_cronjobs")
-	jobsMappedCacheKey = []byte("sk8l_jobs_mapped")
-	jobsCacheKey       = []byte("sk8l_jobs")
-	badgerTTL          = time.Duration(badgerTTLSeconds)
-	refreshInterval    = time.Second * refreshSeconds
-	k8sSerializer      = k8sproto.NewSerializer(scheme.Scheme, scheme.Scheme)
-)
+var refreshInterval = time.Second * store.RefreshSeconds
 
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
-	*CronJobDBStore
+	*store.CronJobDBStore
 	dashboardGen    *dashboard.Generator
 	metricsNamesMap *sync.Map
 	target          string
 	dialOptions     []grpc.DialOption
 }
 
-type APICall (func() []byte)
-
 func NewSk8lServer(
 	target string,
-	cronJobDBStore *CronJobDBStore,
+	cronJobDBStore *store.CronJobDBStore,
 	dashboardGen *dashboard.Generator,
 	metricsNamesMap *sync.Map,
 	dialOptions ...grpc.DialOption,
@@ -123,8 +105,17 @@ func (s *Sk8lServer) Run(metricsCxt context.Context) {
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
 	for {
 		ctx := stream.Context()
-		cronJobList := s.findCronjobs()
-		jobsMapped := s.findJobsMapped(ctx)
+		cronJobList, err := s.FindCronjobs()
+		if err != nil {
+			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindCronjobs")
+			return fmt.Errorf("sk8l#GetCronjobs: FindCronjobs() failed: %w", err)
+		}
+
+		jobsMapped, err := s.FindJobsMapped(ctx)
+		if err != nil {
+			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindJobsMapped")
+			return fmt.Errorf("sk8l#GetCronjobs: FindJobsMapped() failed: %w", err)
+		}
 
 		n := len(cronJobList.Items)
 		cronjobs := make([]*protos.CronjobResponse, 0, n)
@@ -170,9 +161,18 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
 	for {
 		ctx := stream.Context()
-		cronjob := s.findCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+		if err != nil {
+			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindCronjob")
+			return fmt.Errorf("sk8l#GetCronjob: FindCronjob() failed: %w", err)
+		}
 
-		jobsMapped := s.findJobsMapped(ctx)
+		jobsMapped, err := s.FindJobsMapped(ctx)
+		if err != nil {
+			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindJobsMapped")
+			return fmt.Errorf("sk8l#GetCronjob: FindJobsMapped() failed: %w", err)
+		}
+
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
 		cronJobResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
 		if err := stream.Send(cronJobResponse); err != nil {
@@ -186,9 +186,16 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
 	for {
 		ctx := stream.Context()
-		cronjob := s.findCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+		if err != nil {
+			log.Error().Err(err).Str("operation", "GetCronjobPods").Msg("FindCronjob")
+		}
 
-		jobsMapped := s.findJobsMapped(ctx)
+		jobsMapped, err := s.FindJobsMapped(ctx)
+		if err != nil {
+			log.Error().Err(err).Str("operation", "GetCronjobPods").Msg("FindJobsMapped")
+		}
+
 		jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
 
 		cronjobResponse := s.cronJobResponse(*cronjob, jobs)
@@ -218,14 +225,24 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 
 func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJobsServer) error {
 	for {
-		jobList := s.findJobs()
+		jobList, err := s.FindJobs()
+		if err != nil {
+			log.Error().Err(err).Str("operation", "GetJobs").Msg("FindJobs")
+			return fmt.Errorf("sk8l#GetJobs: FindJobs() failed: %w", err)
+		}
 
-		n := len(jobList.Items)
-		jobs := make([]*protos.JobResponse, 0, n)
-
+		// filter out jobs that belong to cronjobs
+		jobTasks := make([]*batchv1.Job, 0, len(jobList.Items))
 		for i := range jobList.Items {
-			job := s.buildJobResponse(&jobList.Items[i])
-			jobs = append(jobs, job)
+			if jobList.Items[i].OwnerReferences == nil {
+				jobTasks = append(jobTasks, &jobList.Items[i])
+			}
+		}
+
+		n := len(jobTasks)
+		jobs := make([]*protos.JobResponse, 0, n)
+		for _, job := range jobTasks {
+			jobs = append(jobs, s.buildJobResponse(job))
 		}
 
 		y := &protos.JobsResponse{
@@ -330,106 +347,6 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	}, nil
 }
 
-func (s *Sk8lServer) findJobsMapped(ctx context.Context) map[string][]*batchv1.Job {
-	jobs, err := s.getAndStore(jobsMappedCacheKey, func() []byte {
-		jobList := s.K8sClient.GetAllJobs(ctx)
-		var buf bytes.Buffer
-		if err := k8sSerializer.Encode(jobList, &buf); err != nil {
-			log.Error().
-				Err(err).
-				Str("operation", "findJobsMapped").
-				Msg("k8sSerializer.Encode")
-		}
-		return buf.Bytes()
-	})
-
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "findJobsMapped").
-			Msg("getAndStore")
-	}
-
-	jobList := &batchv1.JobList{}
-	if _, _, err := k8sSerializer.Decode(jobs, nil, jobList); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "findJobsMapped").
-			Msg("k8sSerializer.Decode")
-	}
-
-	mapped := make(map[string][]*batchv1.Job)
-	for i := range jobList.Items {
-		job := &jobList.Items[i]
-		for _, owr := range job.OwnerReferences {
-			mapped[owr.Name] = append(mapped[owr.Name], job)
-		}
-	}
-	return mapped
-}
-
-func (s *Sk8lServer) findJobPodsForJob(job *batchv1.Job) *corev1.PodList {
-	fKey := fmt.Sprintf(jobPodsKeyFmt, job.Name)
-	key := []byte(fKey)
-	collection := &corev1.PodList{}
-	err := s.DB.View(func(txn *badger.Txn) error {
-		current, err := txn.Get(key)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil
-		} else if err != nil {
-			return fmt.Errorf("sk8l#findJobPodsForJob: txn.Get() failed: %w", err)
-		}
-		err = current.Value(func(val []byte) error {
-			_, _, err = k8sSerializer.Decode(val, nil, collection)
-			if err != nil {
-				log.Error().
-					Err(err).
-					Str("operation", "findJobPodsForJob").
-					Msg("proto.Unmarshal")
-				return fmt.Errorf("sk8l#findJobPodsForJob: proto.Unmarshal() failed: %w", err)
-			}
-			return nil
-		})
-
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("operation", "findJobPodsForJob").
-				Msg("current.Value")
-			return fmt.Errorf("sk8l#findJobPodsForJob: current.Value() failed: %w", err)
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "findJobPodsForJob").
-			Msg("DB.View")
-	}
-
-	podItems := []corev1.Pod{}
-	podMap := make(map[string][]corev1.Pod)
-	for _, pod := range collection.Items {
-		for _, ownr := range pod.OwnerReferences {
-			if ownr.Name == job.Name && pod.Status.StartTime != nil {
-				podMap[pod.Name] = append(podMap[pod.Name], pod)
-			}
-		}
-	}
-
-	for _, pods := range podMap {
-		slices.SortFunc(pods,
-			func(a, b corev1.Pod) int {
-				return cmp.Compare(a.ResourceVersion, b.ResourceVersion)
-			})
-		latestVersion := pods[len(pods)-1]
-		podItems = append(podItems, latestVersion)
-	}
-
-	return &corev1.PodList{Items: podItems}
-}
-
 // Revisit this. JobConditions are not being used yet anywhere.
 // PodResponse.TerminationReasons.TerminationDetails -> ContainerStateTerminated.
 func jobFailed(
@@ -475,7 +392,12 @@ func (s *Sk8lServer) jobWithSidecarContainer(batchJob *batchv1.Job) bool {
 }
 
 func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse {
-	jobPodsForJob := s.findJobPodsForJob(batchJob)
+	jobPodsForJob, err := s.FindJobPodsForJob(batchJob)
+	if err != nil {
+		log.Error().Err(err).Str("operation", "buildJobResponse").Msg("FindJobPodsForJob")
+		jobPodsForJob = &corev1.PodList{}
+	}
+
 	jobPodsResponses := buildJobPodsResponses(jobPodsForJob)
 	jobFailed, failureCondition, jobConditions := jobFailed(batchJob, jobPodsResponses)
 	duration := toDuration(batchJob, jobFailed, failureCondition)
@@ -631,7 +553,7 @@ func (s *Sk8lServer) collectPods(ctx context.Context) {
 }
 
 func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv1.CronJob) error {
-	item, err := txn.Get(cronjobsCacheKey)
+	item, err := txn.Get(store.CronjobsCacheKey)
 	if errors.Is(err, badger.ErrKeyNotFound) {
 		cronJob := *eventCronJob
 		log.Error().
@@ -642,14 +564,14 @@ func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv
 			Items: []batchv1.CronJob{cronJob},
 		}
 		var buf bytes.Buffer
-		if err := k8sSerializer.Encode(cjList, &buf); err != nil {
+		if err := store.K8sSerialize(cjList, &buf); err != nil {
 			log.Error().
 				Err(err).
 				Str("operation", "handleCronJobEvent").
 				Msg("k8sSerializer.Encode")
 			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectCronjobs", err)
 		}
-		return storeEntry(txn, cronjobsCacheKey, buf.Bytes(), "sk8l#collectCronjobs")
+		return storeEntry(txn, store.CronjobsCacheKey, buf.Bytes(), "sk8l#collectCronjobs")
 	}
 
 	err = item.Value(func(stored []byte) error {
@@ -662,20 +584,20 @@ func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv
 }
 
 func handleJobEvent(txn *badger.Txn, event watch.Event, eventJob *batchv1.Job) error {
-	item, err := txn.Get(jobsCacheKey)
+	item, err := txn.Get(store.JobsCacheKey)
 	if err != nil {
 		jList := &batchv1.JobList{
 			Items: []batchv1.Job{*eventJob},
 		}
 		var buf bytes.Buffer
-		if err := k8sSerializer.Encode(jList, &buf); err != nil {
+		if err := store.K8sSerialize(jList, &buf); err != nil {
 			log.Error().
 				Err(err).
 				Str("operation", "handleJobEvent").
 				Msg("k8sSerializer.Encode")
 			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectJobs", err)
 		}
-		return storeEntry(txn, jobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
+		return storeEntry(txn, store.JobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 	}
 	err = item.Value(func(stored []byte) error {
 		return updateStoredJobList(txn, stored, event, eventJob)
@@ -687,7 +609,7 @@ func handleJobEvent(txn *badger.Txn, event watch.Event, eventJob *batchv1.Job) e
 }
 
 func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) error {
-	fKey := fmt.Sprintf(jobPodsKeyFmt, eventPod.Labels["job-name"])
+	fKey := fmt.Sprintf(store.JobPodsKeyFmt, eventPod.Labels["job-name"])
 	key := []byte(fKey)
 	item, err := txn.Get(key)
 	if err != nil {
@@ -695,7 +617,7 @@ func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) er
 			Items: []corev1.Pod{*eventPod},
 		}
 		var buf bytes.Buffer
-		if err = k8sSerializer.Encode(podList, &buf); err != nil {
+		if err = store.K8sSerialize(podList, &buf); err != nil {
 			log.Error().
 				Err(err).
 				Str("operation", "handlePodEvent").
@@ -719,8 +641,7 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 		Str("operation", "updateStoredCronjobList").
 		Msg(fmt.Sprintf("Updating with %s", eventCronJob.Name))
 	storedCjList := &batchv1.CronJobList{}
-	_, _, err := k8sSerializer.Decode(stored, nil, storedCjList)
-	if err != nil {
+	if _, _, err := store.K8sDeserialize(stored, storedCjList); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredCronjobList").
@@ -743,20 +664,19 @@ func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, 
 	//revive:enable:identical-switch-branches
 
 	var buf bytes.Buffer
-	if err = k8sSerializer.Encode(storedCjList, &buf); err != nil {
+	if err := store.K8sSerialize(storedCjList, &buf); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredCronjobList").
 			Msg("k8sSerializer.Encode")
 		return fmt.Errorf("sk8l#collectCronjobs: Encode() failed: %w", err)
 	}
-	return storeEntry(txn, cronjobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
+	return storeEntry(txn, store.CronjobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 }
 
 func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, eventJob *batchv1.Job) error {
 	storedJList := &batchv1.JobList{}
-	_, _, err := k8sSerializer.Decode(stored, nil, storedJList)
-	if err != nil {
+	if _, _, err := store.K8sDeserialize(stored, storedJList); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredJobList").
@@ -779,20 +699,19 @@ func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, even
 	//revive:enable:identical-switch-branches
 
 	var buf bytes.Buffer
-	if err = k8sSerializer.Encode(storedJList, &buf); err != nil {
+	if err := store.K8sSerialize(storedJList, &buf); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredJobList").
 			Msg("k8sSerializer.Encode")
 		return fmt.Errorf("sk8l#collectJobs: Encode() failed: %w", err)
 	}
-	return storeEntry(txn, jobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
+	return storeEntry(txn, store.JobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
 }
 
 func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *corev1.Pod) error {
 	podList := &corev1.PodList{}
-	_, _, err := k8sSerializer.Decode(stored, nil, podList)
-	if err != nil {
+	if _, _, err := store.K8sDeserialize(stored, podList); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredPodList").
@@ -801,7 +720,7 @@ func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *c
 	}
 	podList.Items = append(podList.Items, *eventPod)
 	var buf bytes.Buffer
-	if err := k8sSerializer.Encode(podList, &buf); err != nil {
+	if err := store.K8sSerialize(podList, &buf); err != nil {
 		log.Error().
 			Err(err).
 			Str("operation", "updateStoredPodList").

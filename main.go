@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/internal/dashboard"
+	"github.com/danroux/sk8l/internal/logger"
+	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/protos"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
@@ -42,7 +44,7 @@ var (
 )
 
 func main() {
-	setupZeroLog()
+	logger.SetupZeroLog()
 	certPool := x509.NewCertPool()
 	serverTLSConfig, err := setupTLS(certFile, certKeyFile, caFile, certPool)
 	if err != nil {
@@ -72,7 +74,7 @@ func main() {
 		TotalMetricNames,
 	)
 
-	cronjobDBStore := NewCronJobDBStore(WithDefaultK8sClient(K8Namespace))
+	cronjobDBStore := store.NewCronJobDBStore(store.WithDefaultK8sClient(K8Namespace))
 	sk8lServer := NewSk8lServer(
 		target,
 		cronjobDBStore,
