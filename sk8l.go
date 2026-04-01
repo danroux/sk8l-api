@@ -108,11 +108,13 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		cronJobList, err := s.FindCronjobs()
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindCronjobs")
+			return fmt.Errorf("sk8l#GetCronjobs: FindCronjobs() failed: %w", err)
 		}
 
 		jobsMapped, err := s.FindJobsMapped(ctx)
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindJobsMapped")
+			return fmt.Errorf("sk8l#GetCronjobs: FindJobsMapped() failed: %w", err)
 		}
 
 		n := len(cronJobList.Items)
@@ -162,11 +164,13 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindCronjob")
+			return fmt.Errorf("sk8l#GetCronjob: FindCronjob() failed: %w", err)
 		}
 
 		jobsMapped, err := s.FindJobsMapped(ctx)
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindJobsMapped")
+			return fmt.Errorf("sk8l#GetCronjob: FindJobsMapped() failed: %w", err)
 		}
 
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
@@ -224,6 +228,7 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 		jobList, err := s.FindJobs()
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetJobs").Msg("FindJobs")
+			return fmt.Errorf("sk8l#GetJobs: FindJobs() failed: %w", err)
 		}
 
 		// filter out jobs that belong to cronjobs
