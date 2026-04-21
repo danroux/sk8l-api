@@ -6,7 +6,7 @@ require (
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/google/go-cmp v0.7.0
 	github.com/prometheus/client_golang v1.23.2
-	github.com/rs/zerolog v1.35.0
+	github.com/rs/zerolog v1.35.1
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 	k8s.io/api v0.35.3
