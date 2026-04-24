@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.25.1 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.0 AS build
 
 LABEL org.opencontainers.image.source=https://github.com/danroux/sk8l-api
 LABEL org.opencontainers.image.description="sk8l-api image"
