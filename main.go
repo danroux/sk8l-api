@@ -28,8 +28,8 @@ import (
 const (
 	ReadTimeoutSeconds  = 10
 	WriteTimeoutSeconds = 30
-	ReadTimeout         = time.Duration(ReadTimeoutSeconds)
-	WriteTimeout        = time.Duration(WriteTimeoutSeconds)
+	ReadTimeout         = ReadTimeoutSeconds * time.Second
+	WriteTimeout        = WriteTimeoutSeconds * time.Second
 )
 
 var (
@@ -74,7 +74,10 @@ func main() {
 		TotalMetricNames,
 	)
 
-	cronjobDBStore := store.NewCronJobDBStore(store.WithDefaultK8sClient(K8Namespace))
+	cronjobDBStore, err := store.NewCronJobDBStore(store.WithDefaultK8sClient(K8Namespace))
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize cronjobDBStore")
+	}
 	sk8lServer := NewSk8lServer(
 		target,
 		cronjobDBStore,
@@ -90,8 +93,8 @@ func main() {
 	httpS := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%s", MetricsPort),
 		IdleTimeout:  time.Minute,
-		ReadTimeout:  ReadTimeout * time.Second,
-		WriteTimeout: WriteTimeout * time.Second,
+		ReadTimeout:  ReadTimeout,
+		WriteTimeout: WriteTimeout,
 		TLSConfig:    serverTLSConfig,
 		Handler:      mux,
 	}

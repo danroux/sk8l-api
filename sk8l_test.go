@@ -183,6 +183,151 @@ func TestGetCronjobYAML(t *testing.T) {
 	}
 }
 
+func TestGetCronjobYAML_NotFound(t *testing.T) {
+	db := setupBadger(t)
+	defer db.Close()
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(bufDialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	clientSet := fake.NewClientset()
+	k8sClient := k8s.NewClientWithInterface(clientSet)
+	st := &store.CronJobDBStore{
+		DB:        db,
+		K8sClient: k8sClient,
+	}
+	sk8lServer.CronJobDBStore = st
+
+	client := protos.NewCronjobClient(conn)
+	_, err = client.GetCronjobYAML(ctx, &protos.CronjobRequest{
+		CronjobName:      "non-existent",
+		CronjobNamespace: "default",
+	})
+	if err == nil {
+		t.Error("expected error for non-existent cronjob, got nil")
+	}
+}
+
+func TestGetJobYAML(t *testing.T) {
+	db := setupBadger(t)
+	defer db.Close()
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(bufDialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	job := testutil.NewJobBuilder().
+		WithName("test-job").
+		WithNamespace("default").
+		Build()
+
+	clientSet := fake.NewClientset(job)
+	k8sClient := k8s.NewClientWithInterface(clientSet)
+	st := &store.CronJobDBStore{
+		DB:        db,
+		K8sClient: k8sClient,
+	}
+	sk8lServer.CronJobDBStore = st
+
+	client := protos.NewCronjobClient(conn)
+
+	// Success case
+	yamlResp, err := client.GetJobYAML(ctx, &protos.JobRequest{
+		JobName:      "test-job",
+		JobNamespace: "default",
+	})
+	if err != nil {
+		t.Fatalf("GetJobYAML failed: %v", err)
+	}
+	if yamlResp.Job == "" {
+		t.Error("expected non-empty Job YAML")
+	}
+
+	// Error case (not found)
+	_, err = client.GetJobYAML(ctx, &protos.JobRequest{
+		JobName:      "non-existent-job",
+		JobNamespace: "default",
+	})
+	if err == nil {
+		t.Error("expected error for non-existent job, got nil")
+	}
+}
+
+func TestGetPodYAML(t *testing.T) {
+	db := setupBadger(t)
+	defer db.Close()
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(bufDialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+	}
+
+	clientSet := fake.NewClientset(pod)
+	k8sClient := k8s.NewClientWithInterface(clientSet)
+	st := &store.CronJobDBStore{
+		DB:        db,
+		K8sClient: k8sClient,
+	}
+	sk8lServer.CronJobDBStore = st
+
+	client := protos.NewCronjobClient(conn)
+
+	// Success case
+	yamlResp, err := client.GetPodYAML(ctx, &protos.PodRequest{
+		PodName:      "test-pod",
+		PodNamespace: "default",
+	})
+	if err != nil {
+		t.Fatalf("GetPodYAML failed: %v", err)
+	}
+	if yamlResp.Pod == "" {
+		t.Error("expected non-empty Pod YAML")
+	}
+
+	// Error case (not found)
+	_, err = client.GetPodYAML(ctx, &protos.PodRequest{
+		PodName:      "non-existent-pod",
+		PodNamespace: "default",
+	})
+	if err == nil {
+		t.Error("expected error for non-existent pod, got nil")
+	}
+}
+
 func TestGetCronjosbDB(t *testing.T) {
 	db := setupBadger(t)
 	defer db.Close()
@@ -391,12 +536,17 @@ func TestGetCronjobsService(t *testing.T) {
 			t.Errorf("expected cronjob name %q, got %q", cronJobs.Items[i].Name, cj.Name)
 		}
 
-		if cj.Jobs[0].WithSidecarContainers != true {
-			t.Error("expected WithSidecarContainers to be false", cj.Jobs[0].WithSidecarContainers)
-		}
-
-		if cj.Jobs[1].WithSidecarContainers != false {
-			t.Error("expected WithSidecarContainers to be true", cj.Jobs[1].WithSidecarContainers)
+		for _, j := range cj.Jobs {
+			switch j.Name {
+			case "process-videos":
+				if !j.WithSidecarContainers {
+					t.Errorf("expected job %s WithSidecarContainers to be true, got false", j.Name)
+				}
+			case "process-reports":
+				if j.WithSidecarContainers {
+					t.Errorf("expected job %s WithSidecarContainers to be false, got true", j.Name)
+				}
+			}
 		}
 	}
 }

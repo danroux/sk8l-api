@@ -73,7 +73,11 @@ var (
 func recordMetrics(ctx context.Context, svr *Sk8lServer, metricsNamesMap *sync.Map) {
 	conn, err := grpc.NewClient(svr.GetTarget(), svr.GetDialOptions()...)
 	if err != nil {
-		panic(fmt.Sprintf("grpc.NewClient(%s) failed: %v", svr.GetTarget(), err))
+		log.Error().
+			Err(err).
+			Str("operation", "recordMetrics").
+			Msg(fmt.Sprintf("grpc.NewClient(%s) failed", svr.GetTarget()))
+		return
 	}
 
 	c := protos.NewCronjobClient(conn)
@@ -83,14 +87,12 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer, metricsNamesMap *sync.M
 		Str("component", "metrics").
 		Str("operation", "recordMetrics").
 		Msg("Starting metrics collection")
-	req := &protos.CronjobsRequest{}
-	cronjobsClient, err := c.GetCronjobs(ctx, req)
-
-	if err != nil {
-		panic(err)
-	}
 
 	go func() {
+		defer func() {
+			_ = conn.Close()
+		}()
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -99,17 +101,54 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer, metricsNamesMap *sync.M
 					Msg("Stopping metrics collection")
 				return
 			default:
-				cronjobsResponse, err := cronjobsClient.Recv()
+			}
 
-				if errors.Is(err, io.EOF) {
-					break
+			req := &protos.CronjobsRequest{}
+			cronjobsClient, err := c.GetCronjobs(ctx, req)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Str("operation", "recordMetrics").
+					Msg("c.GetCronjobs failed, retrying in 5s")
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+					continue
+				}
+			}
+
+			for {
+				select {
+				case <-ctx.Done():
+					log.Info().
+						Str("component", "metrics").
+						Msg("Stopping metrics collection")
+					return
+				default:
 				}
 
+				cronjobsResponse, err := cronjobsClient.Recv()
+				if errors.Is(err, io.EOF) {
+					log.Info().
+						Str("component", "metrics").
+						Msg("GetCronjobs stream closed (EOF), reconnecting")
+					break
+				}
 				if err != nil {
 					log.Error().
 						Err(err).
 						Str("operation", "recordMetrics").
-						Msg("cronjobsClient = c.GetCronjobs.Recv()")
+						Msg("cronjobsClient.Recv() failed, reconnecting in 5s")
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(5 * time.Second):
+					}
+					break
+				}
+				if cronjobsResponse == nil {
+					continue
 				}
 
 				registeredCronjobs := len(cronjobsResponse.Cronjobs)
@@ -230,7 +269,12 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer, metricsNamesMap *sync.M
 				failingJobs = 0
 				runningCronjobs = 0
 				completedCronjobs = 0
-				time.Sleep(10 * time.Second)
+
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(10 * time.Second):
+				}
 			}
 		}
 	}()
