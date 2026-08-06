@@ -89,7 +89,7 @@ jobs:
           echo "$SERVER_CERT_KEY" > testdata/server-key.key
           echo "$SERVER_REQ_PEM" > testdata/server-req.pem
       - name: Test
-        run: go test -v -coverprofile=coverage.out ./...
+        run: go test -race -v -coverprofile=coverage.out ./...
   mapper-drift:
       runs-on: ubuntu-latest
       name: Check k8s mapper drift

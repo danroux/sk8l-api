@@ -120,6 +120,7 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		n := len(cronJobList.Items)
 		cronjobs := make([]*protos.CronjobResponse, 0, n)
 
+		var mu sync.Mutex
 		wg := sync.WaitGroup{}
 		wg.Add(n)
 		for _, cronjobItem := range cronJobList.Items {
@@ -127,7 +128,9 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 				defer wg.Done()
 				jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjobItem.Name)
 				cronjob := s.cronJobResponse(cronjobItem, jobsForCronjob)
+				mu.Lock()
 				cronjobs = append(cronjobs, cronjob)
+				mu.Unlock()
 			}(cronjobItem)
 		}
 		wg.Wait()
@@ -775,6 +778,7 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(
 	runningJobs := make([]*protos.JobResponse, 0, jn)
 	runningPods := make([]*protos.PodResponse, 0)
 
+	var mu sync.Mutex
 	wg := sync.WaitGroup{}
 	wg.Add(jn)
 
@@ -782,18 +786,23 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(
 		go func(batchJob *batchv1.Job) {
 			defer wg.Done()
 			jobResponse := s.buildJobResponse(batchJob)
-			allJobsForCronJob = append(allJobsForCronJob, jobResponse)
-			allJobPodsForCronjob = append(allJobPodsForCronjob, jobResponse.Pods...)
 
-			if jobResponse.Status.Active > 0 {
-				runningJobs = append(runningJobs, jobResponse)
-			}
-
+			running := jobResponse.Status.Active > 0
+			runningPodsList := make([]*protos.PodResponse, 0)
 			for _, pod := range jobResponse.Pods {
 				if pod.Phase == string(corev1.PodRunning) {
-					runningPods = append(runningPods, pod)
+					runningPodsList = append(runningPodsList, pod)
 				}
 			}
+
+			mu.Lock()
+			allJobsForCronJob = append(allJobsForCronJob, jobResponse)
+			allJobPodsForCronjob = append(allJobPodsForCronjob, jobResponse.Pods...)
+			if running {
+				runningJobs = append(runningJobs, jobResponse)
+			}
+			runningPods = append(runningPods, runningPodsList...)
+			mu.Unlock()
 		}(batchJob)
 	}
 	wg.Wait()

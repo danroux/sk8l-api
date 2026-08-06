@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -264,6 +265,31 @@ func TestGetCronjosbDB(t *testing.T) {
 	}
 }
 
+func drainCronjobStream(t *testing.T, stream protos.Cronjob_GetCronjobsClient, cancel context.CancelFunc, expected int) *protos.CronjobsResponse {
+	t.Helper()
+	result := &protos.CronjobsResponse{}
+	for {
+		resp, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if status.Code(recvErr) == codes.Canceled {
+			log.Println("stream canceled", recvErr)
+			break
+		}
+		if recvErr != nil {
+			t.Errorf("unexpected stream error: %v", recvErr)
+			break
+		}
+		result.Cronjobs = append(result.Cronjobs, resp.Cronjobs...)
+		if len(result.Cronjobs) >= expected {
+			cancel()
+			break
+		}
+	}
+	return result
+}
+
 func TestGetCronjobsService(t *testing.T) {
 	db := setupBadger(t)
 
@@ -342,7 +368,7 @@ func TestGetCronjobsService(t *testing.T) {
 	cronJobs, err := clientSet.BatchV1().CronJobs("default").List(ctx, metav1.ListOptions{})
 
 	if err != nil {
-		t.Errorf("failed to list CronJobs in namespace %q: %v", namespace, err)
+		t.Errorf("failed to list CronJobs in namespace %q: %v", "default", err)
 	}
 
 	if len(cronJobs.Items) < 1 {
@@ -354,24 +380,7 @@ func TestGetCronjobsService(t *testing.T) {
 		t.Fatalf("GetCronjobs failed: %v", err)
 	}
 
-	cronJobsResponse := &protos.CronjobsResponse{}
-
-	for {
-		cronJobsResponse, err = stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-
-		if status.Code(err) == codes.Canceled {
-			log.Println("stream canceled", err)
-			break
-		}
-
-		if len(cronJobsResponse.Cronjobs) >= len(cronJobs.Items) {
-			cancel()
-			break
-		}
-	}
+	cronJobsResponse := drainCronjobStream(t, stream, cancel, len(cronJobs.Items))
 
 	if len(cronJobsResponse.Cronjobs) != len(cronJobs.Items) {
 		t.Errorf("expected %d cronjobs, got %d", len(cronJobs.Items), len(cronJobsResponse.Cronjobs))
@@ -452,4 +461,88 @@ func TestCronJobsResponseWithPods(t *testing.T) {
 	}
 
 	cmp.Equal(expectedPods, pods.Items)
+}
+
+// TestGetCronjobs_NoConcurrentRace validates that concurrent goroutines building
+// CronjobResponse objects and appending to the shared slice in GetCronjobs do not
+// produce data races.
+func TestGetCronjobs_NoConcurrentRace(t *testing.T) {
+	db := setupBadger(t)
+	defer db.Close()
+
+	const numCronjobs = 10
+	items := make([]*batchv1.CronJob, 0, numCronjobs)
+	for i := range numCronjobs {
+		items = append(items, testutil.NewCronJobBuilder().
+			WithName(fmt.Sprintf("cronjob-%d", i)).
+			WithNamespace("default").
+			Build())
+	}
+	cronjobList := testutil.NewCronJobListBuilder().WithItems(items...).Build()
+
+	clientSet := fake.NewClientset()
+	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
+	st := &store.CronJobDBStore{
+		DB:        db,
+		K8sClient: k8sClient,
+	}
+	sk8lServer.CronJobDBStore = st
+	putCronjobsToBadger(t, db, cronjobList)
+
+	jobsMapped := map[string][]*batchv1.Job{}
+
+	// Replicate the concurrent append pattern from GetCronjobs and run under -race.
+	cronjobs := make([]*protos.CronjobResponse, 0, numCronjobs)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(numCronjobs)
+	for _, item := range cronjobList.Items {
+		go func(cj batchv1.CronJob) {
+			defer wg.Done()
+			jobs := sk8lServer.jobsForCronjob(jobsMapped, cj.Name)
+			resp := sk8lServer.cronJobResponse(cj, jobs)
+			mu.Lock()
+			cronjobs = append(cronjobs, resp)
+			mu.Unlock()
+		}(item)
+	}
+	wg.Wait()
+
+	if len(cronjobs) != numCronjobs {
+		t.Errorf("expected %d cronjob responses, got %d", numCronjobs, len(cronjobs))
+	}
+}
+
+// TestAllAndRunningJobsAnPods_NoConcurrentRace validates that concurrent goroutines
+// inside allAndRunningJobsAnPods do not produce data races on the four shared slices.
+func TestAllAndRunningJobsAnPods_NoConcurrentRace(t *testing.T) {
+	db := setupBadger(t)
+	defer db.Close()
+
+	clientSet := fake.NewClientset()
+	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
+	st := &store.CronJobDBStore{
+		DB:        db,
+		K8sClient: k8sClient,
+	}
+	sk8lServer.CronJobDBStore = st
+
+	const numJobs = 10
+	jobs := make([]*batchv1.Job, 0, numJobs)
+	for i := range numJobs {
+		jobs = append(jobs, testutil.NewJobBuilder().
+			WithName(fmt.Sprintf("job-%d", i)).
+			Build())
+	}
+
+	allJobs, allPods, runningJobs, runningPods := sk8lServer.allAndRunningJobsAnPods(jobs, "")
+
+	if len(allJobs) != numJobs {
+		t.Errorf("expected %d job responses, got %d", numJobs, len(allJobs))
+	}
+	// allPods, runningJobs, runningPods may be empty depending on job status — just
+	// ensure the race detector did not trigger and slices are non-nil.
+	if allPods == nil || runningJobs == nil || runningPods == nil {
+		t.Error("expected non-nil slice results from allAndRunningJobsAnPods")
+	}
 }

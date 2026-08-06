@@ -1,0 +1,4 @@
+```release-note:bug
+go: Fix concurrent slice data races in GetCronjobs and allAndRunningJobsAnPods
+ci: Add -race flag to Go test workflow to enforce race detection on CI
+```
