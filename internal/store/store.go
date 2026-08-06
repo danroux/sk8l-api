@@ -30,10 +30,11 @@ const (
 )
 
 var (
-	CronjobsCacheKey   = []byte("sk8l_cronjobs")
-	JobsMappedCacheKey = []byte("sk8l_jobs_mapped")
-	JobsCacheKey       = []byte("sk8l_jobs")
-	k8sSerializer      = k8sproto.NewSerializer(scheme.Scheme, scheme.Scheme)
+	ErrK8sClientRequired = errors.New("NewCronJobDBStore: K8sClient must be provided")
+	CronjobsCacheKey     = []byte("sk8l_cronjobs")
+	JobsMappedCacheKey   = []byte("sk8l_jobs_mapped")
+	JobsCacheKey         = []byte("sk8l_jobs")
+	k8sSerializer        = k8sproto.NewSerializer(scheme.Scheme, scheme.Scheme)
 )
 
 type APICall func() ([]byte, error)
@@ -58,7 +59,7 @@ func NewCronJobDBStore(optsFn ...CronJobDBStoreOptionFn) (*CronJobDBStore, error
 	}
 
 	if cjdbs.K8sClient == nil {
-		return nil, errors.New("NewCronJobDBStore: K8sClient must be provided")
+		return nil, ErrK8sClientRequired
 	}
 
 	if cjdbs.DB == nil {

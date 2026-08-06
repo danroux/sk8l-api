@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -30,10 +31,10 @@ func setupTestDB(t *testing.T) *badger.DB {
 func TestNewCronJobDBStore_Validation(t *testing.T) {
 	db := setupTestDB(t)
 
-	// Missing K8sClient must return error
+	// Missing K8sClient must return ErrK8sClientRequired
 	_, err := NewCronJobDBStore(WithDB(db))
-	if err == nil {
-		t.Fatal("expected error when K8sClient is missing, got nil")
+	if !errors.Is(err, ErrK8sClientRequired) {
+		t.Fatalf("expected ErrK8sClientRequired, got %v", err)
 	}
 
 	// Valid setup
