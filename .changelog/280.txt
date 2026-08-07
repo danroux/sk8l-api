@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump golangci/golangci-lint-action from 9.2.1 to 9.3.0
+
+gha:(deps): bump golangci/golangci-lint-action from 9.2.1 to 9.3.0
+
+Bumps [golangci/golangci-lint-action](https://github.com/golangci/golangci-lint-action) from 9.2.1 to 9.3.0.
+- [Release notes](https://github.com/golangci/golangci-lint-action/releases)
+- [Commits](https://github.com/golangci/golangci-lint-action/compare/82606bf257cbaff209d206a39f5134f0cfbfd2ee...ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a)
+
+---
+updated-dependencies:
+- dependency-name: golangci/golangci-lint-action
+  dependency-version: 9.3.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
