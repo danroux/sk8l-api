@@ -1,0 +1,20 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump actions/checkout from 6.0.3 to 7.0.1
+
+gha:(deps): bump actions/checkout from 6.0.3 to 7.0.1
+
+Bumps [actions/checkout](https://github.com/actions/checkout) from 6.0.3 to 7.0.1.
+- [Release notes](https://github.com/actions/checkout/releases)
+- [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)
+- [Commits](https://github.com/actions/checkout/compare/df4cb1c069e1874edd31b4311f1884172cec0e10...3d3c42e5aac5ba805825da76410c181273ba90b1)
+
+---
+updated-dependencies:
+- dependency-name: actions/checkout
+  dependency-version: 7.0.1
+  dependency-type: direct:production
+  update-type: version-update:semver-major
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
