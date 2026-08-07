@@ -264,7 +264,10 @@ func (s *Sk8lServer) GetCronjobYAML(
 	ctx context.Context,
 	in *protos.CronjobRequest,
 ) (*protos.CronjobYAMLResponse, error) {
-	cronjob := s.K8sClient.GetCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+	cronjob, err := s.K8sClient.GetCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+	if err != nil {
+		return nil, fmt.Errorf("sk8l#GetCronjobYAML: %w", err)
+	}
 	prettyJSON, err := json.MarshalIndent(cronjob, "", "  ")
 
 	if err != nil {
@@ -272,6 +275,7 @@ func (s *Sk8lServer) GetCronjobYAML(
 			Err(err).
 			Str("operation", "sk8l#GetCronjobYAML").
 			Msg("json.MarshalIndent() failed")
+		return nil, fmt.Errorf("sk8l#GetCronjobYAML: json.MarshalIndent failed: %w", err)
 	}
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
@@ -284,7 +288,10 @@ func (s *Sk8lServer) GetCronjobYAML(
 }
 
 func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*protos.JobYAMLResponse, error) {
-	job := s.K8sClient.GetJob(ctx, in.JobNamespace, in.JobName)
+	job, err := s.K8sClient.GetJob(ctx, in.JobNamespace, in.JobName)
+	if err != nil {
+		return nil, fmt.Errorf("sk8l#GetJobYAML: %w", err)
+	}
 	prettyJSON, err := json.MarshalIndent(job, "", "  ")
 
 	if err != nil {
@@ -292,6 +299,7 @@ func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*pr
 			Err(err).
 			Str("operation", "sk8l#GetJobYAML").
 			Msg("json.MarshalIndent() failed")
+		return nil, fmt.Errorf("sk8l#GetJobYAML: json.MarshalIndent failed: %w", err)
 	}
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
@@ -304,7 +312,10 @@ func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*pr
 }
 
 func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*protos.PodYAMLResponse, error) {
-	pod := s.K8sClient.GetPod(ctx, in.PodNamespace, in.PodName)
+	pod, err := s.K8sClient.GetPod(ctx, in.PodNamespace, in.PodName)
+	if err != nil {
+		return nil, fmt.Errorf("sk8l#GetPodYAML: %w", err)
+	}
 	prettyJSON, err := json.MarshalIndent(pod, "", "  ")
 
 	if err != nil {
@@ -312,6 +323,7 @@ func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*pr
 			Err(err).
 			Str("operation", "sk8l#GetPodYAML").
 			Msg("json.MarshalIndent() failed")
+		return nil, fmt.Errorf("sk8l#GetPodYAML: json.MarshalIndent failed: %w", err)
 	}
 
 	y, _ := gyaml.JSONToYAML(prettyJSON)
@@ -445,36 +457,59 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 }
 
 func (s *Sk8lServer) collectCronjobs(ctx context.Context) {
-	x := s.K8sClient.WatchCronjobs(ctx)
-
 	go func() {
 		for {
-			event, more := <-x.ResultChan()
-			if more {
-				eventCronjob, ok := event.Object.(*batchv1.CronJob)
-				if !ok {
-					log.Error().
-						Str("operation", "collectCronjobs").
-						Msg("event.Object.(*batchv1.CronJob)")
-				}
-				err := s.DB.Update(func(txn *badger.Txn) error {
-					return handleCronJobEvent(txn, event, eventCronjob)
-				})
-				if err != nil {
-					panic(err)
-				}
-			} else {
+			x, err := s.K8sClient.WatchCronjobs(ctx)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Str("operation", "collectCronjobs").
+					Msg("WatchCronjobs failed, retrying in 5s")
 				select {
 				case <-ctx.Done():
 					log.Info().
 						Str("operation", "collectCronjobs").
 						Msg("context canceled, stopping watcher")
 					return
-				default:
-					x = s.K8sClient.WatchCronjobs(ctx)
-					log.Error().
+				case <-time.After(5 * time.Second):
+					continue
+				}
+			}
+
+			running := true
+			for running {
+				select {
+				case <-ctx.Done():
+					x.Stop()
+					log.Info().
 						Str("operation", "collectCronjobs").
-						Msg("WatchCronjobs: Received all Cronjobs. Opening again")
+						Msg("context canceled, stopping watcher")
+					return
+				case event, more := <-x.ResultChan():
+					if !more {
+						log.Error().
+							Str("operation", "collectCronjobs").
+							Msg("WatchCronjobs: Received all Cronjobs. Opening again")
+						running = false
+						break
+					}
+
+					eventCronjob, ok := event.Object.(*batchv1.CronJob)
+					if !ok {
+						log.Error().
+							Str("operation", "collectCronjobs").
+							Msg("event.Object.(*batchv1.CronJob) type assertion failed")
+						continue
+					}
+					err := s.DB.Update(func(txn *badger.Txn) error {
+						return handleCronJobEvent(txn, event, eventCronjob)
+					})
+					if err != nil {
+						log.Error().
+							Err(err).
+							Str("operation", "collectCronjobs").
+							Msg("handleCronJobEvent failed")
+					}
 				}
 			}
 		}
@@ -482,36 +517,59 @@ func (s *Sk8lServer) collectCronjobs(ctx context.Context) {
 }
 
 func (s *Sk8lServer) collectJobs(ctx context.Context) {
-	x := s.K8sClient.WatchJobs(ctx)
-
 	go func() {
 		for {
-			event, more := <-x.ResultChan()
-			if more {
-				eventJob, ok := event.Object.(*batchv1.Job)
-				if !ok {
-					log.Error().
-						Str("operation", "collectPods").
-						Msg("event.Object.(*batchv1.Job)")
-				}
-				err := s.DB.Update(func(txn *badger.Txn) error {
-					return handleJobEvent(txn, event, eventJob)
-				})
-				if err != nil {
-					panic(err)
-				}
-			} else {
+			x, err := s.K8sClient.WatchJobs(ctx)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Str("operation", "collectJobs").
+					Msg("WatchJobs failed, retrying in 5s")
 				select {
 				case <-ctx.Done():
 					log.Info().
 						Str("operation", "collectJobs").
 						Msg("context canceled, stopping watcher")
 					return
-				default:
-					x = s.K8sClient.WatchJobs(ctx)
-					log.Error().
+				case <-time.After(5 * time.Second):
+					continue
+				}
+			}
+
+			running := true
+			for running {
+				select {
+				case <-ctx.Done():
+					x.Stop()
+					log.Info().
 						Str("operation", "collectJobs").
-						Msg("WatchJobs: Received all Jobs. Opening again")
+						Msg("context canceled, stopping watcher")
+					return
+				case event, more := <-x.ResultChan():
+					if !more {
+						log.Error().
+							Str("operation", "collectJobs").
+							Msg("WatchJobs: Received all Jobs. Opening again")
+						running = false
+						break
+					}
+
+					eventJob, ok := event.Object.(*batchv1.Job)
+					if !ok {
+						log.Error().
+							Str("operation", "collectJobs").
+							Msg("event.Object.(*batchv1.Job) type assertion failed")
+						continue
+					}
+					err := s.DB.Update(func(txn *badger.Txn) error {
+						return handleJobEvent(txn, event, eventJob)
+					})
+					if err != nil {
+						log.Error().
+							Err(err).
+							Str("operation", "collectJobs").
+							Msg("handleJobEvent failed")
+					}
 				}
 			}
 		}
@@ -519,36 +577,59 @@ func (s *Sk8lServer) collectJobs(ctx context.Context) {
 }
 
 func (s *Sk8lServer) collectPods(ctx context.Context) {
-	x := s.K8sClient.WatchPods(ctx)
-
 	go func() {
 		for {
-			event, more := <-x.ResultChan()
-			if more {
-				eventPod, ok := event.Object.(*corev1.Pod)
-				if !ok {
-					log.Error().
-						Str("operation", "collectPods").
-						Msg("event.Object.(*corev1.Pod)")
-				}
-				err := s.DB.Update(func(txn *badger.Txn) error {
-					return handlePodEvent(txn, event, eventPod)
-				})
-				if err != nil {
-					panic(err)
-				}
-			} else {
+			x, err := s.K8sClient.WatchPods(ctx)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Str("operation", "collectPods").
+					Msg("WatchPods failed, retrying in 5s")
 				select {
 				case <-ctx.Done():
 					log.Info().
 						Str("operation", "collectPods").
 						Msg("context canceled, stopping watcher")
 					return
-				default:
-					x = s.K8sClient.WatchPods(ctx)
-					log.Error().
+				case <-time.After(5 * time.Second):
+					continue
+				}
+			}
+
+			running := true
+			for running {
+				select {
+				case <-ctx.Done():
+					x.Stop()
+					log.Info().
 						Str("operation", "collectPods").
-						Msg("WatchJobs: Received all Pods. Opening again")
+						Msg("context canceled, stopping watcher")
+					return
+				case event, more := <-x.ResultChan():
+					if !more {
+						log.Error().
+							Str("operation", "collectPods").
+							Msg("WatchPods: Received all Pods. Opening again")
+						running = false
+						break
+					}
+
+					eventPod, ok := event.Object.(*corev1.Pod)
+					if !ok {
+						log.Error().
+							Str("operation", "collectPods").
+							Msg("event.Object.(*corev1.Pod) type assertion failed")
+						continue
+					}
+					err := s.DB.Update(func(txn *badger.Txn) error {
+						return handlePodEvent(txn, event, eventPod)
+					})
+					if err != nil {
+						log.Error().
+							Err(err).
+							Str("operation", "collectPods").
+							Msg("handlePodEvent failed")
+					}
 				}
 			}
 		}

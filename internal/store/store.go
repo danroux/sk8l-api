@@ -25,18 +25,19 @@ import (
 const (
 	JobPodsKeyFmt  = "jobs_pods_for_job_%s"
 	CronjobsKeyFmt = "sk8l_cronjob_%s_%s"
-	BadgerTTL      = time.Duration(15)
+	BadgerTTL      = 15 * time.Second
 	RefreshSeconds = 10
 )
 
 var (
-	CronjobsCacheKey   = []byte("sk8l_cronjobs")
-	JobsMappedCacheKey = []byte("sk8l_jobs_mapped")
-	JobsCacheKey       = []byte("sk8l_jobs")
-	k8sSerializer      = k8sproto.NewSerializer(scheme.Scheme, scheme.Scheme)
+	ErrK8sClientRequired = errors.New("NewCronJobDBStore: K8sClient must be provided")
+	CronjobsCacheKey     = []byte("sk8l_cronjobs")
+	JobsMappedCacheKey   = []byte("sk8l_jobs_mapped")
+	JobsCacheKey         = []byte("sk8l_jobs")
+	k8sSerializer        = k8sproto.NewSerializer(scheme.Scheme, scheme.Scheme)
 )
 
-type APICall func() []byte
+type APICall func() ([]byte, error)
 
 type CronJobDBStore struct {
 	K8sClient k8s.ClientInterface
@@ -44,58 +45,72 @@ type CronJobDBStore struct {
 	l zerolog.Logger
 }
 
-type CronJobDBStoreOptionFn func(*CronJobDBStore)
+type CronJobDBStoreOptionFn func(*CronJobDBStore) error
 
-func NewCronJobDBStore(optsFn ...CronJobDBStoreOptionFn) *CronJobDBStore {
+func NewCronJobDBStore(optsFn ...CronJobDBStoreOptionFn) (*CronJobDBStore, error) {
 	cjdbs := &CronJobDBStore{
 		l: log.With().Str("component", "db_store").Logger(),
 	}
 
 	for _, opt := range optsFn {
-		opt(cjdbs)
+		if err := opt(cjdbs); err != nil {
+			return nil, err
+		}
 	}
 
 	if cjdbs.K8sClient == nil {
-		cjdbs.l.Fatal().Msg("NewCronJobDBStore: K8sClient must be provided.")
+		return nil, ErrK8sClientRequired
 	}
 
 	if cjdbs.DB == nil {
-		cjdbs.l.Info().Msg("NewCronJobDBStore: DB not provided, setting default one.")
-		dbFn := WithDefaultDB()
-		dbFn(cjdbs)
+		cjdbs.l.Info().Msg("NewCronJobDBStore: DB not provided, setting default one")
+		if err := WithDefaultDB()(cjdbs); err != nil {
+			return nil, err
+		}
 	}
 
-	return cjdbs
+	return cjdbs, nil
 }
 
 func WithDB(db *badger.DB) CronJobDBStoreOptionFn {
-	return func(cjdbs *CronJobDBStore) { cjdbs.DB = db }
+	return func(cjdbs *CronJobDBStore) error {
+		cjdbs.DB = db
+		return nil
+	}
 }
 
-func WithK8sClient(k8sClient *k8s.Client) CronJobDBStoreOptionFn {
-	return func(cjdbs *CronJobDBStore) {
+func WithK8sClient(k8sClient k8s.ClientInterface) CronJobDBStoreOptionFn {
+	return func(cjdbs *CronJobDBStore) error {
 		cjdbs.K8sClient = k8sClient
+		return nil
 	}
 }
 
 func WithDefaultK8sClient(k8sNamespace string) CronJobDBStoreOptionFn {
-	k8sClient := k8s.NewClient(
-		k8s.WithNamespace(k8sNamespace),
-		k8s.WithLogger(log.With().Str("component", "k8s").Logger()),
-	)
-
-	return WithK8sClient(k8sClient)
+	return func(cjdbs *CronJobDBStore) error {
+		k8sClient, err := k8s.NewClient(
+			k8s.WithNamespace(k8sNamespace),
+			k8s.WithLogger(log.With().Str("component", "k8s").Logger()),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create default k8s client: %w", err)
+		}
+		cjdbs.K8sClient = k8sClient
+		return nil
+	}
 }
 
 func WithDefaultDB() CronJobDBStoreOptionFn {
-	badgerLogger := logger.NewBadgerLogger(zerolog.GlobalLevel())
-	badgerOpts := badger.DefaultOptions("/tmp/badger").WithLogger(badgerLogger)
-	db, err := badger.Open(badgerOpts)
-	if err != nil {
-		badgerLogger.Fatal().Err(err).Msg("failed to open Badger DB")
+	return func(cjdbs *CronJobDBStore) error {
+		badgerLogger := logger.NewBadgerLogger(zerolog.GlobalLevel())
+		badgerOpts := badger.DefaultOptions("/tmp/badger").WithLogger(badgerLogger)
+		db, err := badger.Open(badgerOpts)
+		if err != nil {
+			return fmt.Errorf("failed to open Badger DB: %w", err)
+		}
+		cjdbs.DB = db
+		return nil
 	}
-
-	return WithDB(db)
 }
 
 func (c *CronJobDBStore) GetAndStore(key []byte, apiCall APICall) ([]byte, error) {
@@ -103,8 +118,11 @@ func (c *CronJobDBStore) GetAndStore(key []byte, apiCall APICall) ([]byte, error
 	err := c.DB.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			apiResult := apiCall()
-			entry := badger.NewEntry(key, apiResult).WithTTL(time.Second * BadgerTTL)
+			apiResult, err := apiCall()
+			if err != nil {
+				return fmt.Errorf("apiCall failed: %w", err)
+			}
+			entry := badger.NewEntry(key, apiResult).WithTTL(BadgerTTL)
 			if err = txn.SetEntry(entry); err != nil {
 				c.l.Error().Err(err).Msg("Error: getAndStore#txn.SetEntry")
 				return fmt.Errorf("sk8l#getAndStore: txn.SetEntry() failed: %w", err)
@@ -176,14 +194,17 @@ func (c *CronJobDBStore) FindCronjobs() (*batchv1.CronJobList, error) {
 }
 
 func (c *CronJobDBStore) FindCronjob(ctx context.Context, cronjobNamespace, cronjobName string) (*batchv1.CronJob, error) {
-	gCjCall := func() []byte {
-		cronjob := c.K8sClient.GetCronjob(ctx, cronjobNamespace, cronjobName)
+	gCjCall := func() ([]byte, error) {
+		cronjob, err := c.K8sClient.GetCronjob(ctx, cronjobNamespace, cronjobName)
+		if err != nil {
+			return nil, fmt.Errorf("GetCronjob failed: %w", err)
+		}
 		var buf bytes.Buffer
 		if err := k8sSerializer.Encode(cronjob, &buf); err != nil {
 			c.l.Error().Err(err).Msg("findCronjob#k8sSerializer.Encode")
-			return nil
+			return nil, fmt.Errorf("k8sSerializer.Encode failed: %w", err)
 		}
-		return buf.Bytes()
+		return buf.Bytes(), nil
 	}
 
 	cacheKey := []byte(fmt.Sprintf(CronjobsKeyFmt, cronjobNamespace, cronjobName))
@@ -216,16 +237,20 @@ func (c *CronJobDBStore) FindJobs() (*batchv1.JobList, error) {
 }
 
 func (c *CronJobDBStore) FindJobsMapped(ctx context.Context) (map[string][]*batchv1.Job, error) {
-	jobs, err := c.GetAndStore(JobsMappedCacheKey, func() []byte {
-		jobList := c.K8sClient.GetAllJobs(ctx)
+	jobs, err := c.GetAndStore(JobsMappedCacheKey, func() ([]byte, error) {
+		jobList, err := c.K8sClient.GetAllJobs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("GetAllJobs failed: %w", err)
+		}
 		var buf bytes.Buffer
 		if err := k8sSerializer.Encode(jobList, &buf); err != nil {
 			log.Error().
 				Err(err).
 				Str("operation", "FindJobsMapped").
 				Msg("k8sSerializer.Encode")
+			return nil, fmt.Errorf("k8sSerializer.Encode failed: %w", err)
 		}
-		return buf.Bytes()
+		return buf.Bytes(), nil
 	})
 
 	if err != nil {

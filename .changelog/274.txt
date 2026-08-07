@@ -1,0 +1,3 @@
+```release-note:improvement
+go: Improve error handling, resilience, and test coverage across k8s client, store, watchers, and metrics collection
+```

@@ -28,8 +28,8 @@ import (
 const (
 	ReadTimeoutSeconds  = 10
 	WriteTimeoutSeconds = 30
-	ReadTimeout         = time.Duration(ReadTimeoutSeconds)
-	WriteTimeout        = time.Duration(WriteTimeoutSeconds)
+	ReadTimeout         = ReadTimeoutSeconds * time.Second
+	WriteTimeout        = WriteTimeoutSeconds * time.Second
 )
 
 var (
@@ -74,7 +74,10 @@ func main() {
 		TotalMetricNames,
 	)
 
-	cronjobDBStore := store.NewCronJobDBStore(store.WithDefaultK8sClient(K8Namespace))
+	cronjobDBStore, err := store.NewCronJobDBStore(store.WithDefaultK8sClient(K8Namespace))
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize cronjobDBStore")
+	}
 	sk8lServer := NewSk8lServer(
 		target,
 		cronjobDBStore,
@@ -90,13 +93,31 @@ func main() {
 	httpS := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%s", MetricsPort),
 		IdleTimeout:  time.Minute,
-		ReadTimeout:  ReadTimeout * time.Second,
-		WriteTimeout: WriteTimeout * time.Second,
+		ReadTimeout:  ReadTimeout,
+		WriteTimeout: WriteTimeout,
 		TLSConfig:    serverTLSConfig,
 		Handler:      mux,
 	}
 	log.Info().
 		Msg(fmt.Sprintf("Starting %s server %s on %s", "sk8l", Version(), ln.Addr().String()))
+	errCh := startServers(httpS, probeS, grpcS, ln, healthLn)
+	metricsCxt, metricsCancel := context.WithCancel(rootCtx)
+	sk8lServer.Run(metricsCxt)
+	log.Info().Msg("Shutdown: setting up")
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	select {
+	case err := <-errCh:
+		log.Error().Err(err).
+			Msg("Shutdown: sk8l shutting down... got error during server startup")
+	case sig := <-quit:
+		log.Info().
+			Msg(fmt.Sprintf("Shutdown: Got %v signal. sk8l will shut down shortly", sig))
+	}
+	shutdownServers(rootCtx, httpS, grpcS, probeS, metricsCancel)
+}
+
+func startServers(httpS *http.Server, probeS, grpcS *grpc.Server, ln, healthLn net.Listener) <-chan error {
 	errCh := make(chan error, 3)
 	go func() {
 		if err := httpS.ListenAndServeTLS(certFile, certKeyFile); err != nil {
@@ -113,19 +134,15 @@ func main() {
 			errCh <- fmt.Errorf("grpcS error: %w", err)
 		}
 	}()
-	metricsCxt, metricsCancel := context.WithCancel(rootCtx)
-	sk8lServer.Run(metricsCxt)
-	log.Info().Msg("Shutdown: setting up")
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-	select {
-	case err := <-errCh:
-		log.Error().Err(err).
-			Msg("Shutdown: sk8l shutting down... got error during server startup")
-	case sig := <-quit:
-		log.Info().
-			Msg(fmt.Sprintf("Shutdown: Got %v signal. sk8l will shut down shortly", sig))
-	}
+	return errCh
+}
+
+func shutdownServers(
+	rootCtx context.Context,
+	httpS *http.Server,
+	grpcS, probeS *grpc.Server,
+	metricsCancel context.CancelFunc,
+) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(rootCtx, 5*time.Second)
 	defer shutdownCancel()
 	if err := httpS.Shutdown(shutdownCtx); err != nil {
