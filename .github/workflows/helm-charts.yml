@@ -43,7 +43,7 @@ jobs:
           IMAGE_TAG=$(make chart-version-wo)
           file charts/repo/sk8l-$IMAGE_TAG.tgz
           make helm-push
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: charts-repo
           path: charts/repo
@@ -61,7 +61,7 @@ jobs:
   #           echo "chart version (${chart_tag}) did not match git version (${git_tag})"
   #           exit 1
   #         fi
-  #     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+  #     - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
   #       with:
   #         name: charts-repo
   #         path: charts/repo
