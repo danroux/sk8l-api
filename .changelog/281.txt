@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump actions/cache from 5 to 6
+
+gha:(deps): bump actions/cache from 5 to 6
+
+Bumps [actions/cache](https://github.com/actions/cache) from 5 to 6.
+- [Release notes](https://github.com/actions/cache/releases)
+- [Commits](https://github.com/actions/cache/compare/v5...v6)
+
+---
+updated-dependencies:
+- dependency-name: actions/cache
+  dependency-version: '6'
+  dependency-type: direct:production
+  update-type: version-update:semver-major
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
