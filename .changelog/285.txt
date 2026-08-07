@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump docker/login-action from 4.2.0 to 4.6.0
+
+gha:(deps): bump docker/login-action from 4.2.0 to 4.6.0
+
+Bumps [docker/login-action](https://github.com/docker/login-action) from 4.2.0 to 4.6.0.
+- [Release notes](https://github.com/docker/login-action/releases)
+- [Commits](https://github.com/docker/login-action/compare/650006c6eb7dba73a995cc03b0b2d7f5ca915bee...dbcb813823bdd20940b903addbd779551569679f)
+
+---
+updated-dependencies:
+- dependency-name: docker/login-action
+  dependency-version: 4.6.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
