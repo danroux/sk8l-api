@@ -16,6 +16,7 @@ echo ""
 get_upstream_fields() {
     local type_path=$1
     go doc "${type_path}" 2>/dev/null \
+        | sed '/^}/,$d' \
         | grep -E '^\s+[A-Z][A-Za-z0-9]+\s' \
         | awk '{print $1}' \
         | sort

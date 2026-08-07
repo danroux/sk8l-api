@@ -1,0 +1,3 @@
+```release-note:improvement
+ci: fix false-positive "new field" reports in check_k8s_mapper_drift.sh by stopping go doc output parsing at the struct closing brace, eliminating receiver type names (e.g. EnvVar, JobSpec, PodStatus) from being treated as upstream fields
+```
