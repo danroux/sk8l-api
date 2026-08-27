@@ -23,6 +23,10 @@ sk8lApi:
   image: "danroux/sk8l-api"
   imageTag: "v0.19.0"
   imagePullPolicy: ""
+  # logLevel controls the verbosity of the sk8l-api logger.
+  # Valid values: trace, debug, info, warn, warning, error, disabled, off.
+  # Defaults to info when unset.
+  logLevel: ""
   autoscaling:
     enabled: true
     replicaCount: 1
