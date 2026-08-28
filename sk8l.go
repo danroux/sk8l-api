@@ -70,29 +70,77 @@ func (s *Sk8lServer) GetDialOptions() []grpc.DialOption {
 	return s.dialOptions
 }
 
+// IsHealthy reports whether the server's backing store is working.
+func (s *Sk8lServer) IsHealthy() bool {
+	return s.CronJobDBStore != nil && s.CronJobDBStore.Ping() == nil
+}
+
 func (s Sk8lServer) Check(
 	ctx context.Context,
 	req *grpc_health_v1.HealthCheckRequest,
 ) (*grpc_health_v1.HealthCheckResponse, error) {
+	status := grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	if s.IsHealthy() {
+		status = grpc_health_v1.HealthCheckResponse_SERVING
+	}
+
 	log.Info().
 		Str("component", "probe").
 		Str("operation", "health").
-		Msg("serving health")
-	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
+		Str("status", status.String()).
+		Msg("health check")
+
+	return &grpc_health_v1.HealthCheckResponse{Status: status}, nil
 }
 
+// Watch implements the gRPC Health Checking Protocol streaming RPC.
+// It sends an initial status immediately, then keeps the stream open and
+// pushes a new message whenever the health status transitions. The stream
+// is closed when the client disconnects or the server context is cancelled.
 func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
-	response := &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}
+	currentStatus := grpc_health_v1.HealthCheckResponse_SERVICE_UNKNOWN
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 
-	if err := stream.Send(response); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "Watch#stream.Send").
-			Send()
-		return fmt.Errorf("sk8l#Watch: stream.Send failed: %w", err)
+	send := func(status grpc_health_v1.HealthCheckResponse_ServingStatus) error {
+		if err := stream.Send(&grpc_health_v1.HealthCheckResponse{Status: status}); err != nil {
+			log.Error().
+				Err(err).
+				Str("operation", "Watch#stream.Send").
+				Send()
+			return fmt.Errorf("sk8l#Watch: stream.Send failed: %w", err)
+		}
+		return nil
 	}
 
-	return nil
+	healthStatus := func() grpc_health_v1.HealthCheckResponse_ServingStatus {
+		if s.IsHealthy() {
+			return grpc_health_v1.HealthCheckResponse_SERVING
+		}
+		return grpc_health_v1.HealthCheckResponse_NOT_SERVING
+	}
+
+	// Send initial status immediately.
+	currentStatus = healthStatus()
+	if err := send(currentStatus); err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case <-ticker.C:
+			newStatus := healthStatus()
+			if newStatus == currentStatus {
+				continue
+			}
+			currentStatus = newStatus
+			if err := send(currentStatus); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (s *Sk8lServer) Run(metricsCxt context.Context) {
