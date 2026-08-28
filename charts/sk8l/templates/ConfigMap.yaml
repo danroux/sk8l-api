@@ -6,6 +6,9 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 data:
   K8_NAMESPACE: {{ .Values.namespace.name }}
+  {{- if .Values.sk8lApi.logLevel }}
+  LOG_LEVEL: {{ .Values.sk8lApi.logLevel | quote }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
