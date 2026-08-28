@@ -31,6 +31,7 @@ const (
 
 var (
 	ErrK8sClientRequired = errors.New("NewCronJobDBStore: K8sClient must be provided")
+	ErrDBUnavailable     = errors.New("db is unavailable")
 	CronjobsCacheKey     = []byte("sk8l_cronjobs")
 	JobsMappedCacheKey   = []byte("sk8l_jobs_mapped")
 	JobsCacheKey         = []byte("sk8l_jobs")
@@ -111,6 +112,20 @@ func WithDefaultDB() CronJobDBStoreOptionFn {
 		cjdbs.DB = db
 		return nil
 	}
+}
+
+// Ping verifies that the Badger DB is open and responsive by running a
+// no-op read transaction. It returns an error if the DB is nil, closed,
+// or if the view transaction fails.
+func (c *CronJobDBStore) Ping() error {
+	if c.DB == nil || c.DB.IsClosed() {
+		return ErrDBUnavailable
+	}
+
+	if err := c.DB.View(func(_ *badger.Txn) error { return nil }); err != nil {
+		return fmt.Errorf("store#Ping: %w", err)
+	}
+	return nil
 }
 
 func (c *CronJobDBStore) GetAndStore(key []byte, apiCall APICall) ([]byte, error) {
