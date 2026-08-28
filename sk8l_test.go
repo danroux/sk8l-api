@@ -769,9 +769,15 @@ func TestCheck(t *testing.T) {
 // mockWatchServer is a minimal grpc_health_v1.Health_WatchServer for testing.
 type mockWatchServer struct {
 	grpc.ServerStream
-	ctx      context.Context
+	ctxFn    func() context.Context
 	received []*grpc_health_v1.HealthCheckResponse
 	mu       sync.Mutex
+}
+
+func newMockWatchServer(ctx context.Context) *mockWatchServer {
+	return &mockWatchServer{
+		ctxFn: func() context.Context { return ctx },
+	}
 }
 
 func (m *mockWatchServer) Send(resp *grpc_health_v1.HealthCheckResponse) error {
@@ -781,7 +787,12 @@ func (m *mockWatchServer) Send(resp *grpc_health_v1.HealthCheckResponse) error {
 	return nil
 }
 
-func (m *mockWatchServer) Context() context.Context { return m.ctx }
+func (m *mockWatchServer) Context() context.Context {
+	if m.ctxFn != nil {
+		return m.ctxFn()
+	}
+	return context.Background()
+}
 
 func (m *mockWatchServer) Received() []*grpc_health_v1.HealthCheckResponse {
 	m.mu.Lock()
@@ -795,7 +806,7 @@ func TestWatch(t *testing.T) {
 	t.Run("SendsInitialStatus", func(t *testing.T) {
 		s, _ := newHealthServer(t)
 		ctx, cancel := context.WithCancel(context.Background())
-		stream := &mockWatchServer{ctx: ctx}
+		stream := newMockWatchServer(ctx)
 
 		done := make(chan error, 1)
 		go func() { done <- s.Watch(nil, stream) }()
@@ -817,7 +828,7 @@ func TestWatch(t *testing.T) {
 	t.Run("ExitsOnContextCancel", func(t *testing.T) {
 		s, _ := newHealthServer(t)
 		ctx, cancel := context.WithCancel(context.Background())
-		stream := &mockWatchServer{ctx: ctx}
+		stream := newMockWatchServer(ctx)
 
 		done := make(chan error, 1)
 		go func() { done <- s.Watch(nil, stream) }()
@@ -838,7 +849,7 @@ func TestWatch(t *testing.T) {
 		s, db := newHealthServer(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		stream := &mockWatchServer{ctx: ctx}
+		stream := newMockWatchServer(ctx)
 
 		done := make(chan error, 1)
 		go func() { done <- s.Watch(nil, stream) }()

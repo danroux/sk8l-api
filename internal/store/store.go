@@ -31,6 +31,7 @@ const (
 
 var (
 	ErrK8sClientRequired = errors.New("NewCronJobDBStore: K8sClient must be provided")
+	ErrDBUnavailable     = errors.New("db is unavailable")
 	CronjobsCacheKey     = []byte("sk8l_cronjobs")
 	JobsMappedCacheKey   = []byte("sk8l_jobs_mapped")
 	JobsCacheKey         = []byte("sk8l_jobs")
@@ -118,10 +119,13 @@ func WithDefaultDB() CronJobDBStoreOptionFn {
 // or if the view transaction fails.
 func (c *CronJobDBStore) Ping() error {
 	if c.DB == nil || c.DB.IsClosed() {
-		return errors.New("db is unavailable")
+		return ErrDBUnavailable
 	}
 
-	return c.DB.View(func(_ *badger.Txn) error { return nil })
+	if err := c.DB.View(func(_ *badger.Txn) error { return nil }); err != nil {
+		return fmt.Errorf("store#Ping: %w", err)
+	}
+	return nil
 }
 
 func (c *CronJobDBStore) GetAndStore(key []byte, apiCall APICall) ([]byte, error) {

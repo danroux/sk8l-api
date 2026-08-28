@@ -96,9 +96,8 @@ func (s Sk8lServer) Check(
 // Watch implements the gRPC Health Checking Protocol streaming RPC.
 // It sends an initial status immediately, then keeps the stream open and
 // pushes a new message whenever the health status transitions. The stream
-// is closed when the client disconnects or the server context is cancelled.
+// is closed when the client disconnects or the server context is canceled.
 func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
-	currentStatus := grpc_health_v1.HealthCheckResponse_SERVICE_UNKNOWN
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -121,7 +120,7 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 	}
 
 	// Send initial status immediately.
-	currentStatus = healthStatus()
+	currentStatus := healthStatus()
 	if err := send(currentStatus); err != nil {
 		return err
 	}
