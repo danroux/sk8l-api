@@ -700,7 +700,8 @@ func TestAllAndRunningJobsAnPods_NoConcurrentRace(t *testing.T) {
 
 // newHealthServer builds a minimal Sk8lServer wired to an in-memory Badger DB
 // and returns the server along with its underlying DB so tests can close it
-// to simulate a degraded state.
+// to simulate a degraded state. watchInterval is set to a small value so
+// TestWatch/PushesStatusTransition does not have to wait for the production 5s ticker.
 func newHealthServer(t *testing.T) (*Sk8lServer, *badger.DB) {
 	t.Helper()
 	db := setupBadger(t)
@@ -711,6 +712,7 @@ func newHealthServer(t *testing.T) (*Sk8lServer, *badger.DB) {
 			DB:        db,
 			K8sClient: k8sClient,
 		},
+		watchInterval: 10 * time.Millisecond,
 	}
 	return s, db
 }
@@ -857,10 +859,10 @@ func TestWatch(t *testing.T) {
 		// Initial SERVING message lands almost immediately.
 		time.Sleep(50 * time.Millisecond)
 
-		// Simulate DB failure; Watch polls every 5s so we need to wait
-		// slightly over that interval.
+		// Simulate DB failure. With watchInterval=10ms the ticker fires quickly;
+		// wait just long enough for at least one tick to observe the closed DB.
 		db.Close()
-		time.Sleep(6 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 
 		cancel()
 		<-done

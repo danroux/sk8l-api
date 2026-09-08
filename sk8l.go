@@ -44,6 +44,7 @@ type Sk8lServer struct {
 	metricsNamesMap *sync.Map
 	target          string
 	dialOptions     []grpc.DialOption
+	watchInterval   time.Duration
 }
 
 func NewSk8lServer(
@@ -59,6 +60,7 @@ func NewSk8lServer(
 		dashboardGen:    dashboardGen,
 		metricsNamesMap: metricsNamesMap,
 		dialOptions:     dialOptions,
+		watchInterval:   5 * time.Second,
 	}
 }
 
@@ -98,7 +100,7 @@ func (s Sk8lServer) Check(
 // pushes a new message whenever the health status transitions. The stream
 // is closed when the client disconnects or the server context is canceled.
 func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(s.watchInterval)
 	defer ticker.Stop()
 
 	send := func(status grpc_health_v1.HealthCheckResponse_ServingStatus) error {
