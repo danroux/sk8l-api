@@ -251,3 +251,36 @@ func TestK8sSerializeAndDeserialize(t *testing.T) {
 		t.Errorf("expected decoded cronjob serialize-test, got %+v", decoded)
 	}
 }
+
+func TestPing(t *testing.T) {
+	t.Run("OpenDB", func(t *testing.T) {
+		db := setupTestDB(t)
+		s := &CronJobDBStore{DB: db}
+		if err := s.Ping(); err != nil {
+			t.Errorf("expected nil error on open DB, got %v", err)
+		}
+	})
+
+	t.Run("NilDB", func(t *testing.T) {
+		s := &CronJobDBStore{}
+		if err := s.Ping(); err == nil {
+			t.Error("expected error on nil DB, got nil")
+		}
+	})
+
+	t.Run("ClosedDB", func(t *testing.T) {
+		opts := badger.DefaultOptions("").WithInMemory(true).WithLoggingLevel(badger.ERROR)
+		db, err := badger.Open(opts)
+		if err != nil {
+			t.Fatalf("failed to open DB: %v", err)
+		}
+		// Close before calling Ping.
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close DB: %v", err)
+		}
+		s := &CronJobDBStore{DB: db}
+		if err := s.Ping(); err == nil {
+			t.Error("expected error on closed DB, got nil")
+		}
+	})
+}

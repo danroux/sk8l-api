@@ -1,0 +1,3 @@
+```release-note:improvement
+go: Implement real gRPC health checks backed by Badger DB liveness probe and fix Watch streaming to conform to the gRPC Health Checking Protocol specification
+```
