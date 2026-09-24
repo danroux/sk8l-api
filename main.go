@@ -18,7 +18,6 @@ import (
 	"github.com/danroux/sk8l/internal/logger"
 	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/protos"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -89,7 +88,7 @@ func main() {
 	healthgrpc.RegisterHealthServer(probeS, sk8lServer)
 	protos.RegisterCronjobServer(grpcS, sk8lServer)
 	mux := &http.ServeMux{}
-	mux.Handle("/metrics", promhttp.Handler())
+	setupHTTPRoutes(mux, sk8lServer)
 	httpS := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%s", MetricsPort),
 		IdleTimeout:  time.Minute,
