@@ -55,7 +55,7 @@ helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
 
 #### TLS
 
-The commmunication between apps is encrypted.
+The communication between apps is encrypted.
 
 To manually configure TLS, first create/retrieve a key & certificate pair. Then create TLS secrets in the namespace:
 
@@ -69,11 +69,11 @@ kubectl create secret tls -n NAMESPACE sk8l-ca-root-cert-secret --cert=ca-cert.p
 The Kubernetes community releases minor versions roughly every three months. These are the versions currently supported and tested against.
 
 | Version       | Tested Version |
-| ------------- | ----------------- |
-| v1.34         | v1.34.5           |
-| v1.33         | v1.33.7           |
-| v1.32         | v1.32.11          |
-| v1.31         | v1.31.14          |
+| ------------- | -------------- |
+| v1.37         | v1.37.0        |
+| v1.36         | v1.36.4        |
+| v1.35         | v1.35.8        |
+| v1.34         | v1.34.11       |
 
 ## Prometheus metrics
 
@@ -85,7 +85,7 @@ sk8l collects and publishes aggregated metrics for all the configured cronjobs o
 | sk8l_[NAMESPACE]_completed_cronjobs_total        | Total completed cronjobs              |
 | sk8l_[NAMESPACE]_failing_cronjobs_total          | Total cronjobs failures               |
 | sk8l_[NAMESPACE]_running_cronjobs_total          | Amount of current running cronjobs    |
-| sk8l_[NAMESPACE]_[CRONJOB_NAME]_completion_total | Total completions of a cronjobs       |
+| sk8l_[NAMESPACE]_[CRONJOB_NAME]_completion_total | Total completions of a cronjob        |
 | sk8l_[NAMESPACE]_[CRONJOB_NAME]_duration_seconds | Current duration of a running cronjob |
 | sk8l_[NAMESPACE]_[CRONJOB_NAME]_failure_total    | Total failures of a cronjob           |
 
