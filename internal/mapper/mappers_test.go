@@ -421,8 +421,8 @@ func TestMapPodSpec(t *testing.T) {
 	tgps := int64(30)
 
 	tests := []struct {
-		input   corev1.PodSpec
 		name    string
+		input   corev1.PodSpec
 		wantTGP int64
 	}{
 		{

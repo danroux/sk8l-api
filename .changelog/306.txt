@@ -1,0 +1,1 @@
+go: Add /healthz and /readyz HTTP diagnostic endpoints and Kubernetes startupProbe, livenessProbe, and readinessProbe to the Helm chart

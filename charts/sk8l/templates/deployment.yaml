@@ -58,13 +58,28 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 10 }}
           {{- end }}
+          startupProbe:
+            grpc:
+              {{- with (index .Values.service) }}
+              port: {{ (index .ports 1).port }}
+              {{- end }}
+            failureThreshold: 30
+            periodSeconds: 2
           livenessProbe:
             grpc:
               {{- with (index .Values.service) }}
               port: {{ (index .ports 1).port }}
               {{- end }}
-            initialDelaySeconds: 10
-            periodSeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            grpc:
+              {{- with (index .Values.service) }}
+              port: {{ (index .ports 1).port }}
+              {{- end }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 2
           envFrom:
             - configMapRef:
                 name: sk8l-api-configmap
