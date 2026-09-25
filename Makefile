@@ -68,6 +68,8 @@ setup-certs: # setup-certs
 	  --namespace cert-manager \
 	  --set app.trust.namespace=sk8l \
 	  --wait
+	kubectl rollout status deployment/trust-manager -n cert-manager --timeout=120s
+	kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=trust-manager -n cert-manager --timeout=120s
 	kubectl apply -f testdata/sk8l-trust.yml
 
 install-chart-ci: # install-chart-ci
