@@ -225,6 +225,16 @@ func (c *CronJobDBStore) FindCronjobs() (*batchv1.CronJobList, error) {
 }
 
 func (c *CronJobDBStore) FindCronjob(ctx context.Context, cronjobNamespace, cronjobName string) (*batchv1.CronJob, error) {
+	cronjobs, err := c.FindCronjobs()
+	if err == nil {
+		for i := range cronjobs.Items {
+			cj := &cronjobs.Items[i]
+			if cj.Namespace == cronjobNamespace && cj.Name == cronjobName {
+				return cj, nil
+			}
+		}
+	}
+
 	gCjCall := func() ([]byte, error) {
 		cronjob, err := c.K8sClient.GetCronjob(ctx, cronjobNamespace, cronjobName)
 		if err != nil {
@@ -268,29 +278,19 @@ func (c *CronJobDBStore) FindJobs() (*batchv1.JobList, error) {
 }
 
 func (c *CronJobDBStore) FindJobsMapped(ctx context.Context) (map[string][]*batchv1.Job, error) {
-	jobs, err := c.GetAndStore(JobsMappedCacheKey, func() ([]byte, error) {
-		jobList, err := c.K8sClient.GetAllJobs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("GetAllJobs failed: %w", err)
-		}
-		var buf bytes.Buffer
-		if err := k8sSerializer.Encode(jobList, &buf); err != nil {
-			log.Error().
-				Err(err).
-				Str("operation", "FindJobsMapped").
-				Msg("k8sSerializer.Encode")
-			return nil, fmt.Errorf("k8sSerializer.Encode failed: %w", err)
-		}
-		return buf.Bytes(), nil
-	})
-
+	jobList, err := c.FindJobs()
 	if err != nil {
-		return nil, fmt.Errorf("FindJobsMapped#GetAndStore: %w", err)
+		return nil, fmt.Errorf("FindJobsMapped#FindJobs: %w", err)
 	}
 
-	jobList := &batchv1.JobList{}
-	if _, _, err := k8sSerializer.Decode(jobs, nil, jobList); err != nil {
-		return nil, fmt.Errorf("FindJobsMapped#Decode: %w", err)
+	if len(jobList.Items) == 0 && c.K8sClient != nil {
+		k8sJobs, err := c.K8sClient.GetAllJobs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("FindJobsMapped#GetAllJobs: %w", err)
+		}
+		if len(k8sJobs.Items) > 0 {
+			jobList = k8sJobs
+		}
 	}
 
 	mapped := make(map[string][]*batchv1.Job)

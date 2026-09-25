@@ -34,6 +34,8 @@ import (
 //go:embed annotations.tmpl
 var content embed.FS
 
+var jobPodsPrefix = []byte("jobs_pods_for_job_")
+
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
@@ -206,7 +208,7 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 			default:
 			}
 			return nil
-		}, store.CronjobsCacheKey, store.JobsCacheKey)
+		}, store.CronjobsCacheKey, store.JobsCacheKey, jobPodsPrefix)
 	}()
 
 	for {
@@ -257,7 +259,7 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 			default:
 			}
 			return nil
-		}, cronjobKey, store.JobsCacheKey)
+		}, store.CronjobsCacheKey, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
 	}()
 
 	for {
@@ -275,7 +277,6 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
 	ctx := stream.Context()
 	cronjobKey := []byte(fmt.Sprintf(store.CronjobsKeyFmt, in.CronjobNamespace, in.CronjobName))
-	jobPodsPrefix := []byte("jobs_pods_for_job_")
 
 	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
@@ -321,7 +322,7 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 			default:
 			}
 			return nil
-		}, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
+		}, store.CronjobsCacheKey, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
 	}()
 
 	for {
