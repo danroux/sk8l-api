@@ -35,6 +35,7 @@ import (
 var content embed.FS
 
 var jobPodsPrefix = []byte("jobs_pods_for_job_")
+var streamHeartbeatInterval = time.Second * store.RefreshSeconds
 
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
@@ -211,11 +212,18 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		}, store.CronjobsCacheKey, store.JobsCacheKey, jobPodsPrefix)
 	}()
 
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-notifyCh:
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
 			if err := send(); err != nil {
 				return err
 			}
@@ -262,11 +270,18 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 		}, store.CronjobsCacheKey, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
 	}()
 
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-notifyCh:
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
 			if err := send(); err != nil {
 				return err
 			}
@@ -325,11 +340,18 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 		}, store.CronjobsCacheKey, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
 	}()
 
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-notifyCh:
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
 			if err := send(); err != nil {
 				return err
 			}
@@ -382,11 +404,18 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 		}, store.JobsCacheKey)
 	}()
 
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-notifyCh:
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
 			if err := send(); err != nil {
 				return err
 			}

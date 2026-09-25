@@ -283,13 +283,19 @@ func (c *CronJobDBStore) FindJobsMapped(ctx context.Context) (map[string][]*batc
 		return nil, fmt.Errorf("FindJobsMapped#FindJobs: %w", err)
 	}
 
-	if len(jobList.Items) == 0 && c.K8sClient != nil {
+	if c.K8sClient != nil {
 		k8sJobs, err := c.K8sClient.GetAllJobs(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("FindJobsMapped#GetAllJobs: %w", err)
 		}
 		if len(k8sJobs.Items) > 0 {
 			jobList = k8sJobs
+			var buf bytes.Buffer
+			if err := k8sSerializer.Encode(jobList, &buf); err == nil && c.DB != nil && !c.DB.IsClosed() {
+				_ = c.DB.Update(func(txn *badger.Txn) error {
+					return txn.Set(JobsCacheKey, buf.Bytes())
+				})
+			}
 		}
 	}
 

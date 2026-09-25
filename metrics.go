@@ -209,12 +209,6 @@ func collectMetricsStream(ctx context.Context, c protos.CronjobClient, subSystem
 		}
 
 		processCronjobsResponse(cronjobsResponse.Cronjobs, subSystem, metricsNamesMap)
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("metrics collection canceled: %w", ctx.Err())
-		case <-time.After(10 * time.Second):
-		}
 	}
 }
 
