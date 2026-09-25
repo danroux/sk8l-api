@@ -34,8 +34,6 @@ import (
 //go:embed annotations.tmpl
 var content embed.FS
 
-var refreshInterval = time.Second * store.RefreshSeconds
-
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
@@ -152,8 +150,9 @@ func (s *Sk8lServer) Run(metricsCxt context.Context) {
 }
 
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
-	for {
-		ctx := stream.Context()
+	ctx := stream.Context()
+
+	send := func() error {
 		cronJobList, err := s.FindCronjobs()
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindCronjobs")
@@ -189,30 +188,44 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 				return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 			})
 
-		y := &protos.CronjobsResponse{
-			Cronjobs: cronjobs,
+		if err := stream.Send(&protos.CronjobsResponse{Cronjobs: cronjobs}); err != nil {
+			return fmt.Errorf("sk8l#GetCronjobs: stream.Send() failed: %w", err)
 		}
+		return nil
+	}
 
-		select {
-		case <-stream.Context().Done():
-			err := stream.Context().Err()
-			log.Error().
-				Err(err).
-				Str("operation", "GetCronJobs").
-				Msg("stream context done: client canceled or deadline exceeded")
-			return fmt.Errorf("sk8l#GetCronjobs: stream.Context().Done(): %w", err)
-		default:
-			if err := stream.Send(y); err != nil {
-				return fmt.Errorf("sk8l#GetCronjobs: stream.Send() failed: %w", err)
+	if err := send(); err != nil {
+		return err
+	}
+
+	notifyCh := make(chan struct{}, 1)
+	go func() {
+		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
 			}
-			time.Sleep(refreshInterval)
+			return nil
+		}, store.CronjobsCacheKey, store.JobsCacheKey)
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifyCh:
+			if err := send(); err != nil {
+				return err
+			}
 		}
 	}
 }
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
-	for {
-		ctx := stream.Context()
+	ctx := stream.Context()
+	cronjobKey := []byte(fmt.Sprintf(store.CronjobsKeyFmt, in.CronjobNamespace, in.CronjobName))
+
+	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindCronjob")
@@ -226,18 +239,45 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 		}
 
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
-		cronJobResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
-		if err := stream.Send(cronJobResponse); err != nil {
+		if err := stream.Send(s.cronJobResponse(*cronjob, jobsForCronjob)); err != nil {
 			return fmt.Errorf("sk8l#GetCronjob: stream.Send() failed: %w", err)
 		}
+		return nil
+	}
 
-		time.Sleep(refreshInterval)
+	if err := send(); err != nil {
+		return err
+	}
+
+	notifyCh := make(chan struct{}, 1)
+	go func() {
+		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+			return nil
+		}, cronjobKey, store.JobsCacheKey)
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifyCh:
+			if err := send(); err != nil {
+				return err
+			}
+		}
 	}
 }
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
-	for {
-		ctx := stream.Context()
+	ctx := stream.Context()
+	cronjobKey := []byte(fmt.Sprintf(store.CronjobsKeyFmt, in.CronjobNamespace, in.CronjobName))
+	jobPodsPrefix := []byte("jobs_pods_for_job_")
+
+	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetCronjobPods").Msg("FindCronjob")
@@ -249,34 +289,57 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 		}
 
 		jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
-
 		cronjobResponse := s.cronJobResponse(*cronjob, jobs)
-		lightweightCronjobPodsResponse := &protos.CronjobResponse{
-			Name:      cronjob.Name,
-			Namespace: cronjob.Namespace,
-			Jobs:      cronjobResponse.Jobs,
-		}
 
 		slices.SortFunc(cronjobResponse.JobsPods,
 			func(a, b *protos.PodResponse) int {
 				return strings.Compare(a.Status.StartTime, b.Status.StartTime)
 			})
 
-		cronjobPodsResponse := &protos.CronjobPodsResponse{
-			Pods:    cronjobResponse.JobsPods,
-			Cronjob: lightweightCronjobPodsResponse,
-		}
-
-		if err := stream.Send(cronjobPodsResponse); err != nil {
+		if err := stream.Send(&protos.CronjobPodsResponse{
+			Pods: cronjobResponse.JobsPods,
+			Cronjob: &protos.CronjobResponse{
+				Name:      cronjob.Name,
+				Namespace: cronjob.Namespace,
+				Jobs:      cronjobResponse.Jobs,
+			},
+		}); err != nil {
 			return fmt.Errorf("sk8l#GetCronjobPods: stream.Send() failed: %w", err)
 		}
+		return nil
+	}
 
-		time.Sleep(refreshInterval)
+	if err := send(); err != nil {
+		return err
+	}
+
+	notifyCh := make(chan struct{}, 1)
+	go func() {
+		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+			return nil
+		}, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifyCh:
+			if err := send(); err != nil {
+				return err
+			}
+		}
 	}
 }
 
 func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJobsServer) error {
-	for {
+	ctx := stream.Context()
+
+	send := func() error {
 		jobList, err := s.FindJobs()
 		if err != nil {
 			log.Error().Err(err).Str("operation", "GetJobs").Msg("FindJobs")
@@ -297,15 +360,36 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 			jobs = append(jobs, s.buildJobResponse(job))
 		}
 
-		y := &protos.JobsResponse{
-			Jobs: jobs,
-		}
-
-		if err := stream.Send(y); err != nil {
+		if err := stream.Send(&protos.JobsResponse{Jobs: jobs}); err != nil {
 			return fmt.Errorf("sk8l#GetJobs: stream.Send() failed: %w", err)
 		}
+		return nil
+	}
 
-		time.Sleep(refreshInterval)
+	if err := send(); err != nil {
+		return err
+	}
+
+	notifyCh := make(chan struct{}, 1)
+	go func() {
+		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+			return nil
+		}, store.JobsCacheKey)
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifyCh:
+			if err := send(); err != nil {
+				return err
+			}
+		}
 	}
 }
 

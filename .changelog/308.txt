@@ -1,0 +1,4 @@
+```release-note:improvement
+go: Replace time.Sleep polling in GetCronjobs, GetCronjob, GetCronjobPods, and GetJobs with event-driven gRPC streaming via Badger db.Subscribe, eliminating redundant sends, update latency, and
+context cancellation blindness
+```

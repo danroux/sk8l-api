@@ -12,6 +12,7 @@ import (
 	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/internal/logger"
 	badger "github.com/dgraph-io/badger/v4"
+	badgerpb "github.com/dgraph-io/badger/v4/pb"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
@@ -124,6 +125,21 @@ func (c *CronJobDBStore) Ping() error {
 
 	if err := c.DB.View(func(_ *badger.Txn) error { return nil }); err != nil {
 		return fmt.Errorf("store#Ping: %w", err)
+	}
+	return nil
+}
+
+// Subscribe watches Badger for committed writes matching any of the given key
+// prefixes and calls fn after each transaction. It blocks until ctx is canceled
+// or an error occurs. fn receives the list of affected key-value pairs; callers
+// that only need change notification (not the values themselves) may ignore it.
+func (c *CronJobDBStore) Subscribe(ctx context.Context, fn func(*badger.KVList) error, prefixes ...[]byte) error {
+	matches := make([]badgerpb.Match, len(prefixes))
+	for i, p := range prefixes {
+		matches[i] = badgerpb.Match{Prefix: p}
+	}
+	if err := c.DB.Subscribe(ctx, fn, matches); err != nil {
+		return fmt.Errorf("store#Subscribe: %w", err)
 	}
 	return nil
 }
