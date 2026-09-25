@@ -28,7 +28,7 @@ pid=$!
 sleep 5
 kill $pid
 
-cronjobs_count=$(jq -r '[.cronjobs[].name] | length' cronjobs.json)
+cronjobs_count=$(jq -s 'last | [.cronjobs[].name] | length' cronjobs.json)
 
 if [ "$cronjobs_count" -ne "$EXPECTED_CRONJOBS_COUNT" ]; then
   echo "Error: Expected $EXPECTED_CRONJOBS_COUNT cronjobs, but got $cronjobs_count"
@@ -44,7 +44,7 @@ pid=$!
 sleep 5
 kill $pid
 
-jq -r '[.jobs[].name]' jobs.json > jobs_names.json
+jq -s 'last | [.jobs[].name]' jobs.json > jobs_names.json
 if grep -q "sk8l-demo-job" jobs_names.json; then
   echo "Test passed"
 else
