@@ -24,6 +24,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +38,14 @@ var content embed.FS
 
 var jobPodsPrefix = []byte("jobs_pods_for_job_")
 var streamHeartbeatInterval = time.Second * store.RefreshSeconds
+
+// isClientCanceled checks if the error or context indicates a client-side cancellation.
+func isClientCanceled(ctx context.Context, err error) bool {
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	return grpcstatus.Code(err) == codes.Canceled
+}
 
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
@@ -104,8 +114,12 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 	ticker := time.NewTicker(s.watchInterval)
 	defer ticker.Stop()
 
-	send := func(status grpc_health_v1.HealthCheckResponse_ServingStatus) error {
-		if err := stream.Send(&grpc_health_v1.HealthCheckResponse{Status: status}); err != nil {
+	send := func(servingStatus grpc_health_v1.HealthCheckResponse_ServingStatus) error {
+		if err := stream.Send(&grpc_health_v1.HealthCheckResponse{Status: servingStatus}); err != nil {
+			if isClientCanceled(stream.Context(), err) {
+				log.Debug().Str("operation", "Watch#stream.Send").Msg("stream canceled by client")
+				return nil
+			}
 			log.Error().
 				Err(err).
 				Str("operation", "Watch#stream.Send").
@@ -133,6 +147,9 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 		case <-stream.Context().Done():
 			return nil
 		case <-ticker.C:
+			if stream.Context().Err() != nil {
+				return nil
+			}
 			newStatus := healthStatus()
 			if newStatus == currentStatus {
 				continue
@@ -158,12 +175,20 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 	send := func() error {
 		cronJobList, err := s.FindCronjobs()
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting FindCronjobs")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindCronjobs")
 			return fmt.Errorf("sk8l#GetCronjobs: FindCronjobs() failed: %w", err)
 		}
 
 		jobsMapped, err := s.FindJobsMapped(ctx)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting FindJobsMapped")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindJobsMapped")
 			return fmt.Errorf("sk8l#GetCronjobs: FindJobsMapped() failed: %w", err)
 		}
@@ -192,6 +217,10 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 			})
 
 		if err := stream.Send(&protos.CronjobsResponse{Cronjobs: cronjobs}); err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting stream.Send")
+				return nil
+			}
 			return fmt.Errorf("sk8l#GetCronjobs: stream.Send() failed: %w", err)
 		}
 		return nil
@@ -220,10 +249,16 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		case <-ctx.Done():
 			return nil
 		case <-notifyCh:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err := send(); err != nil {
 				return err
 			}
 		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err := send(); err != nil {
 				return err
 			}
@@ -238,18 +273,30 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjob").Msg("client canceled stream; aborting FindCronjob")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindCronjob")
 			return fmt.Errorf("sk8l#GetCronjob: FindCronjob() failed: %w", err)
 		}
 
 		jobsMapped, err := s.FindJobsMapped(ctx)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjob").Msg("client canceled stream; aborting FindJobsMapped")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindJobsMapped")
 			return fmt.Errorf("sk8l#GetCronjob: FindJobsMapped() failed: %w", err)
 		}
 
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
 		if err := stream.Send(s.cronJobResponse(*cronjob, jobsForCronjob)); err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjob").Msg("client canceled stream; aborting stream.Send")
+				return nil
+			}
 			return fmt.Errorf("sk8l#GetCronjob: stream.Send() failed: %w", err)
 		}
 		return nil
@@ -278,10 +325,16 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 		case <-ctx.Done():
 			return nil
 		case <-notifyCh:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err := send(); err != nil {
 				return err
 			}
 		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err := send(); err != nil {
 				return err
 			}
@@ -296,12 +349,22 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting FindCronjob")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjobPods").Msg("FindCronjob")
+			return fmt.Errorf("sk8l#GetCronjobPods: FindCronjob() failed: %w", err)
 		}
 
 		jobsMapped, err := s.FindJobsMapped(ctx)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting FindJobsMapped")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjobPods").Msg("FindJobsMapped")
+			return fmt.Errorf("sk8l#GetCronjobPods: FindJobsMapped() failed: %w", err)
 		}
 
 		jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
@@ -320,6 +383,10 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 				Jobs:      cronjobResponse.Jobs,
 			},
 		}); err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting stream.Send")
+				return nil
+			}
 			return fmt.Errorf("sk8l#GetCronjobPods: stream.Send() failed: %w", err)
 		}
 		return nil
@@ -348,10 +415,16 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 		case <-ctx.Done():
 			return nil
 		case <-notifyCh:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err := send(); err != nil {
 				return err
 			}
 		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err := send(); err != nil {
 				return err
 			}
@@ -365,6 +438,10 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 	send := func() error {
 		jobList, err := s.FindJobs()
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetJobs").Msg("client canceled stream; aborting FindJobs")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetJobs").Msg("FindJobs")
 			return fmt.Errorf("sk8l#GetJobs: FindJobs() failed: %w", err)
 		}
@@ -384,6 +461,10 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 		}
 
 		if err := stream.Send(&protos.JobsResponse{Jobs: jobs}); err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetJobs").Msg("client canceled stream; aborting stream.Send")
+				return nil
+			}
 			return fmt.Errorf("sk8l#GetJobs: stream.Send() failed: %w", err)
 		}
 		return nil
@@ -412,10 +493,16 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 		case <-ctx.Done():
 			return nil
 		case <-notifyCh:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err := send(); err != nil {
 				return err
 			}
 		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err := send(); err != nil {
 				return err
 			}
