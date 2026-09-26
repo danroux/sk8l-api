@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump actions/setup-go from 6.4.0 to 7.0.0
+
+gha:(deps): bump actions/setup-go from 6.4.0 to 7.0.0
+
+Bumps [actions/setup-go](https://github.com/actions/setup-go) from 6.4.0 to 7.0.0.
+- [Release notes](https://github.com/actions/setup-go/releases)
+- [Commits](https://github.com/actions/setup-go/compare/4a3601121dd01d1626a1e23e37211e3254c1c06c...b7ad1dad31e06c5925ef5d2fc7ad053ef454303e)
+
+---
+updated-dependencies:
+- dependency-name: actions/setup-go
+  dependency-version: 7.0.0
+  dependency-type: direct:production
+  update-type: version-update:semver-major
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
