@@ -12,6 +12,7 @@ import (
 	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/internal/logger"
 	badger "github.com/dgraph-io/badger/v4"
+	badgerpb "github.com/dgraph-io/badger/v4/pb"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
@@ -128,6 +129,21 @@ func (c *CronJobDBStore) Ping() error {
 	return nil
 }
 
+// Subscribe watches Badger for committed writes matching any of the given key
+// prefixes and calls fn after each transaction. It blocks until ctx is canceled
+// or an error occurs. fn receives the list of affected key-value pairs; callers
+// that only need change notification (not the values themselves) may ignore it.
+func (c *CronJobDBStore) Subscribe(ctx context.Context, fn func(*badger.KVList) error, prefixes ...[]byte) error {
+	matches := make([]badgerpb.Match, len(prefixes))
+	for i, p := range prefixes {
+		matches[i] = badgerpb.Match{Prefix: p}
+	}
+	if err := c.DB.Subscribe(ctx, fn, matches); err != nil {
+		return fmt.Errorf("store#Subscribe: %w", err)
+	}
+	return nil
+}
+
 func (c *CronJobDBStore) GetAndStore(key []byte, apiCall APICall) ([]byte, error) {
 	var valueResponse []byte
 	err := c.DB.Update(func(txn *badger.Txn) error {
@@ -209,6 +225,16 @@ func (c *CronJobDBStore) FindCronjobs() (*batchv1.CronJobList, error) {
 }
 
 func (c *CronJobDBStore) FindCronjob(ctx context.Context, cronjobNamespace, cronjobName string) (*batchv1.CronJob, error) {
+	cronjobs, err := c.FindCronjobs()
+	if err == nil {
+		for i := range cronjobs.Items {
+			cj := &cronjobs.Items[i]
+			if cj.Namespace == cronjobNamespace && cj.Name == cronjobName {
+				return cj, nil
+			}
+		}
+	}
+
 	gCjCall := func() ([]byte, error) {
 		cronjob, err := c.K8sClient.GetCronjob(ctx, cronjobNamespace, cronjobName)
 		if err != nil {
@@ -252,29 +278,25 @@ func (c *CronJobDBStore) FindJobs() (*batchv1.JobList, error) {
 }
 
 func (c *CronJobDBStore) FindJobsMapped(ctx context.Context) (map[string][]*batchv1.Job, error) {
-	jobs, err := c.GetAndStore(JobsMappedCacheKey, func() ([]byte, error) {
-		jobList, err := c.K8sClient.GetAllJobs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("GetAllJobs failed: %w", err)
-		}
-		var buf bytes.Buffer
-		if err := k8sSerializer.Encode(jobList, &buf); err != nil {
-			log.Error().
-				Err(err).
-				Str("operation", "FindJobsMapped").
-				Msg("k8sSerializer.Encode")
-			return nil, fmt.Errorf("k8sSerializer.Encode failed: %w", err)
-		}
-		return buf.Bytes(), nil
-	})
-
+	jobList, err := c.FindJobs()
 	if err != nil {
-		return nil, fmt.Errorf("FindJobsMapped#GetAndStore: %w", err)
+		return nil, fmt.Errorf("FindJobsMapped#FindJobs: %w", err)
 	}
 
-	jobList := &batchv1.JobList{}
-	if _, _, err := k8sSerializer.Decode(jobs, nil, jobList); err != nil {
-		return nil, fmt.Errorf("FindJobsMapped#Decode: %w", err)
+	if c.K8sClient != nil {
+		k8sJobs, err := c.K8sClient.GetAllJobs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("FindJobsMapped#GetAllJobs: %w", err)
+		}
+		if len(k8sJobs.Items) > 0 {
+			jobList = k8sJobs
+			var buf bytes.Buffer
+			if err := k8sSerializer.Encode(jobList, &buf); err == nil && c.DB != nil && !c.DB.IsClosed() {
+				_ = c.DB.Update(func(txn *badger.Txn) error {
+					return txn.Set(JobsCacheKey, buf.Bytes())
+				})
+			}
+		}
 	}
 
 	mapped := make(map[string][]*batchv1.Job)

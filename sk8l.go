@@ -24,6 +24,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +36,16 @@ import (
 //go:embed annotations.tmpl
 var content embed.FS
 
-var refreshInterval = time.Second * store.RefreshSeconds
+var jobPodsPrefix = []byte("jobs_pods_for_job_")
+var streamHeartbeatInterval = time.Second * store.RefreshSeconds
+
+// isClientCanceled checks if the error or context indicates a client-side cancellation.
+func isClientCanceled(ctx context.Context, err error) bool {
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	return grpcstatus.Code(err) == codes.Canceled
+}
 
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
@@ -103,8 +114,12 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 	ticker := time.NewTicker(s.watchInterval)
 	defer ticker.Stop()
 
-	send := func(status grpc_health_v1.HealthCheckResponse_ServingStatus) error {
-		if err := stream.Send(&grpc_health_v1.HealthCheckResponse{Status: status}); err != nil {
+	send := func(servingStatus grpc_health_v1.HealthCheckResponse_ServingStatus) error {
+		if err := stream.Send(&grpc_health_v1.HealthCheckResponse{Status: servingStatus}); err != nil {
+			if isClientCanceled(stream.Context(), err) {
+				log.Debug().Str("operation", "Watch#stream.Send").Msg("stream canceled by client")
+				return nil
+			}
 			log.Error().
 				Err(err).
 				Str("operation", "Watch#stream.Send").
@@ -132,6 +147,9 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 		case <-stream.Context().Done():
 			return nil
 		case <-ticker.C:
+			if stream.Context().Err() != nil {
+				return nil
+			}
 			newStatus := healthStatus()
 			if newStatus == currentStatus {
 				continue
@@ -152,16 +170,25 @@ func (s *Sk8lServer) Run(metricsCxt context.Context) {
 }
 
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
-	for {
-		ctx := stream.Context()
+	ctx := stream.Context()
+
+	send := func() error {
 		cronJobList, err := s.FindCronjobs()
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting FindCronjobs")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindCronjobs")
 			return fmt.Errorf("sk8l#GetCronjobs: FindCronjobs() failed: %w", err)
 		}
 
 		jobsMapped, err := s.FindJobsMapped(ctx)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting FindJobsMapped")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindJobsMapped")
 			return fmt.Errorf("sk8l#GetCronjobs: FindJobsMapped() failed: %w", err)
 		}
@@ -189,96 +216,232 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 				return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 			})
 
-		y := &protos.CronjobsResponse{
-			Cronjobs: cronjobs,
-		}
-
-		select {
-		case <-stream.Context().Done():
-			err := stream.Context().Err()
-			log.Error().
-				Err(err).
-				Str("operation", "GetCronJobs").
-				Msg("stream context done: client canceled or deadline exceeded")
-			return fmt.Errorf("sk8l#GetCronjobs: stream.Context().Done(): %w", err)
-		default:
-			if err := stream.Send(y); err != nil {
-				return fmt.Errorf("sk8l#GetCronjobs: stream.Send() failed: %w", err)
+		if err := stream.Send(&protos.CronjobsResponse{Cronjobs: cronjobs}); err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting stream.Send")
+				return nil
 			}
-			time.Sleep(refreshInterval)
+			return fmt.Errorf("sk8l#GetCronjobs: stream.Send() failed: %w", err)
+		}
+		return nil
+	}
+
+	if err := send(); err != nil {
+		return err
+	}
+
+	notifyCh := make(chan struct{}, 1)
+	go func() {
+		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+			return nil
+		}, store.CronjobsCacheKey, store.JobsCacheKey, jobPodsPrefix)
+	}()
+
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifyCh:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
 		}
 	}
 }
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
-	for {
-		ctx := stream.Context()
+	ctx := stream.Context()
+	cronjobKey := []byte(fmt.Sprintf(store.CronjobsKeyFmt, in.CronjobNamespace, in.CronjobName))
+
+	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjob").Msg("client canceled stream; aborting FindCronjob")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindCronjob")
 			return fmt.Errorf("sk8l#GetCronjob: FindCronjob() failed: %w", err)
 		}
 
 		jobsMapped, err := s.FindJobsMapped(ctx)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjob").Msg("client canceled stream; aborting FindJobsMapped")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjob").Msg("FindJobsMapped")
 			return fmt.Errorf("sk8l#GetCronjob: FindJobsMapped() failed: %w", err)
 		}
 
 		jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjob.Name)
-		cronJobResponse := s.cronJobResponse(*cronjob, jobsForCronjob)
-		if err := stream.Send(cronJobResponse); err != nil {
+		if err := stream.Send(s.cronJobResponse(*cronjob, jobsForCronjob)); err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjob").Msg("client canceled stream; aborting stream.Send")
+				return nil
+			}
 			return fmt.Errorf("sk8l#GetCronjob: stream.Send() failed: %w", err)
 		}
+		return nil
+	}
 
-		time.Sleep(refreshInterval)
+	if err := send(); err != nil {
+		return err
+	}
+
+	notifyCh := make(chan struct{}, 1)
+	go func() {
+		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+			return nil
+		}, store.CronjobsCacheKey, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
+	}()
+
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifyCh:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		}
 	}
 }
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
-	for {
-		ctx := stream.Context()
+	ctx := stream.Context()
+	cronjobKey := []byte(fmt.Sprintf(store.CronjobsKeyFmt, in.CronjobNamespace, in.CronjobName))
+
+	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting FindCronjob")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjobPods").Msg("FindCronjob")
+			return fmt.Errorf("sk8l#GetCronjobPods: FindCronjob() failed: %w", err)
 		}
 
 		jobsMapped, err := s.FindJobsMapped(ctx)
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting FindJobsMapped")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetCronjobPods").Msg("FindJobsMapped")
+			return fmt.Errorf("sk8l#GetCronjobPods: FindJobsMapped() failed: %w", err)
 		}
 
 		jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
-
 		cronjobResponse := s.cronJobResponse(*cronjob, jobs)
-		lightweightCronjobPodsResponse := &protos.CronjobResponse{
-			Name:      cronjob.Name,
-			Namespace: cronjob.Namespace,
-			Jobs:      cronjobResponse.Jobs,
-		}
 
 		slices.SortFunc(cronjobResponse.JobsPods,
 			func(a, b *protos.PodResponse) int {
 				return strings.Compare(a.Status.StartTime, b.Status.StartTime)
 			})
 
-		cronjobPodsResponse := &protos.CronjobPodsResponse{
-			Pods:    cronjobResponse.JobsPods,
-			Cronjob: lightweightCronjobPodsResponse,
-		}
-
-		if err := stream.Send(cronjobPodsResponse); err != nil {
+		if err := stream.Send(&protos.CronjobPodsResponse{
+			Pods: cronjobResponse.JobsPods,
+			Cronjob: &protos.CronjobResponse{
+				Name:      cronjob.Name,
+				Namespace: cronjob.Namespace,
+				Jobs:      cronjobResponse.Jobs,
+			},
+		}); err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting stream.Send")
+				return nil
+			}
 			return fmt.Errorf("sk8l#GetCronjobPods: stream.Send() failed: %w", err)
 		}
+		return nil
+	}
 
-		time.Sleep(refreshInterval)
+	if err := send(); err != nil {
+		return err
+	}
+
+	notifyCh := make(chan struct{}, 1)
+	go func() {
+		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+			return nil
+		}, store.CronjobsCacheKey, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
+	}()
+
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifyCh:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		}
 	}
 }
 
 func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJobsServer) error {
-	for {
+	ctx := stream.Context()
+
+	send := func() error {
 		jobList, err := s.FindJobs()
 		if err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetJobs").Msg("client canceled stream; aborting FindJobs")
+				return nil
+			}
 			log.Error().Err(err).Str("operation", "GetJobs").Msg("FindJobs")
 			return fmt.Errorf("sk8l#GetJobs: FindJobs() failed: %w", err)
 		}
@@ -297,15 +460,53 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 			jobs = append(jobs, s.buildJobResponse(job))
 		}
 
-		y := &protos.JobsResponse{
-			Jobs: jobs,
-		}
-
-		if err := stream.Send(y); err != nil {
+		if err := stream.Send(&protos.JobsResponse{Jobs: jobs}); err != nil {
+			if isClientCanceled(ctx, err) {
+				log.Debug().Str("operation", "GetJobs").Msg("client canceled stream; aborting stream.Send")
+				return nil
+			}
 			return fmt.Errorf("sk8l#GetJobs: stream.Send() failed: %w", err)
 		}
+		return nil
+	}
 
-		time.Sleep(refreshInterval)
+	if err := send(); err != nil {
+		return err
+	}
+
+	notifyCh := make(chan struct{}, 1)
+	go func() {
+		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+			return nil
+		}, store.JobsCacheKey)
+	}()
+
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifyCh:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		}
 	}
 }
 
