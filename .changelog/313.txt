@@ -1,0 +1,19 @@
+```release-note:enhancement
+ci/dependabot: gha:(deps): bump helm/kind-action from 1.15.0 to 1.15.1
+
+gha:(deps): bump helm/kind-action from 1.15.0 to 1.15.1
+
+Bumps [helm/kind-action](https://github.com/helm/kind-action) from 1.15.0 to 1.15.1.
+- [Release notes](https://github.com/helm/kind-action/releases)
+- [Commits](https://github.com/helm/kind-action/compare/v1.15.0...v1.15.1)
+
+---
+updated-dependencies:
+- dependency-name: helm/kind-action
+  dependency-version: 1.15.1
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
