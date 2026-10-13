@@ -1,0 +1,3 @@
+```release-note:enhancement
+ci: Add on-demand preview environment workflow deploying ephemeral namespaces via ArgoCD
+```

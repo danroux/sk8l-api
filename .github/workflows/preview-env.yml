@@ -1,0 +1,88 @@
+name: Preview Environment
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, synchronize, closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    if: |
+      (github.event.action == 'labeled' && github.event.label.name == 'deploy-preview') ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'deploy-preview') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'deploy-preview')) ||
+      (github.event.action == 'closed')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sk8l-config
+        uses: actions/checkout@v4
+        with:
+          repository: danroux/sk8l-config
+          token: ${{ secrets.CONFIG_REPO_PAT }}
+          ref: master
+
+      - name: Deploy Preview Manifest
+        if: |
+          (github.event.action == 'labeled' && github.event.label.name == 'deploy-preview') ||
+          (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'deploy-preview'))
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM="${{ github.event.pull_request.number }}"
+          APP_NAME="sk8l-api-pr-${PR_NUM}"
+          NAMESPACE="sk8l-api-pr-${PR_NUM}"
+          FILE="apps/previews/api-pr-${PR_NUM}.yaml"
+
+          CHART_VERSION=$(yq '.spec.sources[0].targetRevision' apps/sk8l.yaml)
+          STABLE_UI_TAG=$(yq '.sk8lUi.imageTag' values/sk8l/values.yaml)
+
+          mkdir -p apps/previews
+
+          sed -e "s|APP_NAME_PLACEHOLDER|${APP_NAME}|g" \
+              -e "s|NAMESPACE_PLACEHOLDER|${NAMESPACE}|g" \
+              -e "s|CHART_VERSION_PLACEHOLDER|${CHART_VERSION}|g" \
+              -e "s|UI_IMAGE_PLACEHOLDER|danroux/sk8l-ui|g" \
+              -e "s|UI_TAG_PLACEHOLDER|${STABLE_UI_TAG}|g" \
+              -e "s|API_IMAGE_PLACEHOLDER|ghcr.io/danroux/sk8l-api|g" \
+              -e "s|API_TAG_PLACEHOLDER|dev-${PR_NUM}|g" \
+              manifests/preview-template/application.yaml > "$FILE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$FILE"
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(preview): deploy preview for sk8l-api PR #${PR_NUM}"
+            git pull --rebase origin master
+            git push origin master
+
+            if [ "${{ github.event.action }}" = "labeled" ]; then
+              COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **API (PR)**: \`ghcr.io/danroux/sk8l-api:dev-%s\`\n- **UI (Stable)**: \`danroux/sk8l-ui:%s\`\n\nPara acceder vía port-forward:\n\`\`\`bash\nkubectl port-forward -n %s svc/sk8l-ui 8001:8001 9080:9080\n\`\`\`\nUI: https://localhost:8001" \
+                "${NAMESPACE}" "${APP_NAME}" "${CHART_VERSION}" "${PR_NUM}" "${STABLE_UI_TAG}" "${NAMESPACE}")
+              gh pr comment "${PR_NUM}" --repo "${{ github.repository }}" --body "${COMMENT_BODY}" || true
+            fi
+          fi
+
+      - name: Teardown Preview Manifest
+        if: |
+          (github.event.action == 'unlabeled' && github.event.label.name == 'deploy-preview') ||
+          (github.event.action == 'closed')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM="${{ github.event.pull_request.number }}"
+          NAMESPACE="sk8l-api-pr-${PR_NUM}"
+          FILE="apps/previews/api-pr-${PR_NUM}.yaml"
+
+          if [ -f "$FILE" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git rm "$FILE"
+            git commit -m "chore(preview): teardown preview for sk8l-api PR #${PR_NUM}"
+            git pull --rebase origin master
+            git push origin master
+
+            gh pr comment "${PR_NUM}" --repo "${{ github.repository }}" --body "🧹 **Preview environment destroyed.** Namespace \`${NAMESPACE}\` ha sido eliminado." || true
+          fi
