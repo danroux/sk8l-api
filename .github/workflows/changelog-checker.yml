@@ -15,6 +15,9 @@ permissions:
 
 jobs:
   changelog:
+    if: |
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      github.event.label.name == 'pr/no-changelog'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,7 +53,7 @@ jobs:
           PR_NUM="${{ github.event.pull_request.number }}"
           FILE=".changelog/${PR_NUM}.txt"
 
-          if echo "${{ toJson(github.event.pull_request.labels.*.name) }}" | grep -q '"pr/no-changelog"'; then
+          if [ "${{ contains(github.event.pull_request.labels.*.name, 'pr/no-changelog') }}" = "true" ]; then
             echo "Skipping: 'pr/no-changelog' label is present."
             exit 0
           fi
