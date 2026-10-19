@@ -1,9 +1,5 @@
 FROM --platform=$BUILDPLATFORM golang:1.27.1 AS build
 
-LABEL org.opencontainers.image.source=https://github.com/danroux/sk8l-api
-LABEL org.opencontainers.image.description="sk8l-api image"
-LABEL org.opencontainers.image.licenses=MIT
-
 WORKDIR /src/
 
 ARG TARGETOS TARGETARCH
@@ -27,6 +23,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build,id=gocache make go-out
 COPY . .
 
 FROM alpine:3.24.2
+
+LABEL org.opencontainers.image.source=https://github.com/danroux/sk8l-api
+LABEL org.opencontainers.image.description="sk8l-api image"
+LABEL org.opencontainers.image.licenses=MIT
 
 WORKDIR /app/
 
