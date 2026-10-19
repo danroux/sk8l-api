@@ -163,7 +163,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "{{ .Expr }}",
+          "expr": {{ marshal .Expr }},
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -240,7 +240,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "{{ .Expr }}",
+          "expr": {{ marshal .Expr }},
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -363,7 +363,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "{{ .Expr }}",
+          "expr": {{ marshal .Expr }},
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -449,7 +449,7 @@
         {{- if $targetIndex}},{{end}}
           {
             "refId": "A{{ $targetIndex }}",
-            "expr": "{{ .Expr }}",
+            "expr": {{ marshal .Expr }},
             "range": true,
             "instant": false,
             "datasource": {
@@ -586,7 +586,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "{{ .Expr }}",
+          "expr": {{ marshal .Expr }},
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -627,10 +627,9 @@
         "datasource": "Prometheus",
         "refresh": 2,
         "query": {
-          "query": "label_values(__name__)",
+          "query": "label_values(sk8l_cronjob_last_run_status, cronjob)",
           "refId": "StandardVariableQuery"
         },
-        "regex": "^sk8l_[^_]+_([^_]+(?:_[^_]+)*)_(?:completion|duration_seconds|failure)_total$",
         "sort": 1,
         "multi": true,
         "name": "cronjob",

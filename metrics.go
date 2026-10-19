@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"regexp"
 	"sync"
 	"time"
 
@@ -19,169 +17,189 @@ import (
 )
 
 var (
-	namespace           = os.Getenv("K8_NAMESPACE")
-	optNamespace        = "sk8l"
-	summaryMap          = &sync.Map{}
-	failingCronjobsOpts = prometheus.GaugeOpts{
-		Namespace: optNamespace,
-		Name:      "failing_cronjobs_total",
-		Subsystem: namespace,
-	}
-	runningCronjobsOpts = prometheus.GaugeOpts{
-		Namespace: optNamespace,
-		Name:      "running_cronjobs_total",
-		Subsystem: namespace,
-	}
-	completedCronjobsOpts = prometheus.GaugeOpts{
-		Namespace: optNamespace,
-		Name:      "completed_cronjobs_total",
-		Subsystem: namespace,
-	}
-	registeredCronjobsOpts = prometheus.GaugeOpts{
-		Namespace: optNamespace,
-		Name:      "registered_cronjobs_total",
-		Subsystem: namespace,
+	metricNamespace = "sk8l"
+
+	// TotalStatuses lists the status labels for summary metrics.
+	TotalStatuses = []string{
+		"registered",
+		"running",
+		"failing",
+		"completed",
 	}
 
-	failingCronjobsGauge    = promauto.NewGauge(failingCronjobsOpts)
-	runningCronjobsGauge    = promauto.NewGauge(runningCronjobsOpts)
-	completedCronjobsGauge  = promauto.NewGauge(completedCronjobsOpts)
-	registeredCronjobsGauge = promauto.NewGauge(registeredCronjobsOpts)
+	// cronjobsCountGauge tracks cluster/namespace overview counts by status.
+	cronjobsCountGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "cronjobs_count",
+			Help:      "Current count of cronjobs grouped by namespace and status (registered, running, failing, completed).",
+		},
+		[]string{"namespace", "status"},
+	)
 
-	metricNameRegex = regexp.MustCompile(`_*[^0-9A-Za-z_]+_*`)
+	// cronjobLastRunStatusGauge tracks the latest run status per cronjob.
+	cronjobLastRunStatusGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "cronjob_last_run_status",
+			Help:      "Status of the last execution of a cronjob (1 if true, 0 if false).",
+		},
+		[]string{"namespace", "cronjob", "status"},
+	)
 
-	TotalMetricNames = []string{
-		registeredCronjobsOpts.Name,
-		completedCronjobsOpts.Name,
-		runningCronjobsOpts.Name,
-		failingCronjobsOpts.Name,
-	}
+	// cronjobLastRunDurationGauge tracks the duration of the latest cronjob execution.
+	cronjobLastRunDurationGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "cronjob_last_run_duration_seconds",
+			Help:      "Duration in seconds of the latest execution of a cronjob.",
+		},
+		[]string{"namespace", "cronjob"},
+	)
+
+	// cronjobActiveJobsGauge tracks active child jobs per cronjob.
+	cronjobActiveJobsGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "cronjob_active_jobs",
+			Help:      "Number of currently active child jobs for a cronjob.",
+		},
+		[]string{"namespace", "cronjob"},
+	)
+
+	// cronjobJobsCountGauge tracks the count of child jobs by status.
+	cronjobJobsCountGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "cronjob_jobs_count",
+			Help:      "Count of retained child jobs for a cronjob by state (succeeded, failed).",
+		},
+		[]string{"namespace", "cronjob", "status"},
+	)
+
+	// cronjobInfoGauge exports metadata and configuration for a cronjob.
+	cronjobInfoGauge = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "cronjob_info",
+			Help:      "Metadata and configuration for a cronjob (constant value of 1).",
+		},
+		[]string{"namespace", "cronjob", "schedule", "suspend"},
+	)
 )
 
-func setGaugeInMap(key string, opts prometheus.GaugeOpts, val float64) {
-	if gauge, ok := summaryMap.Load(key); ok {
-		gauge.(prometheus.Gauge).Set(val)
-		return
-	}
-	newGauge := promauto.NewGauge(opts)
-	summaryMap.Store(key, newGauge)
-	newGauge.Set(val)
-}
-
-// Computes job duration and sets the per-job duration gauge.
-func recordJobDuration(job *protos.JobResponse, sanitizedCjName, durationMetricName, subSystem string) (isFailed bool, isCompleted bool) {
-	if job.Failed {
-		isFailed = true
-	}
-	if job.Status != nil && job.Status.CompletionTime != "" {
-		isCompleted = true
-	}
-
-	sanitizedJobName := job.Name
-	labels := prometheus.Labels{"job_name": sanitizedJobName}
-	opts := prometheus.GaugeOpts{
-		Name:        durationMetricName,
-		Namespace:   optNamespace,
-		Subsystem:   subSystem,
-		Help:        fmt.Sprintf("Duration of %s in seconds", sanitizedCjName),
-		ConstLabels: labels,
-	}
-	durationKey := fmt.Sprintf(
-		"%s_%s_%s_%s_durations",
-		opts.Namespace,
-		opts.Subsystem,
-		sanitizedCjName,
-		sanitizedJobName,
-	)
-
-	var duration float64
-	if job.Status != nil && job.Status.Active > 0 {
-		duration = float64(job.DurationInS)
-	}
-	setGaugeInMap(durationKey, opts, duration)
-	return isFailed, isCompleted
-}
-
-// Sets the completion and failure gauges for a specific cronjob and stores metric names in metricsNamesMap.
-func recordSingleCronjobMetrics(
-	cj *protos.CronjobResponse,
-	subSystem string,
-	metricsNamesMap *sync.Map,
-) (running float64, failing float64, completed float64) {
-	sanitizedCjName := sanitizeMetricName(cj.Name)
-	running = float64(len(cj.RunningJobs))
-
-	completionMetricName := fmt.Sprintf("%s_completion_total", sanitizedCjName)
-	failureMetricName := fmt.Sprintf("%s_failure_total", sanitizedCjName)
-	durationMetricName := fmt.Sprintf("%s_duration_seconds", sanitizedCjName)
-
-	metricNames := []string{
-		fmt.Sprintf("%s_%s", MetricPrefix, completionMetricName),
-		fmt.Sprintf("%s_%s", MetricPrefix, failureMetricName),
-		fmt.Sprintf("%s_%s", MetricPrefix, durationMetricName),
-	}
-	metricsNamesMap.Store(sanitizedCjName, metricNames)
-
-	var cronjobFailingJobs, cronjobCompletions float64
-	for _, job := range cj.Jobs {
-		isFailed, isCompleted := recordJobDuration(job, sanitizedCjName, durationMetricName, subSystem)
-		if isFailed {
-			cronjobFailingJobs++
-		}
-		if isCompleted {
-			cronjobCompletions++
+// countRetainedJobs calculates the number of succeeded and failed child jobs.
+func countRetainedJobs(jobs []*protos.JobResponse) (succeeded, failed float64) {
+	for _, job := range jobs {
+		if job.Failed {
+			failed++
+		} else if job.Succeeded || (job.Status != nil && job.Status.CompletionTime != "") {
+			succeeded++
 		}
 	}
-
-	completionOpts := prometheus.GaugeOpts{
-		Name:      completionMetricName,
-		Namespace: optNamespace,
-		Subsystem: subSystem,
-		Help:      fmt.Sprintf("%s completion total", sanitizedCjName),
-	}
-	completionsKey := fmt.Sprintf(
-		"%s_%s_%s_completions",
-		completionOpts.Namespace,
-		completionOpts.Subsystem,
-		sanitizedCjName,
-	)
-	setGaugeInMap(completionsKey, completionOpts, cronjobCompletions)
-
-	failureOpts := prometheus.GaugeOpts{
-		Name:      failureMetricName,
-		Namespace: optNamespace,
-		Subsystem: subSystem,
-		Help:      fmt.Sprintf("%s failure total", sanitizedCjName),
-	}
-	failuresKey := fmt.Sprintf(
-		"%s_%s_%s_failures",
-		failureOpts.Namespace,
-		failureOpts.Subsystem,
-		sanitizedCjName,
-	)
-	setGaugeInMap(failuresKey, failureOpts, cronjobFailingJobs)
-
-	return running, cronjobFailingJobs, cronjobCompletions
+	return succeeded, failed
 }
 
-// Aggregates totals (running, failing, completed, registered) and updates the global gauges.
-func processCronjobsResponse(cronjobs []*protos.CronjobResponse, subSystem string, metricsNamesMap *sync.Map) {
-	registeredCronjobsGauge.Set(float64(len(cronjobs)))
+// recordSingleCronjobMetrics updates per-cronjob gauge vectors and returns state flags.
+func recordSingleCronjobMetrics(cj *protos.CronjobResponse, ns string) (running, failing, completed float64) {
+	cronjobName := cj.Name
 
-	var totalRunning, totalFailing, totalCompleted float64
+	// Active running state
+	activeJobsCount := float64(len(cj.RunningJobs))
+	cronjobActiveJobsGauge.WithLabelValues(ns, cronjobName).Set(activeJobsCount)
+	if activeJobsCount > 0 {
+		running = 1
+	}
+
+	// Failure / Success state
+	if cj.Failed {
+		failing = 1
+		cronjobLastRunStatusGauge.WithLabelValues(ns, cronjobName, "failed").Set(1)
+		cronjobLastRunStatusGauge.WithLabelValues(ns, cronjobName, "succeeded").Set(0)
+	} else {
+		cronjobLastRunStatusGauge.WithLabelValues(ns, cronjobName, "failed").Set(0)
+		cronjobLastRunStatusGauge.WithLabelValues(ns, cronjobName, "succeeded").Set(1)
+	}
+
+	if !cj.Failed && activeJobsCount == 0 && cj.LastSuccessfulTime != "" {
+		completed = 1
+	}
+
+	// Last execution duration
+	if cj.LastDuration > 0 {
+		cronjobLastRunDurationGauge.WithLabelValues(ns, cronjobName).Set(float64(cj.LastDuration))
+	} else if cj.CurrentDuration > 0 {
+		cronjobLastRunDurationGauge.WithLabelValues(ns, cronjobName).Set(float64(cj.CurrentDuration))
+	}
+
+	// Retained jobs count breakdown
+	succeededJobs, failedJobs := countRetainedJobs(cj.Jobs)
+	cronjobJobsCountGauge.WithLabelValues(ns, cronjobName, "succeeded").Set(succeededJobs)
+	cronjobJobsCountGauge.WithLabelValues(ns, cronjobName, "failed").Set(failedJobs)
+
+	// CronJob Info metadata
+	schedule := ""
+	suspend := "false"
+	if cj.Spec != nil {
+		schedule = cj.Spec.Schedule
+		if cj.Spec.Suspend {
+			suspend = "true"
+		}
+	}
+	cronjobInfoGauge.WithLabelValues(ns, cronjobName, schedule, suspend).Set(1)
+
+	return running, failing, completed
+}
+
+// ProcessCronjobsResponse aggregates status counts and updates all Prometheus metric vectors.
+func processCronjobsResponse(cronjobs []*protos.CronjobResponse, subSystem string, cronjobsMap *sync.Map) {
+	cronjobsCountGauge.Reset()
+	cronjobLastRunStatusGauge.Reset()
+	cronjobLastRunDurationGauge.Reset()
+	cronjobActiveJobsGauge.Reset()
+	cronjobJobsCountGauge.Reset()
+	cronjobInfoGauge.Reset()
+
+	var totalRegistered, totalRunning, totalFailing, totalCompleted float64
+	currentCronjobs := make(map[string]bool)
+
 	for _, cj := range cronjobs {
-		running, failing, completed := recordSingleCronjobMetrics(cj, subSystem, metricsNamesMap)
+		ns := cj.Namespace
+		if ns == "" {
+			ns = subSystem
+		}
+		currentCronjobs[cj.Name] = true
+
+		if cronjobsMap != nil {
+			cronjobsMap.Store(cj.Name, true)
+		}
+
+		totalRegistered++
+		running, failing, completed := recordSingleCronjobMetrics(cj, ns)
 		totalRunning += running
 		totalFailing += failing
 		totalCompleted += completed
 	}
 
-	runningCronjobsGauge.Set(totalRunning)
-	failingCronjobsGauge.Set(totalFailing)
-	completedCronjobsGauge.Set(totalCompleted)
+	// Update summary gauges for namespace
+	cronjobsCountGauge.WithLabelValues(subSystem, "registered").Set(totalRegistered)
+	cronjobsCountGauge.WithLabelValues(subSystem, "running").Set(totalRunning)
+	cronjobsCountGauge.WithLabelValues(subSystem, "failing").Set(totalFailing)
+	cronjobsCountGauge.WithLabelValues(subSystem, "completed").Set(totalCompleted)
+
+	// Clean up any deleted cronjobs from cronjobsMap
+	if cronjobsMap != nil {
+		cronjobsMap.Range(func(key, _ any) bool {
+			name, ok := key.(string)
+			if ok && !currentCronjobs[name] {
+				cronjobsMap.Delete(key)
+			}
+			return true
+		})
+	}
 }
 
-func collectMetricsStream(ctx context.Context, c protos.CronjobClient, subSystem string, metricsNamesMap *sync.Map) error {
+func collectMetricsStream(ctx context.Context, c protos.CronjobClient, subSystem string, cronjobsMap *sync.Map) error {
 	cronjobsClient, err := c.GetCronjobs(ctx, &protos.CronjobsRequest{})
 	if err != nil {
 		return fmt.Errorf("c.GetCronjobs failed: %w", err)
@@ -208,11 +226,11 @@ func collectMetricsStream(ctx context.Context, c protos.CronjobClient, subSystem
 			continue
 		}
 
-		processCronjobsResponse(cronjobsResponse.Cronjobs, subSystem, metricsNamesMap)
+		processCronjobsResponse(cronjobsResponse.Cronjobs, subSystem, cronjobsMap)
 	}
 }
 
-func recordMetrics(ctx context.Context, svr *Sk8lServer, metricsNamesMap *sync.Map) {
+func recordMetrics(ctx context.Context, svr *Sk8lServer, cronjobsMap *sync.Map) {
 	conn, err := grpc.NewClient(svr.GetTarget(), svr.GetDialOptions()...)
 	if err != nil {
 		log.Error().
@@ -245,7 +263,7 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer, metricsNamesMap *sync.M
 			default:
 			}
 
-			if err := collectMetricsStream(ctx, c, subSystem, metricsNamesMap); err != nil {
+			if err := collectMetricsStream(ctx, c, subSystem, cronjobsMap); err != nil {
 				if errors.Is(err, context.Canceled) {
 					return
 				}
@@ -261,9 +279,4 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer, metricsNamesMap *sync.M
 			}
 		}
 	}()
-}
-
-// https://github.com/prometheus/node_exporter/blob/4a1b77600c1873a8233f3ffb55afcedbb63b8d84/collector/helper.go#L48
-func sanitizeMetricName(metricName string) string {
-	return metricNameRegex.ReplaceAllString(metricName, "_")
 }

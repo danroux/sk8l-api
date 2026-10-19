@@ -70,7 +70,7 @@ func main() {
 	dashboardGen := dashboard.NewGenerator(
 		MetricPrefix,
 		K8Namespace,
-		TotalMetricNames,
+		TotalStatuses,
 	)
 
 	cronjobDBStore, err := store.NewCronJobDBStore(store.WithDefaultK8sClient(K8Namespace))

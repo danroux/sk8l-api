@@ -6,24 +6,24 @@ import (
 )
 
 func TestNewGenerator(t *testing.T) {
-	gen := NewGenerator("sk8l_default", "default", []string{"registered_cronjobs_total", "completed_cronjobs_total"})
+	gen := NewGenerator("sk8l_default", "default", []string{"registered", "completed"})
 	if gen.MetricPrefix != "sk8l_default" {
 		t.Errorf("expected MetricPrefix sk8l_default, got %s", gen.MetricPrefix)
 	}
 	if gen.Namespace != "default" {
 		t.Errorf("expected Namespace default, got %s", gen.Namespace)
 	}
-	if len(gen.TotalMetricNames) != 2 {
-		t.Errorf("expected 2 TotalMetricNames, got %d", len(gen.TotalMetricNames))
+	if len(gen.Statuses) != 2 {
+		t.Errorf("expected 2 Statuses, got %d", len(gen.Statuses))
 	}
 }
 
 func TestGeneratePanels_EmptyMap(t *testing.T) {
 	totalMetrics := []string{
-		"registered_cronjobs_total",
-		"completed_cronjobs_total",
-		"running_cronjobs_total",
-		"failing_cronjobs_total",
+		"registered",
+		"completed",
+		"running",
+		"failing",
 	}
 	gen := NewGenerator("sk8l_prod", "prod", totalMetrics)
 	m := &sync.Map{}
@@ -40,8 +40,8 @@ func TestGeneratePanels_EmptyMap(t *testing.T) {
 
 func TestGeneratePanels_WithMetrics(t *testing.T) {
 	totalMetrics := []string{
-		"registered_cronjobs_total",
-		"completed_cronjobs_total",
+		"registered",
+		"completed",
 	}
 	gen := NewGenerator("sk8l_staging", "staging", totalMetrics)
 	m := &sync.Map{}
