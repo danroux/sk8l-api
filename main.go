@@ -49,10 +49,11 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("setupTLS")
 	}
-	target := fmt.Sprintf("0.0.0.0:%s", APIPort)
+	listenTarget := fmt.Sprintf("0.0.0.0:%s", APIPort)
+	dialTarget := fmt.Sprintf("127.0.0.1:%s", APIPort)
 	lc := net.ListenConfig{}
 	rootCtx := context.Background()
-	ln, err := lc.Listen(rootCtx, "tcp", target)
+	ln, err := lc.Listen(rootCtx, "tcp", listenTarget)
 	if err != nil {
 		log.Fatal().Err(err).Msg("tlsListen")
 	}
@@ -78,7 +79,7 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to initialize cronjobDBStore")
 	}
 	sk8lServer := NewSk8lServer(
-		target,
+		dialTarget,
 		cronjobDBStore,
 		dashboardGen,
 		metricsNamesMap,
