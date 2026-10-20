@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/danroux/sk8l/internal/dashboard"
 	"github.com/danroux/sk8l/internal/logger"
 	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/protos"
@@ -39,7 +38,6 @@ var (
 	certFile      = filepath.Join("/etc", "sk8l-certs", "server-cert.pem")
 	certKeyFile   = filepath.Join("/etc", "sk8l-certs", "server-key.pem")
 	caFile        = filepath.Join("/etc", "sk8l-certs", "ca-cert.pem")
-	MetricPrefix  = fmt.Sprintf("sk8l_%s", K8Namespace)
 )
 
 func main() {
@@ -68,11 +66,6 @@ func main() {
 	probeS := grpc.NewServer()
 
 	metricsNamesMap := &sync.Map{}
-	dashboardGen := dashboard.NewGenerator(
-		MetricPrefix,
-		K8Namespace,
-		TotalStatuses,
-	)
 
 	cronjobDBStore, err := store.NewCronJobDBStore(store.WithDefaultK8sClient(K8Namespace))
 	if err != nil {
@@ -85,7 +78,6 @@ func main() {
 	sk8lServer := NewSk8lServer(
 		dialTarget,
 		cronjobDBStore,
-		dashboardGen,
 		metricsNamesMap,
 		grpc.WithTransportCredentials(internalClientCreds),
 	)

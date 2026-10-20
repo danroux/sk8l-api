@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -878,4 +879,37 @@ func TestWatch(t *testing.T) {
 			t.Errorf("expected second message NOT_SERVING, got %v", msgs[1].Status)
 		}
 	})
+}
+
+func TestGetDashboardAnnotations(t *testing.T) {
+	s := &Sk8lServer{}
+	resp, err := s.GetDashboardAnnotations(context.Background(), &protos.DashboardAnnotationsRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || resp.Annotations == "" {
+		t.Fatal("expected non-empty dashboard annotations response")
+	}
+
+	var dashboard map[string]any
+	if err := json.Unmarshal([]byte(resp.Annotations), &dashboard); err != nil {
+		t.Fatalf("failed to parse dashboard JSON: %v", err)
+	}
+
+	title, ok := dashboard["title"].(string)
+	if !ok || title == "" {
+		t.Errorf("expected non-empty dashboard title, got %v", dashboard["title"])
+	}
+
+	panels, ok := dashboard["panels"].([]any)
+	if !ok || len(panels) == 0 {
+		t.Errorf("expected panels in dashboard, got %v", dashboard["panels"])
+	}
+
+	templating, ok := dashboard["templating"].(map[string]any)
+	if !ok {
+		t.Errorf("expected templating section in dashboard")
+	} else if list, ok := templating["list"].([]any); !ok || len(list) == 0 {
+		t.Errorf("expected template variables in dashboard")
+	}
 }
