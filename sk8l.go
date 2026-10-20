@@ -4,17 +4,15 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"embed"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
-	"text/template"
 	"time"
 
-	"github.com/danroux/sk8l/internal/dashboard"
 	"github.com/danroux/sk8l/internal/mapper"
 	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/protos"
@@ -33,8 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 )
 
-//go:embed annotations.tmpl
-var content embed.FS
+//go:embed dashboards/sk8l-overview.json
+var dashboardJSON string
 
 var jobPodsPrefix = []byte("jobs_pods_for_job_")
 var streamHeartbeatInterval = time.Second * store.RefreshSeconds
@@ -51,7 +49,6 @@ type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
 	*store.CronJobDBStore
-	dashboardGen    *dashboard.Generator
 	metricsNamesMap *sync.Map
 	target          string
 	dialOptions     []grpc.DialOption
@@ -61,14 +58,12 @@ type Sk8lServer struct {
 func NewSk8lServer(
 	target string,
 	cronJobDBStore *store.CronJobDBStore,
-	dashboardGen *dashboard.Generator,
 	metricsNamesMap *sync.Map,
 	dialOptions ...grpc.DialOption,
 ) *Sk8lServer {
 	return &Sk8lServer{
 		target:          target,
 		CronJobDBStore:  cronJobDBStore,
-		dashboardGen:    dashboardGen,
 		metricsNamesMap: metricsNamesMap,
 		dialOptions:     dialOptions,
 		watchInterval:   5 * time.Second,
@@ -589,26 +584,8 @@ func (s *Sk8lServer) GetDashboardAnnotations(
 	context.Context,
 	*protos.DashboardAnnotationsRequest,
 ) (*protos.DashboardAnnotationsResponse, error) {
-	panels := s.dashboardGen.GeneratePanels(s.metricsNamesMap)
-
-	var tmplFile = "annotations.tmpl"
-	t := template.New(tmplFile)
-	t = t.Funcs(template.FuncMap{"marshal": func(v any) string {
-		a, _ := json.Marshal(v)
-		return string(a)
-	}})
-	t = template.Must(t.ParseFS(content, tmplFile))
-
-	var b bytes.Buffer
-	if err := t.Execute(&b, panels); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "sk8l#GetDashboardAnnotations").
-			Msg("executing template")
-	}
-
 	return &protos.DashboardAnnotationsResponse{
-		Annotations: b.String(),
+		Annotations: dashboardJSON,
 	}, nil
 }
 

@@ -1,0 +1,3 @@
+```release-note:improvement
+go: embed Grafana dashboard JSON and remove legacy template generator
+```

@@ -101,7 +101,6 @@ linters:
         - assign
       ignored-files:
         - main.go
-        - dashboards.go
         - sk8l.go
         - metrics.go
     nakedret:

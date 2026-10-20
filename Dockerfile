@@ -16,7 +16,7 @@ COPY *.go .
 COPY protos/ ./protos
 COPY internal/ ./internal
 COPY Makefile .
-COPY annotations.tmpl .
+COPY dashboards/ ./dashboards
 
 RUN --mount=type=cache,target=/root/.cache/go-build,id=gocache make go-out
 
