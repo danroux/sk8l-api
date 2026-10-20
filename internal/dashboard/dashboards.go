@@ -73,7 +73,7 @@ func (g *Generator) GeneratePanels(cronjobsMap *sync.Map) []Panel {
 	var totalsMetrics = make([]*Target, 0, len(g.Statuses))
 	for _, status := range g.Statuses {
 		t := &Target{
-			Expr:         fmt.Sprintf(`sk8l_cronjobs_count{namespace="%s", status="%s"}`, g.Namespace, status),
+			Expr:         fmt.Sprintf(`sk8l_cronjobs_count{namespace=~"$namespace", status="%s"}`, status),
 			LegendFormat: status,
 			DataSource:   dataSource,
 		}
@@ -141,12 +141,12 @@ func (g *Generator) individualPanelsGenerator(cronJobRowPanels *[]Panel) func(ke
 		// 1. Completion / Failure totals panel
 		cronjobTotals := []*Target{
 			{
-				Expr:         fmt.Sprintf(`sk8l_cronjob_jobs_count{namespace="%s", cronjob=~"${cronjob}", status="succeeded"}`, g.Namespace),
+				Expr:         `sk8l_cronjob_jobs_count{namespace=~"$namespace", cronjob=~"${cronjob}", status="succeeded"}`,
 				LegendFormat: "succeeded",
 				DataSource:   dataSource,
 			},
 			{
-				Expr:         fmt.Sprintf(`sk8l_cronjob_jobs_count{namespace="%s", cronjob=~"${cronjob}", status="failed"}`, g.Namespace),
+				Expr:         `sk8l_cronjob_jobs_count{namespace=~"$namespace", cronjob=~"${cronjob}", status="failed"}`,
 				LegendFormat: "failed",
 				DataSource:   dataSource,
 			},
@@ -163,7 +163,7 @@ func (g *Generator) individualPanelsGenerator(cronJobRowPanels *[]Panel) func(ke
 		// 2. Job duration panel
 		cronjobDurations := []*Target{
 			{
-				Expr:         fmt.Sprintf(`sk8l_cronjob_last_run_duration_seconds{namespace="%s", cronjob=~"${cronjob}"}`, g.Namespace),
+				Expr:         `sk8l_cronjob_last_run_duration_seconds{namespace=~"$namespace", cronjob=~"${cronjob}"}`,
 				LegendFormat: "duration (s)",
 				DataSource:   dataSource,
 			},
@@ -185,7 +185,7 @@ func (g *Generator) individualPanelsGenerator(cronJobRowPanels *[]Panel) func(ke
 			GridPos:    GridPos{X: 0, Y: failureY, H: 8, W: 12},
 			Targets: []*Target{
 				{
-					Expr:         fmt.Sprintf(`sk8l_cronjob_last_run_status{namespace="%s", cronjob=~"${cronjob}", status="failed"}`, g.Namespace),
+					Expr:         `sk8l_cronjob_last_run_status{namespace=~"$namespace", cronjob=~"${cronjob}", status="failed"}`,
 					LegendFormat: "failure status",
 					DataSource:   dataSource,
 				},
@@ -213,7 +213,7 @@ func (g *Generator) totalsBarGaugePanel() Panel {
 	for _, status := range g.Statuses {
 		legendFmt := strings.ReplaceAll(status, "_", " ")
 		totalsTargets = append(totalsTargets, &Target{
-			Expr:         fmt.Sprintf(`sk8l_cronjobs_count{namespace="%s", status="%s"}`, g.Namespace, status),
+			Expr:         fmt.Sprintf(`sk8l_cronjobs_count{namespace=~"$namespace", status="%s"}`, status),
 			LegendFormat: legendFmt,
 			DataSource:   dataSource,
 		})
@@ -265,7 +265,7 @@ func (g *Generator) collectStatusTargets(cronjobsMap *sync.Map) []*Target {
 			return true
 		}
 		targets = append(targets, &Target{
-			Expr:         fmt.Sprintf(`sk8l_cronjob_last_run_status{namespace="%s", cronjob="%s", status="failed"}`, g.Namespace, cronjobName),
+			Expr:         fmt.Sprintf(`sk8l_cronjob_last_run_status{namespace=~"$namespace", cronjob="%s", status="failed"}`, cronjobName),
 			LegendFormat: cronjobName,
 			DataSource:   dataSource,
 		})
@@ -274,7 +274,7 @@ func (g *Generator) collectStatusTargets(cronjobsMap *sync.Map) []*Target {
 
 	if len(targets) == 0 {
 		targets = append(targets, &Target{
-			Expr:         fmt.Sprintf(`sk8l_cronjob_last_run_status{namespace="%s", status="failed"}`, g.Namespace),
+			Expr:         `sk8l_cronjob_last_run_status{namespace=~"$namespace", status="failed"}`,
 			LegendFormat: "{{cronjob}}",
 			DataSource:   dataSource,
 		})
