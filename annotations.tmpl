@@ -163,7 +163,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "{{ .Expr }}",
+          "expr": {{ marshal .Expr }},
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -240,7 +240,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "{{ .Expr }}",
+          "expr": {{ marshal .Expr }},
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -363,7 +363,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "{{ .Expr }}",
+          "expr": {{ marshal .Expr }},
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -449,7 +449,7 @@
         {{- if $targetIndex}},{{end}}
           {
             "refId": "A{{ $targetIndex }}",
-            "expr": "{{ .Expr }}",
+            "expr": {{ marshal .Expr }},
             "range": true,
             "instant": false,
             "datasource": {
@@ -586,7 +586,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "{{ .Expr }}",
+          "expr": {{ marshal .Expr }},
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -610,34 +610,77 @@
     "list": [
       {
         "current": {
-          "text": "sk8l",
-          "value": "sk8l"
+          "selected": true,
+          "text": "Prometheus",
+          "value": "Prometheus"
         },
         "hide": 0,
-        "label": "namespace",
-        "name": "namespace",
-        "query": "sk8l",
-        "skipUrlSync": true,
-        "type": "constant"
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
       },
       {
-        "type": "query",
-        "name": "cronjob",
-        "label": "Cronjob Name",
-        "datasource": "Prometheus",
-        "refresh": 2,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(sk8l_cronjobs_count, namespace)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Namespace",
+        "multi": true,
+        "name": "namespace",
+        "options": [],
         "query": {
-          "query": "label_values(__name__)",
+          "query": "label_values(sk8l_cronjobs_count, namespace)",
           "refId": "StandardVariableQuery"
         },
-        "regex": "^sk8l_[^_]+_([^_]+(?:_[^_]+)*)_(?:completion|duration_seconds|failure)_total$",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
         "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(sk8l_cronjob_last_run_status{namespace=~\"$namespace\"}, cronjob)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "CronJob",
         "multi": true,
         "name": "cronjob",
-        "includeAll": true,
-        "allValue": ".*",
-        "allFormat": "regex",
-        "hide": 0
+        "options": [],
+        "query": {
+          "query": "label_values(sk8l_cronjob_last_run_status{namespace=~\"$namespace\"}, cronjob)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
       }
     ]
   },

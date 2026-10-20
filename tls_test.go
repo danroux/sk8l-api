@@ -40,7 +40,7 @@ func TestSetupTLS(t *testing.T) {
 			expectedMinVer: tls.VersionTLS12,
 			expectedMaxVer: tls.VersionTLS13,
 			expectedCAs:    true,
-			expectedSN:     "0.0.0.0",
+			expectedSN:     "127.0.0.1",
 		},
 		{
 			name:           "InvalidCA",

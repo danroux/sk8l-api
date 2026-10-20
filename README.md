@@ -77,18 +77,35 @@ The Kubernetes community releases minor versions roughly every three months. The
 
 ## Prometheus metrics
 
-sk8l collects and publishes aggregated metrics for all the configured cronjobs on a namespace and also metrics per each single cronjob.
+`sk8l` exports standard OpenMetrics Prometheus metrics with dimensional labels for cluster-wide and per-cronjob observability:
 
-|                       Name                       |              Description              |
-|:------------------------------------------------:|:-------------------------------------:|
-| sk8l_[NAMESPACE]_registered_cronjobs_total       | Total registered cronjobs             |
-| sk8l_[NAMESPACE]_completed_cronjobs_total        | Total completed cronjobs              |
-| sk8l_[NAMESPACE]_failing_cronjobs_total          | Total cronjobs failures               |
-| sk8l_[NAMESPACE]_running_cronjobs_total          | Amount of current running cronjobs    |
-| sk8l_[NAMESPACE]_[CRONJOB_NAME]_completion_total | Total completions of a cronjob        |
-| sk8l_[NAMESPACE]_[CRONJOB_NAME]_duration_seconds | Current duration of a running cronjob |
-| sk8l_[NAMESPACE]_[CRONJOB_NAME]_failure_total    | Total failures of a cronjob           |
+| Metric Name | Type | Labels | Description |
+|:---|:---|:---|:---|
+| `sk8l_cronjobs_count` | Gauge | `namespace`, `status` (`registered`, `running`, `failing`, `completed`) | Current count of cronjobs by namespace and status |
+| `sk8l_cronjob_last_run_status` | Gauge | `namespace`, `cronjob`, `status` (`succeeded`, `failed`) | Status of the latest execution (1 if active, 0 otherwise) |
+| `sk8l_cronjob_last_run_duration_seconds` | Gauge | `namespace`, `cronjob` | Duration in seconds of the latest execution |
+| `sk8l_cronjob_active_jobs` | Gauge | `namespace`, `cronjob` | Number of currently active child jobs |
+| `sk8l_cronjob_jobs_count` | Gauge | `namespace`, `cronjob`, `status` (`succeeded`, `failed`) | Retained child jobs count by completion status |
+| `sk8l_cronjob_info` | Gauge | `namespace`, `cronjob`, `schedule`, `suspend` | CronJob metadata and configuration (value = 1) |
+
+### Example PromQL Queries
+
+* **Alert on any failing CronJob:**
+  ```promql
+  sk8l_cronjob_last_run_status{status="failed"} == 1
+  ```
+* **Cluster-wide failing CronJobs count:**
+  ```promql
+  sum(sk8l_cronjobs_count{status="failing"})
+  ```
+* **Top 5 slowest CronJobs:**
+  ```promql
+  topk(5, sk8l_cronjob_last_run_duration_seconds)
+  ```
 
 ## Grafana Dashboard
 
-sk8l can generate an annotations json configuration based on the current configured cronjobs on kubernetes that can be copy/pasted and imported into Grafana to create a dashboard.
+`sk8l` provides an official, ready-to-import Grafana dashboard located in [`dashboards/sk8l-overview.json`](dashboards/sk8l-overview.json). It includes template variables for filtering by namespace and cronjob name, cluster health KPIs, state timelines, and execution duration trends.
+
+Additionally, `sk8l-api` can generate dynamic dashboard JSON configurations via the `/api/dashboards` endpoint.
+

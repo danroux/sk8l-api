@@ -89,7 +89,7 @@ func setupTLS(certFile, certKeyFile, caFile string, certPool CertPool) (*tls.Con
 
 	tlsConfig.ClientCAs = certPoolAsX509CertPool
 	tlsConfig.RootCAs = certPoolAsX509CertPool
-	tlsConfig.ServerName = "0.0.0.0"
+	tlsConfig.ServerName = "127.0.0.1"
 
 	return tlsConfig, nil
 }
