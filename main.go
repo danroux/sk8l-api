@@ -78,12 +78,16 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize cronjobDBStore")
 	}
+	clientTLSConfig := serverTLSConfig.Clone()
+	clientTLSConfig.InsecureSkipVerify = true
+	internalClientCreds := credentials.NewTLS(clientTLSConfig)
+
 	sk8lServer := NewSk8lServer(
 		dialTarget,
 		cronjobDBStore,
 		dashboardGen,
 		metricsNamesMap,
-		grpc.WithTransportCredentials(serverCreds),
+		grpc.WithTransportCredentials(internalClientCreds),
 	)
 
 	healthgrpc.RegisterHealthServer(probeS, sk8lServer)
