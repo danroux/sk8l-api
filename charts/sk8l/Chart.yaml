@@ -24,7 +24,7 @@ maintainers:
 annotations:
   artifacthub.io/images: |
     - name: sk8l-api
-      image: danroux/sk8l-api:v0.20.0
+      image: danroux/sk8l-api:v0.21.0
     - name: sk8l-ui
       image: danroux/sk8l-ui:v0.19.0
     - name: envoy
