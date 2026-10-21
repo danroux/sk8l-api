@@ -32,7 +32,7 @@ jobs:
       - name: package-app
         run: |
           set -e
-          IMAGE_TAG=$(make chart-version-wo)
+          IMAGE_TAG=$(make -s --no-print-directory chart-version-wo)
           echo "IMAGE_TAG=$IMAGE_TAG"
           helm package --version "$IMAGE_TAG" charts/sk8l
           mkdir -p charts/repo
@@ -40,7 +40,7 @@ jobs:
           helm repo index charts/repo --url https://sk8l.io/charts
       - name: Push Helm chart
         run: |
-          IMAGE_TAG=$(make chart-version-wo)
+          IMAGE_TAG=$(make -s --no-print-directory chart-version-wo)
           file charts/repo/sk8l-$IMAGE_TAG.tgz
           make helm-push
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
