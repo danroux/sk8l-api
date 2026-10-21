@@ -1,0 +1,24 @@
+{{- if .Values.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sk8l-dashboard
+  namespace: {{ default (default .Release.Namespace .Values.namespace.name) .Values.grafanaDashboard.namespace | quote }}
+  labels:
+    app.kubernetes.io/name: sk8l
+    {{- with .Values.grafanaDashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if or .Values.grafanaDashboard.folder .Values.grafanaDashboard.annotations }}
+  annotations:
+    {{- if .Values.grafanaDashboard.folder }}
+    grafana_dashboard_folder: {{ .Values.grafanaDashboard.folder | quote }}
+    {{- end }}
+    {{- with .Values.grafanaDashboard.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+data:
+  sk8l-overview.json: |-
+{{ .Files.Get "dashboards/sk8l-overview.json" | indent 4 }}
+{{- end }}
