@@ -1,3 +1,21 @@
+## v0.21.0 (October 21, 2026)
+
+BREAKING CHANGES:
+
+* go: Standardize Prometheus metrics to OpenMetrics format with static metric names and dimensional labels, replacing legacy dynamic metric names [[GH-318](https://github.com/danroux/sk8l-api/issues/318)]
+
+FEATURES:
+
+* helm: Auto-provision Grafana overview dashboard via ConfigMap with discovery labels [[GH-321](https://github.com/danroux/sk8l-api/issues/321)]
+
+IMPROVEMENTS:
+
+* go: embed Grafana dashboard JSON and remove legacy template generator [[GH-320](https://github.com/danroux/sk8l-api/issues/320)]
+
+DEPENDENCIES:
+
+* ci/dependabot: docker:(deps): bump golang from 1.27.1 to 1.27.2 [[GH-319](https://github.com/danroux/sk8l-api/issues/319)]
+
 ## v0.20.0 (October 16, 2026)
 
 FEATURES:
