@@ -1,0 +1,148 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_version:
+        description: 'API Version (e.g. 0.21.0 or v0.21.0)'
+        required: true
+        default: '0.21.0'
+      chart_version:
+        description: 'Helm Chart Version (e.g. 0.25.0)'
+        required: true
+        default: '0.25.0'
+      app_version:
+        description: 'Chart App Version (e.g. 0.24.0)'
+        required: false
+        default: '0.24.0'
+      ui_version:
+        description: 'UI Version Tag (e.g. v0.19.0)'
+        required: false
+        default: 'v0.19.0'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+
+      - name: Install changelog-build & yq
+        run: |
+          go install github.com/hashicorp/go-changelog/cmd/changelog-build@latest
+          if ! command -v yq &> /dev/null; then
+            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod +x /usr/local/bin/yq
+          fi
+
+      - name: Normalize Version Variables
+        id: vars
+        run: |
+          API_RAW="${{ github.event.inputs.api_version }}"
+          API_NUM="${API_RAW#v}"
+          API_TAG="v${API_NUM}"
+          CHART_NUM="${{ github.event.inputs.chart_version }}"
+          CHART_NUM="${CHART_NUM#v}"
+          APP_NUM="${{ github.event.inputs.app_version }}"
+          APP_NUM="${APP_NUM#v}"
+          UI_VER="${{ github.event.inputs.ui_version }}"
+          [[ "$UI_VER" != v* ]] && UI_VER="v${UI_VER}"
+
+          echo "api_num=${API_NUM}" >> "$GITHUB_OUTPUT"
+          echo "api_tag=${API_TAG}" >> "$GITHUB_OUTPUT"
+          echo "chart_num=${CHART_NUM}" >> "$GITHUB_OUTPUT"
+          echo "app_num=${APP_NUM}" >> "$GITHUB_OUTPUT"
+          echo "ui_version=${UI_VER}" >> "$GITHUB_OUTPUT"
+
+          IFS='.' read -r API_MAJOR API_MINOR API_PATCH <<< "${API_NUM}"
+          IFS='.' read -r CHART_MAJOR CHART_MINOR CHART_PATCH <<< "${CHART_NUM}"
+          echo "api_major=${API_MAJOR}" >> "$GITHUB_OUTPUT"
+          echo "api_minor=${API_MINOR}" >> "$GITHUB_OUTPUT"
+          echo "api_patch=${API_PATCH}" >> "$GITHUB_OUTPUT"
+          echo "chart_major=${CHART_MAJOR}" >> "$GITHUB_OUTPUT"
+          echo "chart_minor=${CHART_MINOR}" >> "$GITHUB_OUTPUT"
+          echo "chart_patch=${CHART_PATCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Makefile Versions
+        run: |
+          sed -i -E "s/API_VERSION_MAJOR \?= [0-9]+/API_VERSION_MAJOR ?= ${{ steps.vars.outputs.api_major }}/" Makefile
+          sed -i -E "s/API_VERSION_MINOR \?= [0-9]+/API_VERSION_MINOR ?= ${{ steps.vars.outputs.api_minor }}/" Makefile
+          sed -i -E "s/API_VERSION_PATCH \?= [0-9]+/API_VERSION_PATCH ?= ${{ steps.vars.outputs.api_patch }}/" Makefile
+          sed -i -E "s/CHART_VERSION_MAJOR \?= [0-9]+/CHART_VERSION_MAJOR ?= ${{ steps.vars.outputs.chart_major }}/" Makefile
+          sed -i -E "s/CHART_VERSION_MINOR \?= [0-9]+/CHART_VERSION_MINOR ?= ${{ steps.vars.outputs.chart_minor }}/" Makefile
+          sed -i -E "s/CHART_VERSION_PATCH \?= [0-9]+/CHART_VERSION_PATCH ?= ${{ steps.vars.outputs.chart_patch }}/" Makefile
+          sed -i -E "s/APP_VERSION \?= [0-9\.]+/APP_VERSION ?= ${{ steps.vars.outputs.app_num }}/" Makefile
+
+      - name: Update Helm Chart & Values
+        run: |
+          mkdir -p charts/sk8l/dashboards
+          cp dashboards/sk8l-overview.json charts/sk8l/dashboards/sk8l-overview.json
+          yq -i '.version = "${{ steps.vars.outputs.chart_num }}"' charts/sk8l/Chart.yaml
+          yq -i '.appVersion = "${{ steps.vars.outputs.app_num }}"' charts/sk8l/Chart.yaml
+          yq -i '.sk8lApi.imageTag = "${{ steps.vars.outputs.api_tag }}"' charts/sk8l/values.yaml
+          yq -i '.sk8lUi.imageTag = "${{ steps.vars.outputs.ui_version }}"' charts/sk8l/values.yaml
+          sed -i -E "s/.Values.sk8lApi.imageTag \| default \"[^\"]+\"/.Values.sk8lApi.imageTag | default \"${{ steps.vars.outputs.api_tag }}\"/g" charts/sk8l/templates/deployment.yaml
+          sed -i -E "s/.Values.sk8lUi.imageTag \| default \"[^\"]+\"/.Values.sk8lUi.imageTag | default \"${{ steps.vars.outputs.ui_version }}\"/g" charts/sk8l/templates/ui-deployment.yaml
+
+      - name: Generate Changelog & Update CHANGELOG.md
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || echo "")
+          echo "Generating notes from ${LAST_TAG} to HEAD"
+
+          RAW_NOTES=$(changelog-build \
+            -last-release "${LAST_TAG}" \
+            -entries-dir .changelog/ \
+            -changelog-template .changelog/changelog.tmpl \
+            -note-template .changelog/note.tmpl \
+            -this-release HEAD)
+
+          chmod +x ci/clean_changelog.sh
+          NOTES=$(echo "${RAW_NOTES}" | ./ci/clean_changelog.sh)
+
+          RELEASE_DATE=$(date '+%B %d, %Y')
+          HEADER="## ${{ steps.vars.outputs.api_tag }} (${RELEASE_DATE})"
+
+          TEMP_CHANGELOG=$(mktemp)
+          printf "%s\n\n%s\n\n%s" "${HEADER}" "${NOTES}" "$(cat CHANGELOG.md)" > "${TEMP_CHANGELOG}"
+          mv "${TEMP_CHANGELOG}" CHANGELOG.md
+
+          # Save notes for PR description
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${NOTES}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Update ArtifactHub annotations in Chart.yaml
+        run: |
+          chmod +x ci/parse_changelog.sh
+          ./ci/parse_changelog.sh CHANGELOG.md charts/sk8l/Chart.yaml
+
+      - name: Create Release Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH_NAME="release-${{ steps.vars.outputs.api_tag }}"
+          TITLE="Release ${{ steps.vars.outputs.api_tag }} - Chart.version v${{ steps.vars.outputs.chart_num }}"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "${BRANCH_NAME}"
+          git add Makefile CHANGELOG.md charts/sk8l/
+          git commit -m "${TITLE}"
+          git push origin "${BRANCH_NAME}" --force
+
+          BODY=$(printf "### %s\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${{ steps.changelog.outputs.notes }}")
+          gh pr create --title "${TITLE}" --body "${BODY}" --base main --head "${BRANCH_NAME}" || true
