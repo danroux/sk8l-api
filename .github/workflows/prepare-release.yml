@@ -95,6 +95,8 @@ jobs:
           cp dashboards/sk8l-overview.json charts/sk8l/dashboards/sk8l-overview.json
           yq -i '.version = "${{ steps.vars.outputs.chart_num }}"' charts/sk8l/Chart.yaml
           yq -i '.appVersion = "${{ steps.vars.outputs.app_num }}"' charts/sk8l/Chart.yaml
+          sed -i -E "s#(image: danroux/sk8l-api:)[^ \t\r\n]+#\1${{ steps.vars.outputs.api_tag }}#g" charts/sk8l/Chart.yaml
+          sed -i -E "s#(image: danroux/sk8l-ui:)[^ \t\r\n]+#\1${{ steps.vars.outputs.ui_version }}#g" charts/sk8l/Chart.yaml
           yq -i '.sk8lApi.imageTag = "${{ steps.vars.outputs.api_tag }}"' charts/sk8l/values.yaml
           yq -i '.sk8lUi.imageTag = "${{ steps.vars.outputs.ui_version }}"' charts/sk8l/values.yaml
           sed -i -E "s/.Values.sk8lApi.imageTag \| default \"[^\"]+\"/.Values.sk8lApi.imageTag | default \"${{ steps.vars.outputs.api_tag }}\"/g" charts/sk8l/templates/deployment.yaml
@@ -143,9 +145,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git checkout -b "${BRANCH_NAME}"
+          git checkout -B "${BRANCH_NAME}"
           git add Makefile CHANGELOG.md charts/sk8l/
-          git commit -m "${TITLE}"
+          MSG_FILE=$(mktemp)
+          printf "%s\n\n%s\n" "${TITLE}" "${{ steps.changelog.outputs.notes }}" > "${MSG_FILE}"
+          git commit -F "${MSG_FILE}"
+          rm -f "${MSG_FILE}"
           git push origin "${BRANCH_NAME}" --force
 
           BODY=$(printf "### %s\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${{ steps.changelog.outputs.notes }}")

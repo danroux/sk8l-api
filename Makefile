@@ -39,8 +39,10 @@ version:
 chart-version:
 	@echo $(CHART_VERSION)
 
+CHART_VER_WO ?= $(if $(strip $(GITHUB_CHART_VERSION)),$(GITHUB_CHART_VERSION),$(CHART_VERSION_WITHOUT))
+
 chart-version-wo:
-	@echo $(if $(strip $(GITHUB_CHART_VERSION)),$(GITHUB_CHART_VERSION),$(CHART_VERSION_WITHOUT))
+	@echo $(CHART_VER_WO)
 
 
 .PHONY: package-app-ci
@@ -99,7 +101,7 @@ update-config-files: # update-config-files
 
 
 helm-push:
-	helm push charts/repo/sk8l-$(shell make chart-version-wo).tgz oci://ghcr.io/danroux/sk8l
+	helm push charts/repo/sk8l-$(CHART_VER_WO).tgz oci://ghcr.io/danroux/sk8l
 
 UI_VERSION ?= v0.19.0
 
@@ -119,6 +121,8 @@ bump-image-versions: ## Bump image tags in deployment templates and values.yaml
 	sed -i.bak -E 's/.Values.sk8lApi.imageTag \| default "[^"]+"/.Values.sk8lApi.imageTag | default "$(API_VERSION)"/g' charts/sk8l/templates/deployment.yaml && rm -f charts/sk8l/templates/deployment.yaml.bak
 	yq -i '.sk8lApi.imageTag = "$(API_VERSION)"' charts/sk8l/values.yaml
 	yq -i '.sk8lUi.imageTag = "$(UI_VERSION)"' charts/sk8l/values.yaml
+	sed -i.bak -E 's#(image: danroux/sk8l-api:)[^ \t\r\n]+#\1$(API_VERSION)#g' charts/sk8l/Chart.yaml && rm -f charts/sk8l/Chart.yaml.bak
+	sed -i.bak -E 's#(image: danroux/sk8l-ui:)[^ \t\r\n]+#\1$(UI_VERSION)#g' charts/sk8l/Chart.yaml && rm -f charts/sk8l/Chart.yaml.bak
 
 bump-version: ## Bump all version strings across chart and templates
 	@echo 'Bumping all version references...'
