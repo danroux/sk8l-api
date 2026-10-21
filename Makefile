@@ -46,8 +46,8 @@ chart-version-wo:
 .PHONY: package-app-ci
 package-app-ci: ## Package helm chart and upload
 	helm package charts/sk8l \
-        && mv sk8l*tgz charts/repo \
-        && helm repo index charts/repo --url https://sk8l.io/charts
+		&& mv sk8l*tgz charts/repo \
+		&& helm repo index charts/repo --url https://sk8l.io/charts
 
 
 setup-certs: # setup-certs
@@ -101,6 +101,72 @@ update-config-files: # update-config-files
 helm-push:
 	helm push charts/repo/sk8l-$(shell make chart-version-wo).tgz oci://ghcr.io/danroux/sk8l
 
+UI_VERSION ?= v0.19.0
 
+create-tag: ## Create release git tag
+	git tag -a $(API_VERSION) -m $(API_VERSION)
 
+bump-chart-version: ## Bump Helm chart version in Chart.yaml
+	@echo 'Bump chart version to $(CHART_VERSION_WITHOUT)'
+	yq -i '.version = "$(CHART_VERSION_WITHOUT)"' charts/sk8l/Chart.yaml
 
+bump-chart-appVersion: ## Bump Helm chart appVersion in Chart.yaml
+	@echo 'Bump chart appVersion to $(APP_VERSION)'
+	yq -i '.appVersion = "$(APP_VERSION)"' charts/sk8l/Chart.yaml
+
+bump-image-versions: ## Bump image tags in deployment templates and values.yaml
+	sed -i.bak -E 's/.Values.sk8lUi.imageTag \| default "[^"]+"/.Values.sk8lUi.imageTag | default "$(UI_VERSION)"/g' charts/sk8l/templates/ui-deployment.yaml && rm -f charts/sk8l/templates/ui-deployment.yaml.bak
+	sed -i.bak -E 's/.Values.sk8lApi.imageTag \| default "[^"]+"/.Values.sk8lApi.imageTag | default "$(API_VERSION)"/g' charts/sk8l/templates/deployment.yaml && rm -f charts/sk8l/templates/deployment.yaml.bak
+	yq -i '.sk8lApi.imageTag = "$(API_VERSION)"' charts/sk8l/values.yaml
+	yq -i '.sk8lUi.imageTag = "$(UI_VERSION)"' charts/sk8l/values.yaml
+
+bump-version: ## Bump all version strings across chart and templates
+	@echo 'Bumping all version references...'
+	$(MAKE) bump-image-versions
+	$(MAKE) bump-chart-version
+	$(MAKE) bump-chart-appVersion
+
+update-chart-changes: ## Extract latest CHANGELOG section into Chart.yaml artifacthub.io/changes
+	./ci/parse_changelog.sh CHANGELOG.md charts/sk8l/Chart.yaml
+
+LAST_RELEASE_TAG ?= $(shell git describe --tags $$(git rev-list --tags --max-count=1) 2>/dev/null || echo "v0.0.0")
+THIS_RELEASE_TAG ?= $(API_VERSION)
+
+changelog: ## Generate release changelog from .changelog/ entries
+	@echo "Generating changelog for $(THIS_RELEASE_TAG) from $(LAST_RELEASE_TAG)..."
+	@changelog-build -last-release $(LAST_RELEASE_TAG) \
+		-entries-dir .changelog/ \
+		-changelog-template .changelog/changelog.tmpl \
+		-note-template .changelog/note.tmpl \
+		-this-release $(THIS_RELEASE_TAG) | ./ci/clean_changelog.sh
+
+prepare-release: ## Prepare local release branch with bumped versions and changelog
+	git checkout -b release-$(API_VERSION)
+	$(MAKE) bump-version
+	cp dashboards/sk8l-overview.json charts/sk8l/dashboards/sk8l-overview.json
+	$(MAKE) update-chart-changes
+
+print-release-msg: ## Print release commit message format
+	@echo "Release $(API_VERSION) - Chart.version $(CHART_VERSION)"
+
+current-versions: ## Display current configured versions
+	@echo "API Version:   $(API_VERSION)"
+	@echo "Chart Version: $(CHART_VERSION)"
+	@echo "App Version:   v$(APP_VERSION)"
+	@echo "UI Version:    $(UI_VERSION)"
+
+sk8lGhcrImages:
+	yq -i '.sk8lApi.image = "ghcr.io/danroux/sk8l-api"' charts/sk8l/values-local.yaml
+	yq -i '.sk8lApi.imageTag = "pre"' charts/sk8l/values-local.yaml
+	yq -i '.sk8lUi.image = "ghcr.io/danroux/sk8l-ui"' charts/sk8l/values-local.yaml
+	yq -i '.sk8lUi.imageTag = "dev"' charts/sk8l/values-local.yaml
+
+sk8lLocalImages:
+	yq -i '.sk8lApi.image = "localhost:5001/sk8l-api"' charts/sk8l/values-local.yaml \
+	&& yq -i '.sk8lUi.image = "localhost:5001/sk8l-ui"' charts/sk8l/values-local.yaml
+
+sk8lImages:
+	yq -i '.sk8lApi.image = "danroux/sk8l-api"' charts/sk8l/values-local.yaml \
+	&& yq -i '.sk8lUi.image = "danroux/sk8l-ui"' charts/sk8l/values-local.yaml
+	yq -i '.sk8lApi.imageTag = "$(API_VERSION)"' charts/sk8l/values-local.yaml
+	yq -i ".sk8lUi.imageTag = \"$(UI_VERSION)\"" charts/sk8l/values-local.yaml
