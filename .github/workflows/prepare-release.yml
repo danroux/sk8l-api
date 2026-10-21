@@ -58,6 +58,9 @@ jobs:
           APP_NUM="${{ github.event.inputs.app_version }}"
           APP_NUM="${APP_NUM#v}"
           UI_VER="${{ github.event.inputs.ui_version }}"
+          if [ -z "$UI_VER" ]; then
+            UI_VER=$(grep -E '^UI_VERSION \?=' Makefile | awk '{print $3}')
+          fi
           [[ "$UI_VER" != v* ]] && UI_VER="v${UI_VER}"
 
           echo "api_num=${API_NUM}" >> "$GITHUB_OUTPUT"
@@ -84,6 +87,7 @@ jobs:
           sed -i -E "s/CHART_VERSION_MINOR \?= [0-9]+/CHART_VERSION_MINOR ?= ${{ steps.vars.outputs.chart_minor }}/" Makefile
           sed -i -E "s/CHART_VERSION_PATCH \?= [0-9]+/CHART_VERSION_PATCH ?= ${{ steps.vars.outputs.chart_patch }}/" Makefile
           sed -i -E "s/APP_VERSION \?= [0-9\.]+/APP_VERSION ?= ${{ steps.vars.outputs.app_num }}/" Makefile
+          sed -i -E "s/UI_VERSION \?= .+/UI_VERSION ?= ${{ steps.vars.outputs.ui_version }}/" Makefile
 
       - name: Update Helm Chart & Values
         run: |
