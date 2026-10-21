@@ -1,8 +1,8 @@
 # Available parameters and their default values for the sk8l Chart.
 
 namespace:
-  create: true
-  name: ""
+  create: false
+  name: "sk8l"
   labels: {}
   # pod-security.kubernetes.io/enforce: baseline
   # pod-security.kubernetes.io/enforce-version: latest
@@ -186,6 +186,21 @@ configMaps:
   ui:
     # You can change the URL used on the frontend if needed.
     vite_sk8l_api_url: "https://localhost:9080"
+# Grafana dashboard auto-provisioning
+grafanaDashboard:
+  # When enabled, creates a ConfigMap containing the official sk8l overview dashboard
+  # labeled for automatic discovery by Grafana sidecars (e.g. kube-prometheus-stack).
+  enabled: true
+  # Target namespace for the dashboard ConfigMap. Defaults to the chart release namespace.
+  namespace: ""
+  # Labels to apply to the dashboard ConfigMap.
+  # The 'grafana_dashboard: "1"' label is used by Grafana sidecar to import dashboards.
+  labels:
+    grafana_dashboard: "1"
+  # Folder name in Grafana to organize the dashboard under.
+  folder: "sk8l"
+  # Additional annotations for the ConfigMap.
+  annotations: {}
 resources: {}
 # We usually recommend not to specify default resources and to leave this as a conscious
 # choice for the user. This also increases chances charts run on environments with little

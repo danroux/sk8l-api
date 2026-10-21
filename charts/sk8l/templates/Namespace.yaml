@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: {{ .Values.namespace.name }}
+  name: {{ default .Release.Namespace .Values.namespace.name }}
   labels:
     {{- toYaml .Values.namespace.labels | nindent 4 }}
 {{- end }}

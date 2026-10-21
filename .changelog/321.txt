@@ -1,0 +1,3 @@
+```release-note:feature
+helm: Auto-provision Grafana overview dashboard via ConfigMap with discovery labels
+```
