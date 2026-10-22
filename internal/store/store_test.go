@@ -284,3 +284,108 @@ func TestPing(t *testing.T) {
 		}
 	})
 }
+
+func TestReady(t *testing.T) {
+	t.Run("OpenDB", func(t *testing.T) {
+		db := setupTestDB(t)
+		s := &CronJobDBStore{DB: db}
+		if !s.Ready() {
+			t.Error("expected Ready() == true on open DB")
+		}
+	})
+
+	t.Run("NilStore", func(t *testing.T) {
+		var s *CronJobDBStore
+		if s.Ready() {
+			t.Error("expected Ready() == false on nil store")
+		}
+	})
+
+	t.Run("NilDB", func(t *testing.T) {
+		s := &CronJobDBStore{}
+		if s.Ready() {
+			t.Error("expected Ready() == false on nil DB")
+		}
+	})
+
+	t.Run("ClosedDB", func(t *testing.T) {
+		opts := badger.DefaultOptions("").WithInMemory(true).WithLoggingLevel(badger.ERROR)
+		db, err := badger.Open(opts)
+		if err != nil {
+			t.Fatalf("failed to open DB: %v", err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close DB: %v", err)
+		}
+		s := &CronJobDBStore{DB: db}
+		if s.Ready() {
+			t.Error("expected Ready() == false on closed DB")
+		}
+	})
+}
+
+func TestSubscribe(t *testing.T) {
+	t.Run("EmitsSignalOnMatchingWrite", func(t *testing.T) {
+		db := setupTestDB(t)
+		s := &CronJobDBStore{DB: db}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		ch := s.Subscribe(ctx)
+
+		// Write a key matching CronjobsCacheKey.
+		err := db.Update(func(txn *badger.Txn) error {
+			return txn.Set(CronjobsCacheKey, []byte("test-data"))
+		})
+		if err != nil {
+			t.Fatalf("failed to write to DB: %v", err)
+		}
+
+		select {
+		case <-ch:
+			// Success: signal received.
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for change notification on subscribe channel")
+		}
+	})
+
+	t.Run("ClosesOnContextDone", func(t *testing.T) {
+		db := setupTestDB(t)
+		s := &CronJobDBStore{DB: db}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		ch := s.Subscribe(ctx)
+		cancel()
+
+		select {
+		case _, ok := <-ch:
+			if ok {
+				// Might receive a buffered signal before close, but next read must be closed.
+				select {
+				case _, ok2 := <-ch:
+					if ok2 {
+						t.Error("expected channel to close after context cancellation")
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("timed out waiting for channel close")
+				}
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for channel close after context cancellation")
+		}
+	})
+
+	t.Run("NilDBReturnsClosedChannel", func(t *testing.T) {
+		s := &CronJobDBStore{}
+		ch := s.Subscribe(context.Background())
+		select {
+		case _, ok := <-ch:
+			if ok {
+				t.Error("expected closed channel for nil DB")
+			}
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("channel not closed for nil DB")
+		}
+	})
+}

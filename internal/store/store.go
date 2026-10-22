@@ -41,11 +41,37 @@ var (
 
 type APICall func() ([]byte, error)
 
+// Store defines the storage abstraction used by sk8l for querying cached Kubernetes resources.
+type Store interface {
+	FindCronjobs() (*batchv1.CronJobList, error)
+	FindCronjob(ctx context.Context, cronjobNamespace, cronjobName string) (*batchv1.CronJob, error)
+	FindJobs() (*batchv1.JobList, error)
+	FindJobsMapped(ctx context.Context) (map[string][]*batchv1.Job, error)
+	FindJobPodsForJob(job *batchv1.Job) (*corev1.PodList, error)
+
+	// Subscribe returns a channel that receives a signal when relevant store
+	// keys are updated. The channel has capacity 1 (coalesced) and is closed
+	// when ctx is done or the store is closed.
+	Subscribe(ctx context.Context) <-chan struct{}
+	Ready() bool
+}
+
+// Starter is an optional interface implemented by stores that require
+// background synchronization or event collection before serving traffic.
+type Starter interface {
+	Start(ctx context.Context)
+}
+
 type CronJobDBStore struct {
 	K8sClient k8s.ClientInterface
 	*badger.DB
 	l zerolog.Logger
 }
+
+var (
+	_ Store   = (*CronJobDBStore)(nil)
+	_ Starter = (*CronJobDBStore)(nil)
+)
 
 type CronJobDBStoreOptionFn func(*CronJobDBStore) error
 
@@ -129,19 +155,37 @@ func (c *CronJobDBStore) Ping() error {
 	return nil
 }
 
-// Subscribe watches Badger for committed writes matching any of the given key
-// prefixes and calls fn after each transaction. It blocks until ctx is canceled
-// or an error occurs. fn receives the list of affected key-value pairs; callers
-// that only need change notification (not the values themselves) may ignore it.
-func (c *CronJobDBStore) Subscribe(ctx context.Context, fn func(*badger.KVList) error, prefixes ...[]byte) error {
-	matches := make([]badgerpb.Match, len(prefixes))
-	for i, p := range prefixes {
-		matches[i] = badgerpb.Match{Prefix: p}
+// Ready reports whether the store is operational and ready to serve traffic.
+func (c *CronJobDBStore) Ready() bool {
+	return c != nil && c.Ping() == nil
+}
+
+// Subscribe watches Badger for committed writes matching any of the cached key
+// prefixes (cronjobs, jobs, pods) and returns a channel that receives a signal
+// after each transaction. The channel has capacity 1 (coalesced) and is closed
+// when ctx is canceled or the store is unavailable.
+func (c *CronJobDBStore) Subscribe(ctx context.Context) <-chan struct{} {
+	ch := make(chan struct{}, 1)
+	if c == nil || c.DB == nil || c.DB.IsClosed() {
+		close(ch)
+		return ch
 	}
-	if err := c.DB.Subscribe(ctx, fn, matches); err != nil {
-		return fmt.Errorf("store#Subscribe: %w", err)
+	matches := []badgerpb.Match{
+		{Prefix: CronjobsCacheKey},
+		{Prefix: JobsCacheKey},
+		{Prefix: []byte("jobs_pods_for_job_")},
 	}
-	return nil
+	go func() {
+		defer close(ch)
+		_ = c.DB.Subscribe(ctx, func(_ *badger.KVList) error {
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
+			return nil
+		}, matches)
+	}()
+	return ch
 }
 
 func (c *CronJobDBStore) GetAndStore(key []byte, apiCall APICall) ([]byte, error) {

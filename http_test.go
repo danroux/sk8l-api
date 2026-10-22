@@ -19,10 +19,11 @@ func newHTTPTestServer(t *testing.T) (*Sk8lServer, func()) {
 	fakeClientset := fake.NewClientset()
 	k8sClient := k8s.NewClientWithInterface(fakeClientset)
 	s := &Sk8lServer{
-		CronJobDBStore: &store.CronJobDBStore{
+		Store: &store.CronJobDBStore{
 			DB:        db,
 			K8sClient: k8sClient,
 		},
+		K8sClient: k8sClient,
 	}
 	return s, func() { db.Close() }
 }

@@ -1,0 +1,3 @@
+```release-note:improvement
+go: Abstract store operations behind Store interface and decouple gRPC streaming from Badger pub/sub
+```
