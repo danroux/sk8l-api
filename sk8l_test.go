@@ -135,8 +135,9 @@ func TestGetCronjobYAML(t *testing.T) {
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = st
-	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
+	sk8lServer.Store = st
+	sk8lServer.K8sClient = k8sClient
+	putCronjobsToBadger(t, db, cronjobList)
 
 	yamlResp, err := client.GetCronjobYAML(ctx, &protos.CronjobRequest{CronjobName: cronjob1.Name, CronjobNamespace: cronjob1.Namespace})
 	if err != nil {
@@ -208,7 +209,8 @@ func TestGetCronjobYAML_NotFound(t *testing.T) {
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = st
+	sk8lServer.Store = st
+	sk8lServer.K8sClient = k8sClient
 
 	client := protos.NewCronjobClient(conn)
 	_, err = client.GetCronjobYAML(ctx, &protos.CronjobRequest{
@@ -248,7 +250,8 @@ func TestGetJobYAML(t *testing.T) {
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = st
+	sk8lServer.Store = st
+	sk8lServer.K8sClient = k8sClient
 
 	client := protos.NewCronjobClient(conn)
 
@@ -304,7 +307,8 @@ func TestGetPodYAML(t *testing.T) {
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = st
+	sk8lServer.Store = st
+	sk8lServer.K8sClient = k8sClient
 
 	client := protos.NewCronjobClient(conn)
 
@@ -371,8 +375,9 @@ func TestGetCronjosbDB(t *testing.T) {
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = st
-	putCronjobsToBadger(t, sk8lServer.DB, cronjobList)
+	sk8lServer.Store = st
+	sk8lServer.K8sClient = k8sClient
+	putCronjobsToBadger(t, db, cronjobList)
 
 	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
 	if err != nil {
@@ -492,8 +497,9 @@ func TestGetCronjobsService(t *testing.T) {
 		K8sClient: k8sClient,
 	}
 
-	sk8lServer.CronJobDBStore = st
-	sk8lServer.collectCronjobs(context.Background())
+	sk8lServer.Store = st
+	sk8lServer.K8sClient = k8sClient
+	st.CollectCronjobs(context.Background())
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -638,7 +644,8 @@ func TestGetCronjobs_NoConcurrentRace(t *testing.T) {
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = st
+	sk8lServer.Store = st
+	sk8lServer.K8sClient = k8sClient
 	putCronjobsToBadger(t, db, cronjobList)
 
 	jobsMapped := map[string][]*batchv1.Job{}
@@ -677,7 +684,8 @@ func TestAllAndRunningJobsAnPods_NoConcurrentRace(t *testing.T) {
 		DB:        db,
 		K8sClient: k8sClient,
 	}
-	sk8lServer.CronJobDBStore = st
+	sk8lServer.Store = st
+	sk8lServer.K8sClient = k8sClient
 
 	const numJobs = 10
 	jobs := make([]*batchv1.Job, 0, numJobs)
@@ -709,10 +717,11 @@ func newHealthServer(t *testing.T) (*Sk8lServer, *badger.DB) {
 	fakeClientset := fake.NewClientset()
 	k8sClient := k8s.NewClientWithInterface(fakeClientset)
 	s := &Sk8lServer{
-		CronJobDBStore: &store.CronJobDBStore{
+		Store: &store.CronJobDBStore{
 			DB:        db,
 			K8sClient: k8sClient,
 		},
+		K8sClient:     k8sClient,
 		watchInterval: 10 * time.Millisecond,
 	}
 	return s, db
@@ -737,7 +746,7 @@ func TestIsHealthy(t *testing.T) {
 	t.Run("UnhealthyWhenStoreNil", func(t *testing.T) {
 		s := &Sk8lServer{}
 		if s.IsHealthy() {
-			t.Error("expected IsHealthy() == false when CronJobDBStore is nil")
+			t.Error("expected IsHealthy() == false when Store is nil")
 		}
 	})
 }

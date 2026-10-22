@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/internal/mapper"
 	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/protos"
-	badger "github.com/dgraph-io/badger/v4"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	gyaml "sigs.k8s.io/yaml"
 
@@ -28,13 +28,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/watch"
 )
 
 //go:embed dashboards/sk8l-overview.json
 var dashboardJSON string
 
-var jobPodsPrefix = []byte("jobs_pods_for_job_")
 var streamHeartbeatInterval = time.Second * store.RefreshSeconds
 
 // isClientCanceled checks if the error or context indicates a client-side cancellation.
@@ -48,7 +46,8 @@ func isClientCanceled(ctx context.Context, err error) bool {
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
-	*store.CronJobDBStore
+	store.Store
+	K8sClient       k8s.ClientInterface
 	metricsNamesMap *sync.Map
 	target          string
 	dialOptions     []grpc.DialOption
@@ -57,13 +56,18 @@ type Sk8lServer struct {
 
 func NewSk8lServer(
 	target string,
-	cronJobDBStore *store.CronJobDBStore,
+	st store.Store,
 	metricsNamesMap *sync.Map,
 	dialOptions ...grpc.DialOption,
 ) *Sk8lServer {
+	var k8sCl k8s.ClientInterface
+	if c, ok := st.(*store.CronJobDBStore); ok {
+		k8sCl = c.K8sClient
+	}
 	return &Sk8lServer{
 		target:          target,
-		CronJobDBStore:  cronJobDBStore,
+		Store:           st,
+		K8sClient:       k8sCl,
 		metricsNamesMap: metricsNamesMap,
 		dialOptions:     dialOptions,
 		watchInterval:   5 * time.Second,
@@ -78,9 +82,9 @@ func (s *Sk8lServer) GetDialOptions() []grpc.DialOption {
 	return s.dialOptions
 }
 
-// IsHealthy reports whether the server's backing store is working.
+// IsHealthy reports whether the server's backing store is ready.
 func (s *Sk8lServer) IsHealthy() bool {
-	return s.CronJobDBStore != nil && s.CronJobDBStore.Ping() == nil
+	return s.Store != nil && s.Store.Ready()
 }
 
 func (s Sk8lServer) Check(
@@ -158,9 +162,9 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 }
 
 func (s *Sk8lServer) Run(metricsCxt context.Context) {
-	s.collectCronjobs(metricsCxt)
-	s.collectJobs(metricsCxt)
-	s.collectPods(metricsCxt)
+	if starter, ok := s.Store.(store.Starter); ok {
+		starter.Start(metricsCxt)
+	}
 	recordMetrics(metricsCxt, s, s.metricsNamesMap)
 }
 
@@ -225,16 +229,7 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		return err
 	}
 
-	notifyCh := make(chan struct{}, 1)
-	go func() {
-		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
-			select {
-			case notifyCh <- struct{}{}:
-			default:
-			}
-			return nil
-		}, store.CronjobsCacheKey, store.JobsCacheKey, jobPodsPrefix)
-	}()
+	notifyCh := s.Subscribe(ctx)
 
 	ticker := time.NewTicker(streamHeartbeatInterval)
 	defer ticker.Stop()
@@ -243,8 +238,8 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-notifyCh:
-			if ctx.Err() != nil {
+		case _, ok := <-notifyCh:
+			if !ok || ctx.Err() != nil {
 				return nil
 			}
 			if err := send(); err != nil {
@@ -263,7 +258,6 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
 	ctx := stream.Context()
-	cronjobKey := []byte(fmt.Sprintf(store.CronjobsKeyFmt, in.CronjobNamespace, in.CronjobName))
 
 	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
@@ -301,16 +295,7 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 		return err
 	}
 
-	notifyCh := make(chan struct{}, 1)
-	go func() {
-		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
-			select {
-			case notifyCh <- struct{}{}:
-			default:
-			}
-			return nil
-		}, store.CronjobsCacheKey, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
-	}()
+	notifyCh := s.Subscribe(ctx)
 
 	ticker := time.NewTicker(streamHeartbeatInterval)
 	defer ticker.Stop()
@@ -319,8 +304,8 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-notifyCh:
-			if ctx.Err() != nil {
+		case _, ok := <-notifyCh:
+			if !ok || ctx.Err() != nil {
 				return nil
 			}
 			if err := send(); err != nil {
@@ -339,7 +324,6 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
 	ctx := stream.Context()
-	cronjobKey := []byte(fmt.Sprintf(store.CronjobsKeyFmt, in.CronjobNamespace, in.CronjobName))
 
 	send := func() error {
 		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
@@ -391,16 +375,7 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 		return err
 	}
 
-	notifyCh := make(chan struct{}, 1)
-	go func() {
-		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
-			select {
-			case notifyCh <- struct{}{}:
-			default:
-			}
-			return nil
-		}, store.CronjobsCacheKey, cronjobKey, store.JobsCacheKey, jobPodsPrefix)
-	}()
+	notifyCh := s.Subscribe(ctx)
 
 	ticker := time.NewTicker(streamHeartbeatInterval)
 	defer ticker.Stop()
@@ -409,8 +384,8 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-notifyCh:
-			if ctx.Err() != nil {
+		case _, ok := <-notifyCh:
+			if !ok || ctx.Err() != nil {
 				return nil
 			}
 			if err := send(); err != nil {
@@ -469,16 +444,7 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 		return err
 	}
 
-	notifyCh := make(chan struct{}, 1)
-	go func() {
-		_ = s.Subscribe(ctx, func(_ *badger.KVList) error {
-			select {
-			case notifyCh <- struct{}{}:
-			default:
-			}
-			return nil
-		}, store.JobsCacheKey)
-	}()
+	notifyCh := s.Subscribe(ctx)
 
 	ticker := time.NewTicker(streamHeartbeatInterval)
 	defer ticker.Stop()
@@ -487,8 +453,8 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-notifyCh:
-			if ctx.Err() != nil {
+		case _, ok := <-notifyCh:
+			if !ok || ctx.Err() != nil {
 				return nil
 			}
 			if err := send(); err != nil {
@@ -681,399 +647,6 @@ func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse
 		WithSidecarContainers: jobWithSidecar,
 	}
 	return jobResponse
-}
-
-func (s *Sk8lServer) collectCronjobs(ctx context.Context) {
-	go func() {
-		for {
-			x, err := s.K8sClient.WatchCronjobs(ctx)
-			if err != nil {
-				log.Error().
-					Err(err).
-					Str("operation", "collectCronjobs").
-					Msg("WatchCronjobs failed, retrying in 5s")
-				select {
-				case <-ctx.Done():
-					log.Info().
-						Str("operation", "collectCronjobs").
-						Msg("context canceled, stopping watcher")
-					return
-				case <-time.After(5 * time.Second):
-					continue
-				}
-			}
-
-			running := true
-			for running {
-				select {
-				case <-ctx.Done():
-					x.Stop()
-					log.Info().
-						Str("operation", "collectCronjobs").
-						Msg("context canceled, stopping watcher")
-					return
-				case event, more := <-x.ResultChan():
-					if !more {
-						log.Error().
-							Str("operation", "collectCronjobs").
-							Msg("WatchCronjobs: Received all Cronjobs. Opening again")
-						running = false
-						break
-					}
-
-					eventCronjob, ok := event.Object.(*batchv1.CronJob)
-					if !ok {
-						log.Error().
-							Str("operation", "collectCronjobs").
-							Msg("event.Object.(*batchv1.CronJob) type assertion failed")
-						continue
-					}
-					err := s.DB.Update(func(txn *badger.Txn) error {
-						return handleCronJobEvent(txn, event, eventCronjob)
-					})
-					if err != nil {
-						log.Error().
-							Err(err).
-							Str("operation", "collectCronjobs").
-							Msg("handleCronJobEvent failed")
-					}
-				}
-			}
-		}
-	}()
-}
-
-func (s *Sk8lServer) collectJobs(ctx context.Context) {
-	go func() {
-		for {
-			x, err := s.K8sClient.WatchJobs(ctx)
-			if err != nil {
-				log.Error().
-					Err(err).
-					Str("operation", "collectJobs").
-					Msg("WatchJobs failed, retrying in 5s")
-				select {
-				case <-ctx.Done():
-					log.Info().
-						Str("operation", "collectJobs").
-						Msg("context canceled, stopping watcher")
-					return
-				case <-time.After(5 * time.Second):
-					continue
-				}
-			}
-
-			running := true
-			for running {
-				select {
-				case <-ctx.Done():
-					x.Stop()
-					log.Info().
-						Str("operation", "collectJobs").
-						Msg("context canceled, stopping watcher")
-					return
-				case event, more := <-x.ResultChan():
-					if !more {
-						log.Error().
-							Str("operation", "collectJobs").
-							Msg("WatchJobs: Received all Jobs. Opening again")
-						running = false
-						break
-					}
-
-					eventJob, ok := event.Object.(*batchv1.Job)
-					if !ok {
-						log.Error().
-							Str("operation", "collectJobs").
-							Msg("event.Object.(*batchv1.Job) type assertion failed")
-						continue
-					}
-					err := s.DB.Update(func(txn *badger.Txn) error {
-						return handleJobEvent(txn, event, eventJob)
-					})
-					if err != nil {
-						log.Error().
-							Err(err).
-							Str("operation", "collectJobs").
-							Msg("handleJobEvent failed")
-					}
-				}
-			}
-		}
-	}()
-}
-
-func (s *Sk8lServer) collectPods(ctx context.Context) {
-	go func() {
-		for {
-			x, err := s.K8sClient.WatchPods(ctx)
-			if err != nil {
-				log.Error().
-					Err(err).
-					Str("operation", "collectPods").
-					Msg("WatchPods failed, retrying in 5s")
-				select {
-				case <-ctx.Done():
-					log.Info().
-						Str("operation", "collectPods").
-						Msg("context canceled, stopping watcher")
-					return
-				case <-time.After(5 * time.Second):
-					continue
-				}
-			}
-
-			running := true
-			for running {
-				select {
-				case <-ctx.Done():
-					x.Stop()
-					log.Info().
-						Str("operation", "collectPods").
-						Msg("context canceled, stopping watcher")
-					return
-				case event, more := <-x.ResultChan():
-					if !more {
-						log.Error().
-							Str("operation", "collectPods").
-							Msg("WatchPods: Received all Pods. Opening again")
-						running = false
-						break
-					}
-
-					eventPod, ok := event.Object.(*corev1.Pod)
-					if !ok {
-						log.Error().
-							Str("operation", "collectPods").
-							Msg("event.Object.(*corev1.Pod) type assertion failed")
-						continue
-					}
-					err := s.DB.Update(func(txn *badger.Txn) error {
-						return handlePodEvent(txn, event, eventPod)
-					})
-					if err != nil {
-						log.Error().
-							Err(err).
-							Str("operation", "collectPods").
-							Msg("handlePodEvent failed")
-					}
-				}
-			}
-		}
-	}()
-}
-
-func handleCronJobEvent(txn *badger.Txn, event watch.Event, eventCronJob *batchv1.CronJob) error {
-	item, err := txn.Get(store.CronjobsCacheKey)
-	if errors.Is(err, badger.ErrKeyNotFound) {
-		cronJob := *eventCronJob
-		log.Error().
-			Err(badger.ErrKeyNotFound).
-			Str("operation", "handleCronJobEvent").
-			Msg(fmt.Sprintf("storing eventCronJob %s", cronJob.Name))
-		cjList := &batchv1.CronJobList{
-			Items: []batchv1.CronJob{cronJob},
-		}
-		var buf bytes.Buffer
-		if err := store.K8sSerialize(cjList, &buf); err != nil {
-			log.Error().
-				Err(err).
-				Str("operation", "handleCronJobEvent").
-				Msg("k8sSerializer.Encode")
-			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectCronjobs", err)
-		}
-		return storeEntry(txn, store.CronjobsCacheKey, buf.Bytes(), "sk8l#collectCronjobs")
-	}
-
-	err = item.Value(func(stored []byte) error {
-		return updateStoredCronjobList(txn, stored, event, eventCronJob)
-	})
-	if err != nil {
-		return fmt.Errorf("sk8l#collectCronjobs: item.Value() failed: %w", err)
-	}
-	return nil
-}
-
-func handleJobEvent(txn *badger.Txn, event watch.Event, eventJob *batchv1.Job) error {
-	item, err := txn.Get(store.JobsCacheKey)
-	if err != nil {
-		jList := &batchv1.JobList{
-			Items: []batchv1.Job{*eventJob},
-		}
-		var buf bytes.Buffer
-		if err := store.K8sSerialize(jList, &buf); err != nil {
-			log.Error().
-				Err(err).
-				Str("operation", "handleJobEvent").
-				Msg("k8sSerializer.Encode")
-			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectJobs", err)
-		}
-		return storeEntry(txn, store.JobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
-	}
-	err = item.Value(func(stored []byte) error {
-		return updateStoredJobList(txn, stored, event, eventJob)
-	})
-	if err != nil {
-		return fmt.Errorf("sk8l#collectJobs: item.Value() failed: %w", err)
-	}
-	return nil
-}
-
-func handlePodEvent(txn *badger.Txn, event watch.Event, eventPod *corev1.Pod) error {
-	fKey := fmt.Sprintf(store.JobPodsKeyFmt, eventPod.Labels["job-name"])
-	key := []byte(fKey)
-	item, err := txn.Get(key)
-	if err != nil {
-		podList := &corev1.PodList{
-			Items: []corev1.Pod{*eventPod},
-		}
-		var buf bytes.Buffer
-		if err = store.K8sSerialize(podList, &buf); err != nil {
-			log.Error().
-				Err(err).
-				Str("operation", "handlePodEvent").
-				Msg("k8sSerializer.Encode")
-			return fmt.Errorf("%s: Encode() failed: %w", "sk8l#collectPods", err)
-		}
-		return storeEntry(txn, key, buf.Bytes(), "sk8l#collectPods")
-	}
-
-	err = item.Value(func(val []byte) error {
-		return updateStoredPodList(txn, val, key, eventPod)
-	})
-	if err != nil {
-		return fmt.Errorf("sk8l#collectPods: item.Value() failed: %w", err)
-	}
-	return nil
-}
-
-func updateStoredCronjobList(txn *badger.Txn, stored []byte, event watch.Event, eventCronJob *batchv1.CronJob) error {
-	log.Info().
-		Str("operation", "updateStoredCronjobList").
-		Msg(fmt.Sprintf("Updating with %s", eventCronJob.Name))
-	storedCjList := &batchv1.CronJobList{}
-	if _, _, err := store.K8sDeserialize(stored, storedCjList); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "updateStoredCronjobList").
-			Msg("k8sSerializer.Decode")
-		return fmt.Errorf("sk8l#collectCronjobs: Decode() failed: %w", err)
-	}
-
-	//revive:disable:identical-switch-branches
-	switch event.Type {
-	case watch.Added, watch.Modified:
-		filterCronJobsList(storedCjList, eventCronJob)
-		storedCjList.Items = append(storedCjList.Items, *eventCronJob)
-	case watch.Deleted:
-		filterCronJobsList(storedCjList, eventCronJob)
-	case watch.Bookmark, watch.Error:
-		// no-op: explicitly ignored
-	default:
-		// default case to satisfy revive
-	}
-	//revive:enable:identical-switch-branches
-
-	var buf bytes.Buffer
-	if err := store.K8sSerialize(storedCjList, &buf); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "updateStoredCronjobList").
-			Msg("k8sSerializer.Encode")
-		return fmt.Errorf("sk8l#collectCronjobs: Encode() failed: %w", err)
-	}
-	return storeEntry(txn, store.CronjobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
-}
-
-func updateStoredJobList(txn *badger.Txn, stored []byte, event watch.Event, eventJob *batchv1.Job) error {
-	storedJList := &batchv1.JobList{}
-	if _, _, err := store.K8sDeserialize(stored, storedJList); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "updateStoredJobList").
-			Msg("k8sSerializer.Decode")
-		return fmt.Errorf("sk8l#collectJobs: Decode() failed: %w", err)
-	}
-
-	//revive:disable:identical-switch-branches
-	switch event.Type {
-	case watch.Added, watch.Modified:
-		filterStoredJobList(storedJList, eventJob)
-		storedJList.Items = append(storedJList.Items, *eventJob)
-	case watch.Deleted:
-		filterStoredJobList(storedJList, eventJob)
-	case watch.Bookmark, watch.Error:
-		// no-op: explicitly ignored
-	default:
-		// default case to satisfy revive
-	}
-	//revive:enable:identical-switch-branches
-
-	var buf bytes.Buffer
-	if err := store.K8sSerialize(storedJList, &buf); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "updateStoredJobList").
-			Msg("k8sSerializer.Encode")
-		return fmt.Errorf("sk8l#collectJobs: Encode() failed: %w", err)
-	}
-	return storeEntry(txn, store.JobsCacheKey, buf.Bytes(), "sk8l#collectJobs")
-}
-
-func updateStoredPodList(txn *badger.Txn, stored []byte, key []byte, eventPod *corev1.Pod) error {
-	podList := &corev1.PodList{}
-	if _, _, err := store.K8sDeserialize(stored, podList); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "updateStoredPodList").
-			Msg("k8sSerializer.Decode")
-		return fmt.Errorf("operation#k8sSerializer.Decode: %w", err)
-	}
-	podList.Items = append(podList.Items, *eventPod)
-	var buf bytes.Buffer
-	if err := store.K8sSerialize(podList, &buf); err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "updateStoredPodList").
-			Msg("k8sSerializer.Encode")
-		return fmt.Errorf("operation#k8sSerializer.Encode: %w", err)
-	}
-	return storeEntry(txn, key, buf.Bytes(), "sk8l#collectPods")
-}
-
-func filterCronJobsList(storedCjList *batchv1.CronJobList, eventCronJob *batchv1.CronJob) {
-	log.Info().
-		Str("operation", "filterCronJobsList").
-		Msg(fmt.Sprintf("filtering out %s", eventCronJob.Name))
-	cjList := &batchv1.CronJobList{}
-	for _, cronjob := range storedCjList.Items {
-		if cronjob.Name != eventCronJob.Name {
-			cjList.Items = append(cjList.Items, cronjob)
-		}
-	}
-	storedCjList.Items = cjList.Items
-}
-
-func filterStoredJobList(storedJList *batchv1.JobList, eventJob *batchv1.Job) {
-	jList := &batchv1.JobList{}
-	for _, job := range storedJList.Items {
-		if job.Name != eventJob.Name {
-			jList.Items = append(jList.Items, job)
-		}
-	}
-	storedJList.Items = jList.Items
-}
-
-func storeEntry(txn *badger.Txn, key []byte, result []byte, errContext string) error {
-	log.Info().
-		Str("operation", "storeEntry").
-		Msg(errContext)
-	entry := badger.NewEntry(key, result)
-	if err := txn.SetEntry(entry); err != nil {
-		log.Printf("Error: %s#txn.SetEntry: %v", errContext, err)
-		return fmt.Errorf("%s: txn.SetEntry() failed: %w", errContext, err)
-	}
-	return nil
 }
 
 func (s *Sk8lServer) allAndRunningJobsAnPods(
