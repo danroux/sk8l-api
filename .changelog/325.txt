@@ -1,0 +1,3 @@
+```release-note:feature
+go: Implement client-go informers store with indexed lookups, SetTransform memory stripping, and coalesced change notifications
+```
