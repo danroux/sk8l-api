@@ -1,0 +1,3 @@
+```release-note:feature
+go: Switch storage backend from Badger to in-memory client-go informers and remove legacy collectors
+```

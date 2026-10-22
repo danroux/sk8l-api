@@ -241,7 +241,10 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer, cronjobsMap *sync.Map) 
 	}
 
 	c := protos.NewCronjobClient(conn)
-	subSystem := svr.K8sClient.Namespace()
+	subSystem := ""
+	if cl := svr.GetK8sClient(); cl != nil {
+		subSystem = cl.Namespace()
+	}
 
 	log.Info().
 		Str("component", "metrics").
