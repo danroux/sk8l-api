@@ -1,3 +1,7 @@
-vuejs/
-infra/
-charts
+.git
+.github
+.changelog
+.agents
+charts/
+testdata
+prometheus-local.yml

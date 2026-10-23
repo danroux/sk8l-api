@@ -1,0 +1,3 @@
+```release-note:improvement
+docker: Optimize BuildKit cache mounts and exclude metadata from build context
+```
