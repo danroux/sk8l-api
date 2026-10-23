@@ -1,3 +1,25 @@
+## v0.22.0 (October 23, 2026)
+
+
+FEATURES:
+
+* go: Implement client-go informers store with indexed lookups, SetTransform memory stripping, and coalesced change notifications [[GH-325](https://github.com/danroux/sk8l-api/issues/325)]
+* go: Switch storage backend from Badger to in-memory client-go informers and remove legacy collectors [[GH-326](https://github.com/danroux/sk8l-api/issues/326)]
+
+ENHANCEMENTS:
+
+* helm: Add RBAC clusterWide toggle, default to namespaced Role/RoleBinding, and dynamic namespace resolution [[GH-330](https://github.com/danroux/sk8l-api/issues/330)]
+
+IMPROVEMENTS:
+
+* docker: Optimize BuildKit cache mounts and exclude metadata from build context [[GH-329](https://github.com/danroux/sk8l-api/issues/329)]
+* go: Abstract store operations behind Store interface and decouple gRPC streaming from Badger pub/sub [[GH-324](https://github.com/danroux/sk8l-api/issues/324)]
+* go: Remove Badger dependency, unused logger adapter and chart storage volume; enforce `mnd` linter on all files [[GH-328](https://github.com/danroux/sk8l-api/issues/328)]
+
+DEPENDENCIES:
+
+* ci/dependabot: docker:(deps): bump alpine from 3.24.2 to 3.24.3 [[GH-327](https://github.com/danroux/sk8l-api/issues/327)]
+
 ## v0.21.0 (October 21, 2026)
 
 BREAKING CHANGES:

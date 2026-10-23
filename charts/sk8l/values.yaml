@@ -9,14 +9,12 @@ namespace:
   # pod-security.kubernetes.io/enforce-version: latest
   # pod-security.kubernetes.io/warn: restricted
   # pod-security.kubernetes.io/warn-version: latest
-
 rbac:
   # Specifies whether RBAC resources (Role/ClusterRole and RoleBinding/ClusterRoleBinding) should be created
   create: true
   # clusterWide: if true, creates ClusterRole and ClusterRoleBinding (cluster-scoped access).
   # If false (default), creates namespaced Role and RoleBinding scoped strictly to the release namespace.
   clusterWide: false
-
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
@@ -29,7 +27,7 @@ serviceAccount:
     annotations: {}
 sk8lApi:
   image: "danroux/sk8l-api"
-  imageTag: "v0.21.0"
+  imageTag: "v0.22.0"
   imagePullPolicy: ""
   # targetNamespace: Namespace to monitor jobs/cronjobs in.
   # When rbac.clusterWide is false, defaults to the release namespace.
