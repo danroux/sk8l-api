@@ -41,6 +41,13 @@ var (
 const (
 	streamHeartbeatSeconds  = 10
 	streamHeartbeatInterval = streamHeartbeatSeconds * time.Second
+
+	// defaultWatchInterval is how often the health Watch RPC re-evaluates the store status.
+	defaultWatchInterval = 5 * time.Second
+
+	// previousJobOffset is the 1-based offset from the end of the jobs list used to
+	// pick the last completed job when more than one job exists (the latest may be running).
+	previousJobOffset = 2
 )
 
 // isClientCanceled checks if the error or context indicates a client-side cancellation.
@@ -76,7 +83,7 @@ func NewSk8lServer(
 		k8sClient:       k8sCl,
 		metricsNamesMap: metricsNamesMap,
 		dialOptions:     dialOptions,
-		watchInterval:   5 * time.Second,
+		watchInterval:   defaultWatchInterval,
 	}
 }
 
@@ -1064,11 +1071,9 @@ func getCurrentDuration(runningJobsForCronJob []*protos.JobResponse) int64 {
 func getLastDuration(allJobsForCronJob []*protos.JobResponse) int64 {
 	var lastDuration int64
 	if len(allJobsForCronJob) > 0 {
-		var i int
-		if len(allJobsForCronJob) > 2 {
-			i = 2
-		} else {
-			i = 1
+		i := 1
+		if len(allJobsForCronJob) > previousJobOffset {
+			i = previousJobOffset
 		}
 		last := allJobsForCronJob[len(allJobsForCronJob)-i]
 		lastDuration = last.DurationInS
