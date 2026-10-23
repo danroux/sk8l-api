@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,22 +10,23 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/internal/store"
+	"github.com/danroux/sk8l/internal/store/informer"
 	"github.com/danroux/sk8l/protos"
 	"github.com/danroux/sk8l/testutil"
-	badger "github.com/dgraph-io/badger/v4"
 	"github.com/google/go-cmp/cmp"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
-	cgt "k8s.io/client-go/testing"
 	gyaml "sigs.k8s.io/yaml"
 
 	"google.golang.org/grpc"
@@ -44,27 +44,19 @@ var (
 	sk8lServer = &Sk8lServer{}
 )
 
-func setupBadger(t *testing.T) *badger.DB {
-	dir := t.TempDir()
-	opts := badger.DefaultOptions(dir).WithLogger(nil)
-	db, err := badger.Open(opts)
+func setupTestInformerStore(t *testing.T, cs kubernetes.Interface, ns string) *informer.Store {
+	t.Helper()
+	st, err := informer.New(cs, ns)
 	if err != nil {
-		t.Fatalf("failed to open badger DB: %v", err)
+		t.Fatalf("failed to create informer store: %v", err)
 	}
-	return db
-}
-
-func putCronjobsToBadger(t *testing.T, db *badger.DB, cronjobList *batchv1.CronJobList) {
-	var buf bytes.Buffer
-	if err := store.K8sSerialize(cronjobList, &buf); err != nil {
-		t.Fatalf("failed to encode cronjob list: %v", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+	st.Start(ctx)
+	if !st.WaitForSync(ctx) {
+		t.Fatal("timed out waiting for test informer store to sync")
 	}
-	err := db.Update(func(txn *badger.Txn) error {
-		return txn.Set(store.CronjobsCacheKey, buf.Bytes())
-	})
-	if err != nil {
-		t.Fatalf("failed to write cronjobs to badger: %v", err)
-	}
+	return st
 }
 
 func bufDialer(context.Context, string) (net.Conn, error) {
@@ -95,9 +87,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestGetCronjobYAML(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
 	conn, err := grpc.NewClient(
 		"passthrough:///bufnet",
 		grpc.WithContextDialer(bufDialer),
@@ -120,24 +109,11 @@ func TestGetCronjobYAML(t *testing.T) {
 		WithNamespace("sk8l").
 		Build()
 
-	cronjobList := testutil.NewCronJobListBuilder().
-		WithItems(cronjob1).
-		Build()
-
-	clientSet := fake.NewClientset()
-	_, err = clientSet.BatchV1().CronJobs(cronjob1.Namespace).Create(context.Background(), cronjob1, metav1.CreateOptions{})
-	if err != nil {
-		t.Errorf("failed to create CronJob %q in namespace %q: %v", cronjob1.Name, cronjob1.Namespace, err)
-	}
-
+	clientSet := fake.NewClientset(cronjob1)
 	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := &store.CronJobDBStore{
-		DB:        db,
-		K8sClient: k8sClient,
-	}
-	sk8lServer.Store = st
-	sk8lServer.K8sClient = k8sClient
-	putCronjobsToBadger(t, db, cronjobList)
+	st := setupTestInformerStore(t, clientSet, "sk8l")
+	sk8lServer.SetStore(st)
+	sk8lServer.SetK8sClient(k8sClient)
 
 	yamlResp, err := client.GetCronjobYAML(ctx, &protos.CronjobRequest{CronjobName: cronjob1.Name, CronjobNamespace: cronjob1.Namespace})
 	if err != nil {
@@ -187,9 +163,6 @@ func TestGetCronjobYAML(t *testing.T) {
 }
 
 func TestGetCronjobYAML_NotFound(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
 	conn, err := grpc.NewClient(
 		"passthrough:///bufnet",
 		grpc.WithContextDialer(bufDialer),
@@ -205,12 +178,9 @@ func TestGetCronjobYAML_NotFound(t *testing.T) {
 
 	clientSet := fake.NewClientset()
 	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := &store.CronJobDBStore{
-		DB:        db,
-		K8sClient: k8sClient,
-	}
-	sk8lServer.Store = st
-	sk8lServer.K8sClient = k8sClient
+	st := setupTestInformerStore(t, clientSet, "default")
+	sk8lServer.SetStore(st)
+	sk8lServer.SetK8sClient(k8sClient)
 
 	client := protos.NewCronjobClient(conn)
 	_, err = client.GetCronjobYAML(ctx, &protos.CronjobRequest{
@@ -223,9 +193,6 @@ func TestGetCronjobYAML_NotFound(t *testing.T) {
 }
 
 func TestGetJobYAML(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
 	conn, err := grpc.NewClient(
 		"passthrough:///bufnet",
 		grpc.WithContextDialer(bufDialer),
@@ -246,12 +213,9 @@ func TestGetJobYAML(t *testing.T) {
 
 	clientSet := fake.NewClientset(job)
 	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := &store.CronJobDBStore{
-		DB:        db,
-		K8sClient: k8sClient,
-	}
-	sk8lServer.Store = st
-	sk8lServer.K8sClient = k8sClient
+	st := setupTestInformerStore(t, clientSet, "default")
+	sk8lServer.SetStore(st)
+	sk8lServer.SetK8sClient(k8sClient)
 
 	client := protos.NewCronjobClient(conn)
 
@@ -278,9 +242,6 @@ func TestGetJobYAML(t *testing.T) {
 }
 
 func TestGetPodYAML(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
 	conn, err := grpc.NewClient(
 		"passthrough:///bufnet",
 		grpc.WithContextDialer(bufDialer),
@@ -303,12 +264,9 @@ func TestGetPodYAML(t *testing.T) {
 
 	clientSet := fake.NewClientset(pod)
 	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := &store.CronJobDBStore{
-		DB:        db,
-		K8sClient: k8sClient,
-	}
-	sk8lServer.Store = st
-	sk8lServer.K8sClient = k8sClient
+	st := setupTestInformerStore(t, clientSet, "default")
+	sk8lServer.SetStore(st)
+	sk8lServer.SetK8sClient(k8sClient)
 
 	client := protos.NewCronjobClient(conn)
 
@@ -335,19 +293,14 @@ func TestGetPodYAML(t *testing.T) {
 }
 
 func TestGetCronjosbDB(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
 	conn, err := grpc.NewClient(
 		"passthrough:///bufnet",
 		grpc.WithContextDialer(bufDialer),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
-
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-
 	defer conn.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -369,46 +322,21 @@ func TestGetCronjosbDB(t *testing.T) {
 		WithItems(cronjob1, cronjob2).
 		Build()
 
-	clientSet := fake.NewClientset()
+	clientSet := fake.NewClientset(cronjob1, cronjob2)
 	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := &store.CronJobDBStore{
-		DB:        db,
-		K8sClient: k8sClient,
-	}
-	sk8lServer.Store = st
-	sk8lServer.K8sClient = k8sClient
-	putCronjobsToBadger(t, db, cronjobList)
+	st := setupTestInformerStore(t, clientSet, "sk8l")
+	sk8lServer.SetStore(st)
+	sk8lServer.SetK8sClient(k8sClient)
 
 	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
 	if err != nil {
 		t.Fatalf("GetCronjobs RPC failed: %v", err)
 	}
 
-	// https://grpc.io/docs/guides/cancellation/
-	// https://learn.microsoft.com/en-us/aspnet/core/grpc/performance
-	cronJobResponse := &protos.CronjobsResponse{}
+	cronJobResponse := drainCronjobStream(t, stream, cancel, len(cronjobList.Items))
 
-	for {
-		cj, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-
-		if status.Code(err) == codes.Canceled {
-			log.Println("stream canceled", err)
-			break
-		}
-
-		cronJobResponse.Cronjobs = append(cronJobResponse.Cronjobs, cj.Cronjobs...)
-		if len(cronJobResponse.Cronjobs) >= len(cronjobList.Items) {
-			// Cancel context early to stop streaming
-			cancel()
-			break
-		}
-	}
-
-	if len(cronJobResponse.Cronjobs) != len(cronjobList.Items) {
-		t.Errorf("expected %d cronjobs, got %d", len(cronjobList.Items), len(cronJobResponse.Cronjobs))
+	if len(cronJobResponse.Cronjobs) != 2 {
+		t.Errorf("expected %d cronjobs, got %d", 2, len(cronJobResponse.Cronjobs))
 	}
 	for i, cj := range cronJobResponse.Cronjobs {
 		if cj.Name != cronjobList.Items[i].Name {
@@ -422,11 +350,7 @@ func drainCronjobStream(t *testing.T, stream protos.Cronjob_GetCronjobsClient, c
 	result := &protos.CronjobsResponse{}
 	for {
 		resp, recvErr := stream.Recv()
-		if errors.Is(recvErr, io.EOF) {
-			break
-		}
-		if status.Code(recvErr) == codes.Canceled {
-			log.Println("stream canceled", recvErr)
+		if errors.Is(recvErr, io.EOF) || status.Code(recvErr) == codes.Canceled {
 			break
 		}
 		if recvErr != nil {
@@ -436,6 +360,12 @@ func drainCronjobStream(t *testing.T, stream protos.Cronjob_GetCronjobsClient, c
 		result.Cronjobs = append(result.Cronjobs, resp.Cronjobs...)
 		if len(result.Cronjobs) >= expected {
 			cancel()
+			for {
+				_, drainErr := stream.Recv()
+				if drainErr != nil {
+					break
+				}
+			}
 			break
 		}
 	}
@@ -443,10 +373,6 @@ func drainCronjobStream(t *testing.T, stream protos.Cronjob_GetCronjobsClient, c
 }
 
 func TestGetCronjobsService(t *testing.T) {
-	db := setupBadger(t)
-
-	defer db.Close()
-
 	podTemsplateSpec := testutil.NewPodTemplateSpecBuilder().
 		WithSidecarContainers().
 		Build()
@@ -481,25 +407,11 @@ func TestGetCronjobsService(t *testing.T) {
 		WithCronjob(*cronjob).
 		Build()
 
-	watcher := watch.NewFake()
-	go watcher.Add(cronjob)
-
 	clientSet := fake.NewClientset(job, jobTwo, cronjob)
-
-	// Prepend a watch reactor for "cronjobs" resource that returns the FakeWatcher
-	clientSet.PrependWatchReactor("cronjobs", func(action cgt.Action) (handled bool, ret watch.Interface, err error) {
-		return true, watcher, nil
-	})
-
 	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
-	st := &store.CronJobDBStore{
-		DB:        db,
-		K8sClient: k8sClient,
-	}
-
-	sk8lServer.Store = st
-	sk8lServer.K8sClient = k8sClient
-	st.CollectCronjobs(context.Background())
+	st := setupTestInformerStore(t, clientSet, "default")
+	sk8lServer.SetStore(st)
+	sk8lServer.SetK8sClient(k8sClient)
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -560,9 +472,6 @@ func TestGetCronjobsService(t *testing.T) {
 }
 
 func TestCronJobsResponseWithPods(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
 	namespace := "default"
 	podOne := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -625,9 +534,6 @@ func TestCronJobsResponseWithPods(t *testing.T) {
 // CronjobResponse objects and appending to the shared slice in GetCronjobs do not
 // produce data races.
 func TestGetCronjobs_NoConcurrentRace(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
 	const numCronjobs = 10
 	items := make([]*batchv1.CronJob, 0, numCronjobs)
 	for i := range numCronjobs {
@@ -638,15 +544,15 @@ func TestGetCronjobs_NoConcurrentRace(t *testing.T) {
 	}
 	cronjobList := testutil.NewCronJobListBuilder().WithItems(items...).Build()
 
-	clientSet := fake.NewClientset()
-	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
-	st := &store.CronJobDBStore{
-		DB:        db,
-		K8sClient: k8sClient,
+	objs := make([]runtime.Object, len(cronjobList.Items))
+	for i := range cronjobList.Items {
+		objs[i] = &cronjobList.Items[i]
 	}
-	sk8lServer.Store = st
-	sk8lServer.K8sClient = k8sClient
-	putCronjobsToBadger(t, db, cronjobList)
+	clientSet := fake.NewClientset(objs...)
+	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
+	st := setupTestInformerStore(t, clientSet, "default")
+	sk8lServer.SetStore(st)
+	sk8lServer.SetK8sClient(k8sClient)
 
 	jobsMapped := map[string][]*batchv1.Job{}
 
@@ -675,17 +581,11 @@ func TestGetCronjobs_NoConcurrentRace(t *testing.T) {
 // TestAllAndRunningJobsAnPods_NoConcurrentRace validates that concurrent goroutines
 // inside allAndRunningJobsAnPods do not produce data races on the four shared slices.
 func TestAllAndRunningJobsAnPods_NoConcurrentRace(t *testing.T) {
-	db := setupBadger(t)
-	defer db.Close()
-
 	clientSet := fake.NewClientset()
 	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
-	st := &store.CronJobDBStore{
-		DB:        db,
-		K8sClient: k8sClient,
-	}
-	sk8lServer.Store = st
-	sk8lServer.K8sClient = k8sClient
+	st := setupTestInformerStore(t, clientSet, "default")
+	sk8lServer.SetStore(st)
+	sk8lServer.SetK8sClient(k8sClient)
 
 	const numJobs = 10
 	jobs := make([]*batchv1.Job, 0, numJobs)
@@ -707,39 +607,43 @@ func TestAllAndRunningJobsAnPods_NoConcurrentRace(t *testing.T) {
 	}
 }
 
-// newHealthServer builds a minimal Sk8lServer wired to an in-memory Badger DB
-// and returns the server along with its underlying DB so tests can close it
-// to simulate a degraded state. watchInterval is set to a small value so
-// TestWatch/PushesStatusTransition does not have to wait for the production 5s ticker.
-func newHealthServer(t *testing.T) (*Sk8lServer, *badger.DB) {
+type fakeHealthStore struct {
+	store.Store
+	ready atomic.Bool
+}
+
+func (f *fakeHealthStore) Ready() bool {
+	return f.ready.Load()
+}
+
+// newHealthServer builds a minimal Sk8lServer wired to a mock store
+// and returns the server along with a function to simulate a degraded state.
+// watchInterval is set to a small value so TestWatch/PushesStatusTransition
+// does not have to wait for the production 5s ticker.
+func newHealthServer(t *testing.T) (*Sk8lServer, func()) {
 	t.Helper()
-	db := setupBadger(t)
 	fakeClientset := fake.NewClientset()
 	k8sClient := k8s.NewClientWithInterface(fakeClientset)
-	s := &Sk8lServer{
-		Store: &store.CronJobDBStore{
-			DB:        db,
-			K8sClient: k8sClient,
-		},
-		K8sClient:     k8sClient,
-		watchInterval: 10 * time.Millisecond,
-	}
-	return s, db
+	fs := &fakeHealthStore{}
+	fs.ready.Store(true)
+	s := NewSk8lServer("", fs, k8sClient, nil)
+	s.watchInterval = 10 * time.Millisecond
+	return s, func() { fs.ready.Store(false) }
 }
 
 func TestIsHealthy(t *testing.T) {
-	t.Run("HealthyWhenDBOpen", func(t *testing.T) {
+	t.Run("HealthyWhenReady", func(t *testing.T) {
 		s, _ := newHealthServer(t)
 		if !s.IsHealthy() {
-			t.Error("expected IsHealthy() == true when DB is open")
+			t.Error("expected IsHealthy() == true when store is ready")
 		}
 	})
 
-	t.Run("UnhealthyWhenDBClosed", func(t *testing.T) {
-		s, db := newHealthServer(t)
-		db.Close()
+	t.Run("UnhealthyWhenDegraded", func(t *testing.T) {
+		s, degrade := newHealthServer(t)
+		degrade()
 		if s.IsHealthy() {
-			t.Error("expected IsHealthy() == false after DB is closed")
+			t.Error("expected IsHealthy() == false after store is degraded")
 		}
 	})
 
@@ -765,9 +669,9 @@ func TestCheck(t *testing.T) {
 		}
 	})
 
-	t.Run("NotServingWhenDBClosed", func(t *testing.T) {
-		s, db := newHealthServer(t)
-		db.Close()
+	t.Run("NotServingWhenDegraded", func(t *testing.T) {
+		s, degrade := newHealthServer(t)
+		degrade()
 		resp, err := s.Check(ctx, nil)
 		if err != nil {
 			t.Fatalf("Check returned unexpected error: %v", err)
@@ -858,7 +762,7 @@ func TestWatch(t *testing.T) {
 	})
 
 	t.Run("PushesStatusTransition", func(t *testing.T) {
-		s, db := newHealthServer(t)
+		s, degrade := newHealthServer(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		stream := newMockWatchServer(ctx)
@@ -869,9 +773,9 @@ func TestWatch(t *testing.T) {
 		// Initial SERVING message lands almost immediately.
 		time.Sleep(50 * time.Millisecond)
 
-		// Simulate DB failure. With watchInterval=10ms the ticker fires quickly;
-		// wait just long enough for at least one tick to observe the closed DB.
-		db.Close()
+		// Simulate store degradation. With watchInterval=10ms the ticker fires quickly;
+		// wait just long enough for at least one tick to observe the degraded store.
+		degrade()
 		time.Sleep(100 * time.Millisecond)
 
 		cancel()

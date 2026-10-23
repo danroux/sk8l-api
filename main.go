@@ -14,8 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/internal/logger"
-	"github.com/danroux/sk8l/internal/store"
+	"github.com/danroux/sk8l/internal/store/informer"
 	"github.com/danroux/sk8l/protos"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -67,9 +68,17 @@ func main() {
 
 	metricsNamesMap := &sync.Map{}
 
-	cronjobDBStore, err := store.NewCronJobDBStore(store.WithDefaultK8sClient(K8Namespace))
+	k8sClient, err := k8s.NewClient(
+		k8s.WithNamespace(K8Namespace),
+		k8s.WithLogger(log.With().Str("component", "k8s").Logger()),
+	)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize cronjobDBStore")
+		log.Fatal().Err(err).Msg("failed to create k8s client")
+	}
+
+	informerStore, err := informer.New(k8sClient, K8Namespace)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize informerStore")
 	}
 	clientTLSConfig := serverTLSConfig.Clone()
 	clientTLSConfig.InsecureSkipVerify = true
@@ -77,7 +86,8 @@ func main() {
 
 	sk8lServer := NewSk8lServer(
 		dialTarget,
-		cronjobDBStore,
+		informerStore,
+		k8sClient,
 		metricsNamesMap,
 		grpc.WithTransportCredentials(internalClientCreds),
 	)

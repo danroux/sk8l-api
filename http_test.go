@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/danroux/sk8l/internal/k8s"
@@ -11,21 +12,25 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
-// newHTTPTestServer builds a test Sk8lServer with a live in-memory Badger DB
+type fakeStore struct {
+	store.Store
+	ready atomic.Bool
+}
+
+func (f *fakeStore) Ready() bool {
+	return f.ready.Load()
+}
+
+// newHTTPTestServer builds a test Sk8lServer with a mock store
 // and returns it together with a teardown function.
 func newHTTPTestServer(t *testing.T) (*Sk8lServer, func()) {
 	t.Helper()
-	db := setupBadger(t)
 	fakeClientset := fake.NewClientset()
 	k8sClient := k8s.NewClientWithInterface(fakeClientset)
-	s := &Sk8lServer{
-		Store: &store.CronJobDBStore{
-			DB:        db,
-			K8sClient: k8sClient,
-		},
-		K8sClient: k8sClient,
-	}
-	return s, func() { db.Close() }
+	fs := &fakeStore{}
+	fs.ready.Store(true)
+	s := NewSk8lServer("", fs, k8sClient, nil)
+	return s, func() { fs.ready.Store(false) }
 }
 
 func TestHealthzHandler(t *testing.T) {

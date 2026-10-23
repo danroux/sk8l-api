@@ -10,19 +10,14 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
 type ClientInterface interface {
 	GetCronjob(ctx context.Context, cronjobNamespace, cronjobName string) (*batchv1.CronJob, error)
-	WatchCronjobs(ctx context.Context) (watch.Interface, error)
-	WatchJobs(ctx context.Context) (watch.Interface, error)
-	WatchPods(ctx context.Context) (watch.Interface, error)
 	GetPod(ctx context.Context, jobNamespace, podName string) (*corev1.Pod, error)
 	GetJob(ctx context.Context, jobNamespace, jobName string) (*batchv1.Job, error)
-	GetAllJobs(ctx context.Context) (*batchv1.JobList, error)
 	Namespace() string
 }
 
@@ -107,45 +102,6 @@ func (kc *Client) GetCronjob(ctx context.Context, cronjobNamespace, cronjobName 
 	return cronJob, nil
 }
 
-func (kc *Client) WatchCronjobs(ctx context.Context) (watch.Interface, error) {
-	watcher, err := kc.BatchV1().CronJobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
-	if err != nil {
-		kc.l.Error().
-			Err(err).
-			Str("operation", "WatchCronjobs").
-			Msg("failed to start watching CronJobs")
-		return nil, fmt.Errorf("failed to start watching CronJobs: %w", err)
-	}
-
-	return watcher, nil
-}
-
-func (kc *Client) WatchJobs(ctx context.Context) (watch.Interface, error) {
-	watcher, err := kc.BatchV1().Jobs(kc.namespace).Watch(ctx, metav1.ListOptions{})
-	if err != nil {
-		kc.l.Error().
-			Err(err).
-			Str("operation", "WatchJobs").
-			Msg("failed to start watching Jobs")
-		return nil, fmt.Errorf("failed to start watching Jobs: %w", err)
-	}
-
-	return watcher, nil
-}
-
-func (kc *Client) WatchPods(ctx context.Context) (watch.Interface, error) {
-	watcher, err := kc.CoreV1().Pods(kc.namespace).Watch(ctx, metav1.ListOptions{})
-	if err != nil {
-		kc.l.Error().
-			Err(err).
-			Str("operation", "WatchPods").
-			Msg("failed to start watching Pods")
-		return nil, fmt.Errorf("failed to start watching Pods: %w", err)
-	}
-
-	return watcher, nil
-}
-
 func (kc *Client) GetPod(ctx context.Context, jobNamespace, podName string) (*corev1.Pod, error) {
 	pod, err := kc.CoreV1().Pods(jobNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
@@ -174,21 +130,4 @@ func (kc *Client) GetJob(ctx context.Context, jobNamespace, jobName string) (*ba
 	}
 
 	return job, nil
-}
-
-func (kc *Client) GetAllJobs(ctx context.Context) (*batchv1.JobList, error) {
-	jobs, err := kc.BatchV1().Jobs(kc.namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		kc.l.Error().
-			Err(err).
-			Str("operation", "GetAllJobs").
-			Msg("failed to list Jobs")
-		return nil, fmt.Errorf("failed to list Jobs: %w", err)
-	}
-
-	kc.l.Info().
-		Str("operation", "GetAllJobs").
-		Msg(fmt.Sprintf("There are %d jobs in the cluster", len(jobs.Items)))
-
-	return jobs, nil
 }

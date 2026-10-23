@@ -33,7 +33,15 @@ import (
 //go:embed dashboards/sk8l-overview.json
 var dashboardJSON string
 
-var streamHeartbeatInterval = time.Second * store.RefreshSeconds
+var (
+	ErrStoreNil     = errors.New("store is nil")
+	ErrK8sClientNil = errors.New("k8sClient is nil")
+)
+
+const (
+	streamHeartbeatSeconds  = 10
+	streamHeartbeatInterval = streamHeartbeatSeconds * time.Second
+)
 
 // isClientCanceled checks if the error or context indicates a client-side cancellation.
 func isClientCanceled(ctx context.Context, err error) bool {
@@ -46,28 +54,26 @@ func isClientCanceled(ctx context.Context, err error) bool {
 type Sk8lServer struct {
 	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
-	store.Store
-	K8sClient       k8s.ClientInterface
+	store           store.Store
+	k8sClient       k8s.ClientInterface
 	metricsNamesMap *sync.Map
 	target          string
 	dialOptions     []grpc.DialOption
 	watchInterval   time.Duration
+	mu              sync.RWMutex
 }
 
 func NewSk8lServer(
 	target string,
 	st store.Store,
+	k8sCl k8s.ClientInterface,
 	metricsNamesMap *sync.Map,
 	dialOptions ...grpc.DialOption,
 ) *Sk8lServer {
-	var k8sCl k8s.ClientInterface
-	if c, ok := st.(*store.CronJobDBStore); ok {
-		k8sCl = c.K8sClient
-	}
 	return &Sk8lServer{
 		target:          target,
-		Store:           st,
-		K8sClient:       k8sCl,
+		store:           st,
+		k8sClient:       k8sCl,
 		metricsNamesMap: metricsNamesMap,
 		dialOptions:     dialOptions,
 		watchInterval:   5 * time.Second,
@@ -82,12 +88,37 @@ func (s *Sk8lServer) GetDialOptions() []grpc.DialOption {
 	return s.dialOptions
 }
 
-// IsHealthy reports whether the server's backing store is ready.
-func (s *Sk8lServer) IsHealthy() bool {
-	return s.Store != nil && s.Store.Ready()
+func (s *Sk8lServer) GetStore() store.Store {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.store
 }
 
-func (s Sk8lServer) Check(
+func (s *Sk8lServer) SetStore(st store.Store) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store = st
+}
+
+func (s *Sk8lServer) GetK8sClient() k8s.ClientInterface {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.k8sClient
+}
+
+func (s *Sk8lServer) SetK8sClient(cl k8s.ClientInterface) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.k8sClient = cl
+}
+
+// IsHealthy reports whether the server's backing store is ready.
+func (s *Sk8lServer) IsHealthy() bool {
+	st := s.GetStore()
+	return st != nil && st.Ready()
+}
+
+func (s *Sk8lServer) Check(
 	ctx context.Context,
 	req *grpc_health_v1.HealthCheckRequest,
 ) (*grpc_health_v1.HealthCheckResponse, error) {
@@ -109,7 +140,7 @@ func (s Sk8lServer) Check(
 // It sends an initial status immediately, then keeps the stream open and
 // pushes a new message whenever the health status transitions. The stream
 // is closed when the client disconnects or the server context is canceled.
-func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
+func (s *Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
 	ticker := time.NewTicker(s.watchInterval)
 	defer ticker.Stop()
 
@@ -162,7 +193,7 @@ func (s Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_he
 }
 
 func (s *Sk8lServer) Run(metricsCxt context.Context) {
-	if starter, ok := s.Store.(store.Starter); ok {
+	if starter, ok := s.GetStore().(store.Starter); ok {
 		starter.Start(metricsCxt)
 	}
 	recordMetrics(metricsCxt, s, s.metricsNamesMap)
@@ -170,9 +201,13 @@ func (s *Sk8lServer) Run(metricsCxt context.Context) {
 
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
 	ctx := stream.Context()
+	st := s.GetStore()
+	if st == nil {
+		return fmt.Errorf("sk8l#GetCronjobs: %w", ErrStoreNil)
+	}
 
 	send := func() error {
-		cronJobList, err := s.FindCronjobs()
+		cronJobList, err := st.FindCronjobs()
 		if err != nil {
 			if isClientCanceled(ctx, err) {
 				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting FindCronjobs")
@@ -182,7 +217,7 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 			return fmt.Errorf("sk8l#GetCronjobs: FindCronjobs() failed: %w", err)
 		}
 
-		jobsMapped, err := s.FindJobsMapped(ctx)
+		jobsMapped, err := st.FindJobsMapped(ctx)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
 				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting FindJobsMapped")
@@ -229,7 +264,11 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 		return err
 	}
 
-	notifyCh := s.Subscribe(ctx)
+	if isClientCanceled(ctx, nil) {
+		return nil
+	}
+
+	notifyCh := st.Subscribe(ctx)
 
 	ticker := time.NewTicker(streamHeartbeatInterval)
 	defer ticker.Stop()
@@ -258,9 +297,13 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
 	ctx := stream.Context()
+	st := s.GetStore()
+	if st == nil {
+		return fmt.Errorf("sk8l#GetCronjob: %w", ErrStoreNil)
+	}
 
 	send := func() error {
-		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+		cronjob, err := st.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
 				log.Debug().Str("operation", "GetCronjob").Msg("client canceled stream; aborting FindCronjob")
@@ -270,7 +313,7 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 			return fmt.Errorf("sk8l#GetCronjob: FindCronjob() failed: %w", err)
 		}
 
-		jobsMapped, err := s.FindJobsMapped(ctx)
+		jobsMapped, err := st.FindJobsMapped(ctx)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
 				log.Debug().Str("operation", "GetCronjob").Msg("client canceled stream; aborting FindJobsMapped")
@@ -295,7 +338,11 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 		return err
 	}
 
-	notifyCh := s.Subscribe(ctx)
+	if isClientCanceled(ctx, nil) {
+		return nil
+	}
+
+	notifyCh := st.Subscribe(ctx)
 
 	ticker := time.NewTicker(streamHeartbeatInterval)
 	defer ticker.Stop()
@@ -324,9 +371,13 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
 	ctx := stream.Context()
+	st := s.GetStore()
+	if st == nil {
+		return fmt.Errorf("sk8l#GetCronjobPods: %w", ErrStoreNil)
+	}
 
 	send := func() error {
-		cronjob, err := s.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+		cronjob, err := st.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
 				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting FindCronjob")
@@ -336,7 +387,7 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 			return fmt.Errorf("sk8l#GetCronjobPods: FindCronjob() failed: %w", err)
 		}
 
-		jobsMapped, err := s.FindJobsMapped(ctx)
+		jobsMapped, err := st.FindJobsMapped(ctx)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
 				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting FindJobsMapped")
@@ -375,7 +426,11 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 		return err
 	}
 
-	notifyCh := s.Subscribe(ctx)
+	if isClientCanceled(ctx, nil) {
+		return nil
+	}
+
+	notifyCh := st.Subscribe(ctx)
 
 	ticker := time.NewTicker(streamHeartbeatInterval)
 	defer ticker.Stop()
@@ -404,9 +459,13 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 
 func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJobsServer) error {
 	ctx := stream.Context()
+	st := s.GetStore()
+	if st == nil {
+		return fmt.Errorf("sk8l#GetJobs: %w", ErrStoreNil)
+	}
 
 	send := func() error {
-		jobList, err := s.FindJobs()
+		jobList, err := st.FindJobs()
 		if err != nil {
 			if isClientCanceled(ctx, err) {
 				log.Debug().Str("operation", "GetJobs").Msg("client canceled stream; aborting FindJobs")
@@ -444,7 +503,11 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 		return err
 	}
 
-	notifyCh := s.Subscribe(ctx)
+	if isClientCanceled(ctx, nil) {
+		return nil
+	}
+
+	notifyCh := st.Subscribe(ctx)
 
 	ticker := time.NewTicker(streamHeartbeatInterval)
 	defer ticker.Stop()
@@ -475,7 +538,11 @@ func (s *Sk8lServer) GetCronjobYAML(
 	ctx context.Context,
 	in *protos.CronjobRequest,
 ) (*protos.CronjobYAMLResponse, error) {
-	cronjob, err := s.K8sClient.GetCronjob(ctx, in.CronjobNamespace, in.CronjobName)
+	cl := s.GetK8sClient()
+	if cl == nil {
+		return nil, fmt.Errorf("sk8l#GetCronjobYAML: %w", ErrK8sClientNil)
+	}
+	cronjob, err := cl.GetCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 	if err != nil {
 		return nil, fmt.Errorf("sk8l#GetCronjobYAML: %w", err)
 	}
@@ -499,7 +566,11 @@ func (s *Sk8lServer) GetCronjobYAML(
 }
 
 func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*protos.JobYAMLResponse, error) {
-	job, err := s.K8sClient.GetJob(ctx, in.JobNamespace, in.JobName)
+	cl := s.GetK8sClient()
+	if cl == nil {
+		return nil, fmt.Errorf("sk8l#GetJobYAML: %w", ErrK8sClientNil)
+	}
+	job, err := cl.GetJob(ctx, in.JobNamespace, in.JobName)
 	if err != nil {
 		return nil, fmt.Errorf("sk8l#GetJobYAML: %w", err)
 	}
@@ -523,7 +594,11 @@ func (s *Sk8lServer) GetJobYAML(ctx context.Context, in *protos.JobRequest) (*pr
 }
 
 func (s *Sk8lServer) GetPodYAML(ctx context.Context, in *protos.PodRequest) (*protos.PodYAMLResponse, error) {
-	pod, err := s.K8sClient.GetPod(ctx, in.PodNamespace, in.PodName)
+	cl := s.GetK8sClient()
+	if cl == nil {
+		return nil, fmt.Errorf("sk8l#GetPodYAML: %w", ErrK8sClientNil)
+	}
+	pod, err := cl.GetPod(ctx, in.PodNamespace, in.PodName)
 	if err != nil {
 		return nil, fmt.Errorf("sk8l#GetPodYAML: %w", err)
 	}
@@ -600,9 +675,15 @@ func (s *Sk8lServer) jobWithSidecarContainer(batchJob *batchv1.Job) bool {
 }
 
 func (s *Sk8lServer) buildJobResponse(batchJob *batchv1.Job) *protos.JobResponse {
-	jobPodsForJob, err := s.FindJobPodsForJob(batchJob)
-	if err != nil {
-		log.Error().Err(err).Str("operation", "buildJobResponse").Msg("FindJobPodsForJob")
+	var jobPodsForJob *corev1.PodList
+	if st := s.GetStore(); st != nil {
+		var err error
+		jobPodsForJob, err = st.FindJobPodsForJob(batchJob)
+		if err != nil {
+			log.Error().Err(err).Str("operation", "buildJobResponse").Msg("FindJobPodsForJob")
+			jobPodsForJob = &corev1.PodList{}
+		}
+	} else {
 		jobPodsForJob = &corev1.PodList{}
 	}
 
