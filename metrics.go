@@ -16,6 +16,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// metricsRetryDelay is the wait before reconnecting the metrics stream after an error.
+const metricsRetryDelay = 5 * time.Second
+
 var (
 	metricNamespace = "sk8l"
 
@@ -273,11 +276,11 @@ func recordMetrics(ctx context.Context, svr *Sk8lServer, cronjobsMap *sync.Map) 
 				log.Error().
 					Err(err).
 					Str("operation", "recordMetrics").
-					Msg("metrics collection error, retrying in 5s")
+					Msg(fmt.Sprintf("metrics collection error, retrying in %s", metricsRetryDelay))
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(5 * time.Second):
+				case <-time.After(metricsRetryDelay):
 				}
 			}
 		}

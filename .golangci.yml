@@ -99,10 +99,6 @@ linters:
         - operation
         - return
         - assign
-      ignored-files:
-        - main.go
-        - sk8l.go
-        - metrics.go
     nakedret:
       # make an issue when you have 3 or more consecutive return statements without parenthesis. Default is maxed at 1.
       max-func-lines: 1

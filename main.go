@@ -29,6 +29,12 @@ const (
 	WriteTimeoutSeconds = 30
 	ReadTimeout         = ReadTimeoutSeconds * time.Second
 	WriteTimeout        = WriteTimeoutSeconds * time.Second
+
+	shutdownTimeoutSeconds = 5
+	shutdownTimeout        = shutdownTimeoutSeconds * time.Second
+
+	// serverErrChanSize is the number of servers (http, probe, grpc) that can report a startup error.
+	serverErrChanSize = 3
 )
 
 var (
@@ -124,7 +130,7 @@ func main() {
 }
 
 func startServers(httpS *http.Server, probeS, grpcS *grpc.Server, ln, healthLn net.Listener) <-chan error {
-	errCh := make(chan error, 3)
+	errCh := make(chan error, serverErrChanSize)
 	go func() {
 		if err := httpS.ListenAndServeTLS(certFile, certKeyFile); err != nil {
 			errCh <- fmt.Errorf("httpS error: %w", err)
@@ -149,7 +155,7 @@ func shutdownServers(
 	grpcS, probeS *grpc.Server,
 	metricsCancel context.CancelFunc,
 ) {
-	shutdownCtx, shutdownCancel := context.WithTimeout(rootCtx, 5*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(rootCtx, shutdownTimeout)
 	defer shutdownCancel()
 	if err := httpS.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("Shutdown: error during httpS shutdown")

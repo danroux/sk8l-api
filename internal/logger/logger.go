@@ -1,4 +1,4 @@
-// Package logger provides zerolog configuration and the Badger logger adapter.
+// Package logger provides zerolog configuration.
 package logger
 
 import (
@@ -43,39 +43,4 @@ func SetupZeroLog() {
 	zerolog.SetGlobalLevel(level)
 
 	log.Info().Str("log_level", level.String()).Msg("logger initialized")
-}
-
-type StandardZeroLogger struct {
-	zerolog.Logger
-}
-
-func NewBadgerLogger(level zerolog.Level) *StandardZeroLogger {
-	x := log.With().Str("component", "badger").Logger().Level(level)
-	return &StandardZeroLogger{
-		Logger: x,
-	}
-}
-
-func (l *StandardZeroLogger) Errorf(f string, v ...any) {
-	if l.GetLevel() <= zerolog.ErrorLevel {
-		l.Printf("ERROR: "+f, v...)
-	}
-}
-
-func (l *StandardZeroLogger) Warningf(f string, v ...any) {
-	if l.GetLevel() <= zerolog.WarnLevel {
-		l.Printf("WARNING: "+f, v...)
-	}
-}
-
-func (l *StandardZeroLogger) Infof(f string, v ...any) {
-	if l.GetLevel() <= zerolog.InfoLevel {
-		l.Printf("INFO: "+f, v...)
-	}
-}
-
-func (l *StandardZeroLogger) Debugf(f string, v ...any) {
-	if l.GetLevel() <= zerolog.DebugLevel {
-		l.Printf("DEBUG: "+f, v...)
-	}
 }

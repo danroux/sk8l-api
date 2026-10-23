@@ -28,7 +28,7 @@ func healthzHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 // readyzHandler returns a readiness probe handler scoped to sk8lServer.
-// It reports 200 when the backing Badger DB is healthy and 503 otherwise.
+// It reports 200 when the backing store is ready and 503 otherwise.
 // Kubernetes stops routing traffic to the pod when this returns non-2xx.
 func readyzHandler(s *Sk8lServer) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {

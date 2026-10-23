@@ -1,0 +1,3 @@
+```release-note:improvement
+go: Remove Badger dependency, unused logger adapter and chart storage volume; enforce `mnd` linter on all files
+```
