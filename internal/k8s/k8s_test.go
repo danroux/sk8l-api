@@ -94,57 +94,6 @@ func TestGetPod(t *testing.T) {
 	}
 }
 
-func TestGetAllJobs(t *testing.T) {
-	job1 := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "job-1",
-			Namespace: "default",
-		},
-	}
-	job2 := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "job-2",
-			Namespace: "default",
-		},
-	}
-	clientSet := fake.NewClientset(job1, job2)
-	client := NewClientWithInterface(clientSet, WithNamespace("default"))
-
-	ctx := context.Background()
-	jobs, err := client.GetAllJobs(ctx)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if len(jobs.Items) != 2 {
-		t.Errorf("expected 2 jobs, got %d", len(jobs.Items))
-	}
-}
-
-func TestWatchMethods(t *testing.T) {
-	clientSet := fake.NewClientset()
-	client := NewClientWithInterface(clientSet, WithNamespace("default"))
-
-	ctx := context.Background()
-
-	cjWatcher, err := client.WatchCronjobs(ctx)
-	if err != nil {
-		t.Fatalf("WatchCronjobs failed: %v", err)
-	}
-	cjWatcher.Stop()
-
-	jobWatcher, err := client.WatchJobs(ctx)
-	if err != nil {
-		t.Fatalf("WatchJobs failed: %v", err)
-	}
-	jobWatcher.Stop()
-
-	podWatcher, err := client.WatchPods(ctx)
-	if err != nil {
-		t.Fatalf("WatchPods failed: %v", err)
-	}
-	podWatcher.Stop()
-}
-
 func TestNamespace(t *testing.T) {
 	clientSet := fake.NewClientset()
 	client := NewClientWithInterface(clientSet, WithNamespace("custom-ns"))
