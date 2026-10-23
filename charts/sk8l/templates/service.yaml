@@ -11,7 +11,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: "sk8l"
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
   annotations:
     {{- if .Values.service.annotations }}
     {{- toYaml .Values.service.annotations | nindent 4 }}

@@ -35,3 +35,21 @@ securityContext for the container level.
             runAsNonRoot: true
   {{- end }}
 {{- end -}}
+
+{{/*
+Expand the namespace of the release.
+*/}}
+{{- define "sk8l.namespace" -}}
+{{- default .Release.Namespace .Values.namespace.name -}}
+{{- end -}}
+
+{{/*
+The name of the service account to use.
+*/}}
+{{- define "sk8l.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+    {{- default "sk8l" .Values.serviceAccount.metadata.name -}}
+{{- else -}}
+    {{- default "default" .Values.serviceAccount.metadata.name -}}
+{{- end -}}
+{{- end -}}

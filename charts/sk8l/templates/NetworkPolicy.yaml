@@ -2,7 +2,7 @@
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
   name: sk8l-default-deny
 spec:
   podSelector:
@@ -13,7 +13,7 @@ spec:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
   name: sk8l-egress-allow-internal-only
 spec:
   policyTypes:
@@ -26,7 +26,7 @@ spec:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
   name: sk8l-api-allow-apiserver
 spec:
   podSelector:
@@ -37,7 +37,7 @@ spec:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
   name: sk8l-api-ui
 spec:
   podSelector:

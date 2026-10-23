@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: {{ default .Release.Namespace .Values.namespace.name }}
+  name: {{ include "sk8l.namespace" . }}
   labels:
     {{- toYaml .Values.namespace.labels | nindent 4 }}
 {{- end }}
