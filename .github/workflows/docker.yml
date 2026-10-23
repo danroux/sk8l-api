@@ -30,31 +30,20 @@ jobs:
         run: |
           echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
       - name: Set up Docker Buildx
+        id: setup-buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: go-build-cache
         uses: actions/cache@v5
         id: go-build-cache
         with:
           path: var-cache-gocache
-          key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
-      # - name: Inject go-build-cache
-      #   uses: reproducible-containers/buildkit-cache-dance@v2.1.4
-      #   with:
-      #     cache-source: go-build-cache
-      #     cache-target: ~/.gocache
-      #     skip-extraction: ${{ steps.go-build-cache.outputs.cache-hit }}
+          key: ${{ runner.os }}-go-build-cache-v2-${{ hashFiles('**/go.sum') }}
       - name: go-mod-cache
         uses: actions/cache@v5
         id: go-mod-cache
         with:
           path: var-cache-gomodcache
-          key: ${{ runner.os }}-go-mod-cache-${{ hashFiles('**/go.sum') }}
-      # - name: Inject go-mod-cache
-      #   uses: reproducible-containers/buildkit-cache-dance@v2.1.4
-      #   with:
-      #     cache-source: go-mod-cache
-      #     cache-target: ~/.gomodcache
-      #     skip-extraction: ${{ steps.go-mod-cache.outputs.cache-hit }}
+          key: ${{ runner.os }}-go-mod-cache-v2-${{ hashFiles('**/go.sum') }}
       - name: inject cache folders into docker
         uses: reproducible-containers/buildkit-cache-dance@v3.4.0
         with:
@@ -64,14 +53,13 @@ jobs:
             {
               "var-cache-gocache":{
                 "target": "/root/.cache/go-build",
-                "id": "gomodcache"
+                "id": "gocache"
                 },
               "var-cache-gomodcache": {
                 "target": "/go/pkg/mod",
-                "id": "gocache"
+                "id": "gomodcache"
                 }
             }
-          skip-extraction: ${{ steps.go-mod-cache.outputs.cache-hit }}
       - name: Cache sk8l-api:dev-${{ inputs.image_tag }}
         id: image-cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -124,6 +112,7 @@ jobs:
       - name: Checkout - set env
         run: echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
       - name: Set up Docker Buildx
+        id: setup-buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Login to Docker Hub
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
@@ -152,6 +141,7 @@ jobs:
           fetch-depth: 1
           submodules: recursive
       - name: Set up Docker Buildx
+        id: setup-buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Login to ghcr.io
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0

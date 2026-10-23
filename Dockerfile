@@ -3,12 +3,9 @@ FROM --platform=$BUILDPLATFORM golang:1.27.2 AS build
 WORKDIR /src/
 
 ARG TARGETOS TARGETARCH
-RUN go env GOCACHE
 ENV GOMODCACHE=/go/pkg/mod
 ENV GOCACHE=/root/.cache/go-build
-RUN go env GOCACHE
 
-# COPY go.mod go.sum ./
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod,id=gomodcache go mod download -x
 
@@ -18,9 +15,9 @@ COPY internal/ ./internal
 COPY Makefile .
 COPY dashboards/ ./dashboards
 
-RUN --mount=type=cache,target=/root/.cache/go-build,id=gocache make go-out
-
-COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod,id=gomodcache \
+    --mount=type=cache,target=/root/.cache/go-build,id=gocache \
+    make go-out
 
 FROM alpine:3.24.3
 
