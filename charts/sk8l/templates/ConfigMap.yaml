@@ -3,9 +3,13 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: sk8l-api-configmap
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
 data:
-  K8_NAMESPACE: {{ .Values.namespace.name }}
+  {{- if .Values.rbac.clusterWide }}
+  K8_NAMESPACE: {{ .Values.sk8lApi.targetNamespace | default "" | quote }}
+  {{- else }}
+  K8_NAMESPACE: {{ default (include "sk8l.namespace" .) .Values.sk8lApi.targetNamespace | quote }}
+  {{- end }}
   {{- if .Values.sk8lApi.logLevel }}
   LOG_LEVEL: {{ .Values.sk8lApi.logLevel | quote }}
   {{- end }}
@@ -14,17 +18,21 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: sk8l-ui-configmap
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
 data:
   NODE_EXTRA_CA_CERTS: "/etc/sk8l-certs/ca-cert.pem"
   VITE_SK8L_API_URL: {{ .Values.configMaps.ui.vite_sk8l_api_url }}
-  VITE_SK8L_K8_NAMESPACE: {{ .Values.namespace.name }}
+  {{- if .Values.rbac.clusterWide }}
+  VITE_SK8L_K8_NAMESPACE: {{ .Values.sk8lApi.targetNamespace | default "" | quote }}
+  {{- else }}
+  VITE_SK8L_K8_NAMESPACE: {{ default (include "sk8l.namespace" .) .Values.sk8lApi.targetNamespace | quote }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: envoy-configmap
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
 data:
   envoy.yaml: |-
     admin:
@@ -122,7 +130,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nginx-configmap
-  namespace: {{ .Values.namespace.name }}
+  namespace: {{ include "sk8l.namespace" . }}
 data:
   nginx.conf: |-
     user  nginx;

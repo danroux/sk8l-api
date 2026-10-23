@@ -3,7 +3,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: sk8l-dashboard
-  namespace: {{ default (default .Release.Namespace .Values.namespace.name) .Values.grafanaDashboard.namespace | quote }}
+  namespace: {{ default (include "sk8l.namespace" .) .Values.grafanaDashboard.namespace | quote }}
   labels:
     app.kubernetes.io/name: sk8l
     {{- with .Values.grafanaDashboard.labels }}

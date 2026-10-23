@@ -12,12 +12,10 @@ helm search repo sk8l
 
 ## Install chart
 
-```
+```bash
 helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
---namespace sk8l \
---create-namespace=true \
---set namespace.name=[NAMESPACE] \
---set serviceAccount.metadata.namespace=[NAMESPACE]
+  --namespace [NAMESPACE] \
+  --create-namespace
 ```
 
 ## Uninstall Chart

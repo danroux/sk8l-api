@@ -1,0 +1,87 @@
+{{- if .Values.rbac.create }}
+{{- if .Values.rbac.clusterWide }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ printf "%s-%s" (include "sk8l.namespace" .) (include "sk8l.serviceAccountName" .) }}
+  labels:
+    app.kubernetes.io/name: sk8l
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - batch
+    resources:
+      - cronjobs
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "%s-%s" (include "sk8l.namespace" .) (include "sk8l.serviceAccountName" .) }}
+  labels:
+    app.kubernetes.io/name: sk8l
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ printf "%s-%s" (include "sk8l.namespace" .) (include "sk8l.serviceAccountName" .) }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "sk8l.serviceAccountName" . }}
+    namespace: {{ include "sk8l.namespace" . }}
+{{- else }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "sk8l.serviceAccountName" . }}
+  namespace: {{ include "sk8l.namespace" . }}
+  labels:
+    app.kubernetes.io/name: sk8l
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - batch
+    resources:
+      - cronjobs
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "sk8l.serviceAccountName" . }}
+  namespace: {{ include "sk8l.namespace" . }}
+  labels:
+    app.kubernetes.io/name: sk8l
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "sk8l.serviceAccountName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "sk8l.serviceAccountName" . }}
+    namespace: {{ include "sk8l.namespace" . }}
+{{- end }}
+{{- end }}
