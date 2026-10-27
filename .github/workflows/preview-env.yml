@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sk8l-config
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: danroux/sk8l-config
           token: ${{ secrets.CONFIG_REPO_PAT }}
