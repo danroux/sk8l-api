@@ -15,16 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
-          ref: 'main'
-      - name: Get Latest Tag
-        id: latest-tag
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+      - name: Determine Tag
+        id: tag
         run: |
-          git fetch --tags
-          latest_tag=$(git tag -l --sort=-v:refname | head -n 1)
-          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            git fetch --tags
+            LATEST=$(git tag -l --sort=-v:refname | head -n 1)
+            echo "name=$LATEST" >> "$GITHUB_OUTPUT"
+          fi
       - name: Generate Release Notes
         run: |
           latest_entry=$(sed -n '/^##/,$p' CHANGELOG.md | awk '/^##/ {if (version) {print entry; exit} version=$0} {entry = entry ORS $0}')
@@ -36,7 +38,7 @@ jobs:
           retention-days: 1
       - name: GH Release
         run: |
-          gh release create "${{ steps.latest-tag.outputs.latest_tag }}" --notes-file release-notes.md --title "${{ steps.latest-tag.outputs.latest_tag }}"
+          gh release create "${{ steps.tag.outputs.name }}" --notes-file release-notes.md --title "${{ steps.tag.outputs.name }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # - name: Create release
