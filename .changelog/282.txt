@@ -1,0 +1,19 @@
+```release-note:dependency
+ci/dependabot: gha:(deps): bump actions/checkout from 4 to 7
+
+gha:(deps): bump actions/checkout from 4 to 7
+
+Bumps [actions/checkout](https://github.com/actions/checkout) from 4 to 7.
+- [Release notes](https://github.com/actions/checkout/releases)
+- [Commits](https://github.com/actions/checkout/compare/v4...v7)
+
+---
+updated-dependencies:
+- dependency-name: actions/checkout
+  dependency-version: 7.0.1
+  dependency-type: direct:production
+  update-type: version-update:semver-major
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
