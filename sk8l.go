@@ -890,14 +890,14 @@ func collectTerminatedAndFailedContainers(
 				Status:     mappedStatus,
 				Phase:      string(pod.Status.Phase),
 				Conditions: podConditions,
+				TerminatedReason: &protos.TerminationReason{
+					TerminationDetails: mapper.MapContainerStateTerminated(containerStatus.State.Terminated),
+					ContainerName:      mappedStatus.Name,
+				},
 			}
 			terminatedContainers = append(terminatedContainers, cr)
 
-			if containerStatus.State.Terminated.Reason == "Error" {
-				cr.TerminatedReason = &protos.TerminationReason{
-					TerminationDetails: mapper.MapContainerStateTerminated(containerStatus.State.Terminated),
-					ContainerName:      mappedStatus.Name,
-				}
+			if containerStatus.State.Terminated.Reason == "Error" || containerStatus.State.Terminated.ExitCode != 0 {
 				*terminationReasons = append(*terminationReasons, cr.TerminatedReason)
 				failedContainers = append(failedContainers, cr)
 			}
