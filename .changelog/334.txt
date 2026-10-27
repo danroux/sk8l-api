@@ -1,0 +1,3 @@
+```release-note:bug
+go: Populate FinishedAt timestamp for successfully completed pods and restrict failed container tracking to non-zero exit codes or errors
+```

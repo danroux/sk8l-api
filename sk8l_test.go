@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/internal/k8s"
+	"github.com/danroux/sk8l/internal/mapper"
 	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/internal/store/informer"
 	"github.com/danroux/sk8l/protos"
@@ -824,5 +825,285 @@ func TestGetDashboardAnnotations(t *testing.T) {
 		t.Errorf("expected templating section in dashboard")
 	} else if list, ok := templating["list"].([]any); !ok || len(list) == 0 {
 		t.Errorf("expected template variables in dashboard")
+	}
+}
+
+func TestBuildJobPodsResponses_FinishedAt_Success(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	metaNow := metav1.NewTime(now)
+
+	podList := &corev1.PodList{
+		Items: []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "success-pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodSucceeded,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "worker",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									ExitCode:   0,
+									Reason:     "Completed",
+									FinishedAt: metaNow,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	responses := buildJobPodsResponses(podList)
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 pod response, got %d", len(responses))
+	}
+	resp := responses[0]
+
+	expectedFinishedAt := mapper.TimeToString(&metaNow)
+	if resp.FinishedAt != expectedFinishedAt {
+		t.Errorf("expected FinishedAt %q, got %q", expectedFinishedAt, resp.FinishedAt)
+	}
+	if resp.Failed {
+		t.Errorf("expected Failed == false, got true")
+	}
+	if len(resp.TerminationReasons) != 0 {
+		t.Errorf("expected 0 termination reasons, got %d", len(resp.TerminationReasons))
+	}
+	if len(resp.TerminatedContainers.Containers) != 1 {
+		t.Fatalf("expected 1 terminated container, got %d", len(resp.TerminatedContainers.Containers))
+	}
+	c := resp.TerminatedContainers.Containers[0]
+	if c.TerminatedReason == nil || c.TerminatedReason.TerminationDetails == nil {
+		t.Fatalf("expected TerminatedReason and TerminationDetails to be non-nil")
+	}
+	if c.TerminatedReason.TerminationDetails.FinishedAt != expectedFinishedAt {
+		t.Errorf("expected container FinishedAt %q, got %q", expectedFinishedAt, c.TerminatedReason.TerminationDetails.FinishedAt)
+	}
+	if len(resp.FailedContainers.Containers) != 0 {
+		t.Errorf("expected 0 failed containers, got %d", len(resp.FailedContainers.Containers))
+	}
+}
+
+func TestBuildJobPodsResponses_FinishedAt_Failure(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	metaNow := metav1.NewTime(now)
+	expectedFinishedAt := mapper.TimeToString(&metaNow)
+
+	t.Run("error exit code 1", func(t *testing.T) {
+		podList := &corev1.PodList{
+			Items: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "failed-pod",
+						Namespace: "default",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodFailed,
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name: "worker",
+								State: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										ExitCode:   1,
+										Reason:     "Error",
+										FinishedAt: metaNow,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		responses := buildJobPodsResponses(podList)
+		if len(responses) != 1 {
+			t.Fatalf("expected 1 pod response, got %d", len(responses))
+		}
+		resp := responses[0]
+
+		if resp.FinishedAt != expectedFinishedAt {
+			t.Errorf("expected FinishedAt %q, got %q", expectedFinishedAt, resp.FinishedAt)
+		}
+		if !resp.Failed {
+			t.Errorf("expected Failed == true, got false")
+		}
+		if len(resp.TerminationReasons) != 1 {
+			t.Errorf("expected 1 termination reason, got %d", len(resp.TerminationReasons))
+		}
+		if len(resp.TerminatedContainers.Containers) != 1 {
+			t.Errorf("expected 1 terminated container, got %d", len(resp.TerminatedContainers.Containers))
+		}
+		if len(resp.FailedContainers.Containers) != 1 {
+			t.Errorf("expected 1 failed container, got %d", len(resp.FailedContainers.Containers))
+		}
+	})
+
+	t.Run("OOMKilled exit code 137", func(t *testing.T) {
+		podList := &corev1.PodList{
+			Items: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oom-pod",
+						Namespace: "default",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodFailed,
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name: "worker",
+								State: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										ExitCode:   137,
+										Reason:     "OOMKilled",
+										FinishedAt: metaNow,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		responses := buildJobPodsResponses(podList)
+		if len(responses) != 1 {
+			t.Fatalf("expected 1 pod response, got %d", len(responses))
+		}
+		resp := responses[0]
+
+		if resp.FinishedAt != expectedFinishedAt {
+			t.Errorf("expected FinishedAt %q, got %q", expectedFinishedAt, resp.FinishedAt)
+		}
+		if !resp.Failed {
+			t.Errorf("expected Failed == true, got false")
+		}
+		if len(resp.TerminationReasons) != 1 {
+			t.Errorf("expected 1 termination reason, got %d", len(resp.TerminationReasons))
+		}
+		if len(resp.FailedContainers.Containers) != 1 {
+			t.Errorf("expected 1 failed container, got %d", len(resp.FailedContainers.Containers))
+		}
+	})
+}
+
+func TestBuildJobPodsResponses_FinishedAt_MultiContainer(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	metaNow := metav1.NewTime(now)
+	tEarlier := metav1.NewTime(now.Add(-10 * time.Minute))
+	tMiddle := metav1.NewTime(now.Add(-5 * time.Minute))
+	tLatest := metaNow
+
+	podList := &corev1.PodList{
+		Items: []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "multi-container-pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodSucceeded,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "c1",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									ExitCode:   0,
+									Reason:     "Completed",
+									FinishedAt: tEarlier,
+								},
+							},
+						},
+						{
+							Name: "c2",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									ExitCode:   0,
+									Reason:     "Completed",
+									FinishedAt: tLatest,
+								},
+							},
+						},
+						{
+							Name: "c3",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									ExitCode:   0,
+									Reason:     "Completed",
+									FinishedAt: tMiddle,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	responses := buildJobPodsResponses(podList)
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 pod response, got %d", len(responses))
+	}
+	resp := responses[0]
+
+	expectedFinishedAt := mapper.TimeToString(&tLatest)
+	if resp.FinishedAt != expectedFinishedAt {
+		t.Errorf("expected FinishedAt to be latest %q, got %q", expectedFinishedAt, resp.FinishedAt)
+	}
+	if resp.Failed {
+		t.Errorf("expected Failed == false, got true")
+	}
+	if len(resp.TerminatedContainers.Containers) != 3 {
+		t.Errorf("expected 3 terminated containers, got %d", len(resp.TerminatedContainers.Containers))
+	}
+}
+
+func TestBuildJobPodsResponses_FinishedAt_Running(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	metaNow := metav1.NewTime(now)
+
+	podList := &corev1.PodList{
+		Items: []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "running-pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "worker",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{
+									StartedAt: metaNow,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	responses := buildJobPodsResponses(podList)
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 pod response, got %d", len(responses))
+	}
+	resp := responses[0]
+
+	if resp.FinishedAt != "" {
+		t.Errorf("expected empty FinishedAt for running pod, got %q", resp.FinishedAt)
+	}
+	if resp.Failed {
+		t.Errorf("expected Failed == false, got true")
+	}
+	if len(resp.TerminatedContainers.Containers) != 0 {
+		t.Errorf("expected 0 terminated containers, got %d", len(resp.TerminatedContainers.Containers))
 	}
 }
