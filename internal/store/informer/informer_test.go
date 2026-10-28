@@ -144,7 +144,8 @@ func TestFindJobPodsForJob(t *testing.T) {
 			Name:      "job-a-pod-1",
 			Namespace: testNamespace,
 			Labels: map[string]string{
-				"job-name": "job-a",
+				"batch.kubernetes.io/job-name": "job-a",
+				"job-name":                     "job-a",
 			},
 		},
 		Status: corev1.PodStatus{
@@ -157,7 +158,8 @@ func TestFindJobPodsForJob(t *testing.T) {
 			Name:      "job-a-pod-2",
 			Namespace: testNamespace,
 			Labels: map[string]string{
-				"job-name": "job-a",
+				"batch.kubernetes.io/job-name": "job-a",
+				"job-name":                     "job-a",
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -177,7 +179,8 @@ func TestFindJobPodsForJob(t *testing.T) {
 			Name:      "job-a-pending",
 			Namespace: testNamespace,
 			Labels: map[string]string{
-				"job-name": "job-a",
+				"batch.kubernetes.io/job-name": "job-a",
+				"job-name":                     "job-a",
 			},
 		},
 		// StartTime is nil: should be omitted for consistency with previous store
@@ -188,7 +191,8 @@ func TestFindJobPodsForJob(t *testing.T) {
 			Name:      "job-b-pod-1",
 			Namespace: testNamespace,
 			Labels: map[string]string{
-				"job-name": "job-b",
+				"batch.kubernetes.io/job-name": "job-b",
+				"job-name":                     "job-b",
 			},
 		},
 		Status: corev1.PodStatus{
@@ -320,23 +324,58 @@ func TestJobNameIndexFunc(t *testing.T) {
 	isController := true
 
 	// 1. Pod with job-name label
-	podWithLabel := &corev1.Pod{
+	podWithLegacyLabel := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "pod-label",
+			Name: "pod-legacy",
 			Labels: map[string]string{
-				"job-name": "job-from-label",
+				"job-name": "job-from-legacy",
 			},
 		},
 	}
-	keys, err := jobNameIndexFunc(podWithLabel)
+	keys, err := jobNameIndexFunc(podWithLegacyLabel)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(keys) != 1 || keys[0] != "job-from-label" {
-		t.Errorf("expected [job-from-label], got %v", keys)
+	if len(keys) != 1 || keys[0] != "job-from-legacy" {
+		t.Errorf("expected [job-from-legacy], got %v", keys)
 	}
 
-	// 2. Pod without label, but with Job controller OwnerReference
+	// 2. Pod with batch.kubernetes.io/job-name label
+	podWithBatchLabel := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-batch",
+			Labels: map[string]string{
+				"batch.kubernetes.io/job-name": "job-from-batch",
+			},
+		},
+	}
+	keys, err = jobNameIndexFunc(podWithBatchLabel)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(keys) != 1 || keys[0] != "job-from-batch" {
+		t.Errorf("expected [job-from-batch], got %v", keys)
+	}
+
+	// 3. Pod with both labels matching same job name (deduplicated)
+	podWithBothLabels := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-both",
+			Labels: map[string]string{
+				"batch.kubernetes.io/job-name": "job-common",
+				"job-name":                     "job-common",
+			},
+		},
+	}
+	keys, err = jobNameIndexFunc(podWithBothLabels)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(keys) != 1 || keys[0] != "job-common" {
+		t.Errorf("expected [job-common], got %v", keys)
+	}
+
+	// 4. Pod without label, but with Job controller OwnerReference
 	podWithOwner := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "pod-owner",
@@ -357,7 +396,7 @@ func TestJobNameIndexFunc(t *testing.T) {
 		t.Errorf("expected [job-from-owner], got %v", keys)
 	}
 
-	// 3. Pod with neither
+	// 5. Pod with neither
 	podEmpty := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "pod-empty",
@@ -371,12 +410,100 @@ func TestJobNameIndexFunc(t *testing.T) {
 		t.Errorf("expected empty keys, got %v", keys)
 	}
 
-	// 4. Non-pod object
+	// 6. Non-pod object
 	keys, err = jobNameIndexFunc("not-a-pod")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(keys) != 0 {
 		t.Errorf("expected empty keys for non-pod, got %v", keys)
+	}
+}
+
+func TestFindJobPodsForJob_BatchLabel(t *testing.T) {
+	now := metav1.Now()
+
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "job-modern-pod-1",
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				"batch.kubernetes.io/job-name": "job-modern",
+			},
+		},
+		Status: corev1.PodStatus{
+			StartTime: &now,
+		},
+	}
+
+	cs := fake.NewClientset(pod1)
+	s, err := New(cs, testNamespace)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	s.Start(ctx)
+	if !s.WaitForSync(ctx) {
+		t.Fatal("timed out waiting for informer sync")
+	}
+
+	jobModern := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "job-modern"}}
+	pods, err := s.FindJobPodsForJob(jobModern)
+	if err != nil {
+		t.Fatalf("FindJobPodsForJob failed: %v", err)
+	}
+
+	if len(pods.Items) != 1 {
+		t.Fatalf("expected 1 pod for job-modern, got %d", len(pods.Items))
+	}
+	if pods.Items[0].Name != "job-modern-pod-1" {
+		t.Errorf("expected pod job-modern-pod-1, got %s", pods.Items[0].Name)
+	}
+}
+
+func TestFindJobPodsForJob_LegacyLabelOption(t *testing.T) {
+	now := metav1.Now()
+
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "job-legacy-pod-1",
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				"job-name": "job-legacy",
+			},
+		},
+		Status: corev1.PodStatus{
+			StartTime: &now,
+		},
+	}
+
+	cs := fake.NewClientset(pod1)
+	s, err := New(cs, testNamespace, WithPodLabelSelector("job-name"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	s.Start(ctx)
+	if !s.WaitForSync(ctx) {
+		t.Fatal("timed out waiting for informer sync")
+	}
+
+	jobLegacy := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "job-legacy"}}
+	pods, err := s.FindJobPodsForJob(jobLegacy)
+	if err != nil {
+		t.Fatalf("FindJobPodsForJob failed: %v", err)
+	}
+
+	if len(pods.Items) != 1 {
+		t.Fatalf("expected 1 pod for job-legacy, got %d", len(pods.Items))
+	}
+	if pods.Items[0].Name != "job-legacy-pod-1" {
+		t.Errorf("expected pod job-legacy-pod-1, got %s", pods.Items[0].Name)
 	}
 }

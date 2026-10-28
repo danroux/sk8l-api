@@ -1,0 +1,3 @@
+```release-note:improvement
+go: Index pods by both batch.kubernetes.io/job-name and legacy job-name labels, defaulting informer selector to the standard batch label for Kubernetes >= 1.25
+```
