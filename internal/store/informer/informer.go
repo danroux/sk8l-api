@@ -26,7 +26,10 @@ const (
 	jobNameIndex       = "byJobName"
 	noResyncPeriod     = time.Duration(0)
 	notifyChannelCap   = 1
-	defaultPodSelector = "job-name"
+	defaultPodSelector = "batch.kubernetes.io/job-name"
+
+	jobNameLabel      = "job-name"
+	batchJobNameLabel = "batch.kubernetes.io/job-name"
 )
 
 var (
@@ -46,7 +49,7 @@ func WithResyncPeriod(d time.Duration) Option {
 	}
 }
 
-// WithPodLabelSelector configures a custom label selector for pods (default is "job-name").
+// WithPodLabelSelector configures a custom label selector for pods (default is "batch.kubernetes.io/job-name").
 func WithPodLabelSelector(selector string) Option {
 	return func(s *Store) {
 		s.podLabelSelector = selector
@@ -320,12 +323,18 @@ func jobNameIndexFunc(obj any) ([]string, error) {
 		return nil, nil
 	}
 
-	// Primary: label job-name set by the Kubernetes Job controller
-	if jn, ok := pod.Labels["job-name"]; ok && jn != "" {
-		return []string{jn}, nil
+	var keys []string
+	if jn := pod.Labels[batchJobNameLabel]; jn != "" {
+		keys = append(keys, jn)
+	}
+	if jn := pod.Labels[jobNameLabel]; jn != "" && (len(keys) == 0 || keys[0] != jn) {
+		keys = append(keys, jn)
+	}
+	if len(keys) > 0 {
+		return keys, nil
 	}
 
-	// Fallback: check controller owner reference
+	// Fallback to controller owner reference if labels are absent
 	for _, owr := range pod.OwnerReferences {
 		if owr.Kind == "Job" || (owr.Controller != nil && *owr.Controller) {
 			return []string{owr.Name}, nil
