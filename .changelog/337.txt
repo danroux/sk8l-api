@@ -1,0 +1,19 @@
+```release-note:dependency
+ci/dependabot: gha:(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2
+
+gha:(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2
+
+Bumps [actions/upload-artifact](https://github.com/actions/upload-artifact) from 7.0.1 to 7.0.2.
+- [Release notes](https://github.com/actions/upload-artifact/releases)
+- [Commits](https://github.com/actions/upload-artifact/compare/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a...cf430e030ddbb5b0abf93d22962f4752f3646cd9)
+
+---
+updated-dependencies:
+- dependency-name: actions/upload-artifact
+  dependency-version: 7.0.2
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+```
