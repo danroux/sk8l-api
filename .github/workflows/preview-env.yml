@@ -59,8 +59,8 @@ jobs:
             git push origin master
 
             if [ "${{ github.event.action }}" = "labeled" ]; then
-              COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **API (PR)**: \`ghcr.io/danroux/sk8l-api:dev-%s\`\n- **UI (Stable)**: \`danroux/sk8l-ui:%s\`\n\nPara acceder vía port-forward:\n\`\`\`bash\nkubectl port-forward -n %s svc/sk8l-ui 8001:8001 9080:9080\n\`\`\`\nUI: https://localhost:8001" \
-                "${NAMESPACE}" "${APP_NAME}" "${CHART_VERSION}" "${PR_NUM}" "${STABLE_UI_TAG}" "${NAMESPACE}")
+              COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **API (PR)**: \`ghcr.io/danroux/sk8l-api:dev-%s\`\n- **UI (Stable)**: \`danroux/sk8l-ui:%s\`\n\nPara acceder vía port-forward:\n\`\`\`bash\nwhile ! kubectl -n %s get deployment sk8l-ui &>/dev/null; do sleep 3; done && \\\\\nkubectl -n %s rollout status deployment/sk8l-ui --timeout=300s && \\\\\nkubectl -n %s port-forward svc/sk8l-ui 8001:8001 9080:9080\n\`\`\`\nUI: https://localhost:8001" \
+                "${NAMESPACE}" "${APP_NAME}" "${CHART_VERSION}" "${PR_NUM}" "${STABLE_UI_TAG}" "${NAMESPACE}" "${NAMESPACE}" "${NAMESPACE}")
               gh pr comment "${PR_NUM}" --repo "${{ github.repository }}" --body "${COMMENT_BODY}" || true
             fi
           fi
