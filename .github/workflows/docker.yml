@@ -31,7 +31,7 @@ jobs:
           echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
       - name: Set up Docker Buildx
         id: setup-buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: go-build-cache
         uses: actions/cache@v6
         id: go-build-cache
@@ -113,7 +113,7 @@ jobs:
         run: echo "IMAGE_TAG=$(make version)" >> $GITHUB_ENV
       - name: Set up Docker Buildx
         id: setup-buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Login to Docker Hub
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
@@ -142,7 +142,7 @@ jobs:
           submodules: recursive
       - name: Set up Docker Buildx
         id: setup-buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Login to ghcr.io
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
