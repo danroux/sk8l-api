@@ -21,7 +21,6 @@ import (
 	gyaml "sigs.k8s.io/yaml"
 
 	"github.com/rs/zerolog/log"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
@@ -64,35 +63,21 @@ type Sk8lServer struct {
 	store           store.Store
 	k8sClient       k8s.ClientInterface
 	metricsNamesMap *sync.Map
-	target          string
-	dialOptions     []grpc.DialOption
 	watchInterval   time.Duration
 	mu              sync.RWMutex
 }
 
 func NewSk8lServer(
-	target string,
 	st store.Store,
 	k8sCl k8s.ClientInterface,
 	metricsNamesMap *sync.Map,
-	dialOptions ...grpc.DialOption,
 ) *Sk8lServer {
 	return &Sk8lServer{
-		target:          target,
 		store:           st,
 		k8sClient:       k8sCl,
 		metricsNamesMap: metricsNamesMap,
-		dialOptions:     dialOptions,
 		watchInterval:   defaultWatchInterval,
 	}
-}
-
-func (s *Sk8lServer) GetTarget() string {
-	return s.target
-}
-
-func (s *Sk8lServer) GetDialOptions() []grpc.DialOption {
-	return s.dialOptions
 }
 
 func (s *Sk8lServer) GetStore() store.Store {
@@ -206,6 +191,46 @@ func (s *Sk8lServer) Run(metricsCxt context.Context) {
 	recordMetrics(metricsCxt, s, s.metricsNamesMap)
 }
 
+// buildCronjobResponses maps every CronJob in st, together with its child Jobs,
+// into a CronjobResponse. Results are sorted case-insensitively by name.
+// It is shared by the GetCronjobs stream and the in-process metrics collector.
+func (s *Sk8lServer) buildCronjobResponses(ctx context.Context, st store.Store) ([]*protos.CronjobResponse, error) {
+	cronJobList, err := st.FindCronjobs()
+	if err != nil {
+		return nil, fmt.Errorf("FindCronjobs() failed: %w", err)
+	}
+
+	jobsMapped, err := st.FindJobsMapped(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("FindJobsMapped() failed: %w", err)
+	}
+
+	n := len(cronJobList.Items)
+	cronjobs := make([]*protos.CronjobResponse, 0, n)
+
+	var mu sync.Mutex
+	wg := sync.WaitGroup{}
+	wg.Add(n)
+	for _, cronjobItem := range cronJobList.Items {
+		go func(cronjobItem batchv1.CronJob) {
+			defer wg.Done()
+			jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjobItem.Name)
+			cronjob := s.cronJobResponse(cronjobItem, jobsForCronjob)
+			mu.Lock()
+			cronjobs = append(cronjobs, cronjob)
+			mu.Unlock()
+		}(cronjobItem)
+	}
+	wg.Wait()
+
+	slices.SortFunc(cronjobs,
+		func(a, b *protos.CronjobResponse) int {
+			return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+		})
+
+	return cronjobs, nil
+}
+
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
 	ctx := stream.Context()
 	st := s.GetStore()
@@ -214,48 +239,15 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 	}
 
 	send := func() error {
-		cronJobList, err := st.FindCronjobs()
+		cronjobs, err := s.buildCronjobResponses(ctx, st)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
-				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting FindCronjobs")
+				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting buildCronjobResponses")
 				return nil
 			}
-			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindCronjobs")
-			return fmt.Errorf("sk8l#GetCronjobs: FindCronjobs() failed: %w", err)
+			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("buildCronjobResponses")
+			return fmt.Errorf("sk8l#GetCronjobs: %w", err)
 		}
-
-		jobsMapped, err := st.FindJobsMapped(ctx)
-		if err != nil {
-			if isClientCanceled(ctx, err) {
-				log.Debug().Str("operation", "GetCronjobs").Msg("client canceled stream; aborting FindJobsMapped")
-				return nil
-			}
-			log.Error().Err(err).Str("operation", "GetCronjobs").Msg("FindJobsMapped")
-			return fmt.Errorf("sk8l#GetCronjobs: FindJobsMapped() failed: %w", err)
-		}
-
-		n := len(cronJobList.Items)
-		cronjobs := make([]*protos.CronjobResponse, 0, n)
-
-		var mu sync.Mutex
-		wg := sync.WaitGroup{}
-		wg.Add(n)
-		for _, cronjobItem := range cronJobList.Items {
-			go func(cronjobItem batchv1.CronJob) {
-				defer wg.Done()
-				jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjobItem.Name)
-				cronjob := s.cronJobResponse(cronjobItem, jobsForCronjob)
-				mu.Lock()
-				cronjobs = append(cronjobs, cronjob)
-				mu.Unlock()
-			}(cronjobItem)
-		}
-		wg.Wait()
-
-		slices.SortFunc(cronjobs,
-			func(a, b *protos.CronjobResponse) int {
-				return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
-			})
 
 		if err := stream.Send(&protos.CronjobsResponse{Cronjobs: cronjobs}); err != nil {
 			if isClientCanceled(ctx, err) {

@@ -3,21 +3,19 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"sync"
 	"time"
 
 	"github.com/danroux/sk8l/protos"
-	"google.golang.org/grpc"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog/log"
 )
 
-// metricsRetryDelay is the wait before reconnecting the metrics stream after an error.
-const metricsRetryDelay = 5 * time.Second
+// metricsRefreshInterval is the periodic refresh used in addition to store change
+// notifications, so time-derived values (e.g. the duration of running jobs) keep advancing.
+const metricsRefreshInterval = streamHeartbeatInterval
 
 var (
 	metricNamespace = "sk8l"
@@ -202,87 +200,72 @@ func processCronjobsResponse(cronjobs []*protos.CronjobResponse, subSystem strin
 	}
 }
 
-func collectMetricsStream(ctx context.Context, c protos.CronjobClient, subSystem string, cronjobsMap *sync.Map) error {
-	cronjobsClient, err := c.GetCronjobs(ctx, &protos.CronjobsRequest{})
-	if err != nil {
-		return fmt.Errorf("c.GetCronjobs failed: %w", err)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("metrics collection canceled: %w", ctx.Err())
-		default:
-		}
-
-		cronjobsResponse, err := cronjobsClient.Recv()
-		if errors.Is(err, io.EOF) {
-			log.Info().
-				Str("component", "metrics").
-				Msg("GetCronjobs stream closed (EOF), reconnecting")
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("cronjobsClient.Recv() failed: %w", err)
-		}
-		if cronjobsResponse == nil {
-			continue
-		}
-
-		processCronjobsResponse(cronjobsResponse.Cronjobs, subSystem, cronjobsMap)
-	}
-}
-
+// recordMetrics starts the in-process metrics collector in a background goroutine.
+// It returns immediately; the collector stops when ctx is canceled.
 func recordMetrics(ctx context.Context, svr *Sk8lServer, cronjobsMap *sync.Map) {
-	conn, err := grpc.NewClient(svr.GetTarget(), svr.GetDialOptions()...)
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("operation", "recordMetrics").
-			Msg(fmt.Sprintf("grpc.NewClient(%s) failed", svr.GetTarget()))
-		return
-	}
-
-	c := protos.NewCronjobClient(conn)
-	subSystem := ""
-	if cl := svr.GetK8sClient(); cl != nil {
-		subSystem = cl.Namespace()
-	}
-
 	log.Info().
 		Str("component", "metrics").
 		Str("operation", "recordMetrics").
 		Msg("Starting metrics collection")
 
-	go func() {
-		defer func() {
-			_ = conn.Close()
-		}()
+	go collectMetrics(ctx, svr, cronjobsMap, metricsRefreshInterval)
+}
 
-		for {
-			select {
-			case <-ctx.Done():
-				log.Info().
-					Str("component", "metrics").
-					Msg("Stopping metrics collection")
-				return
-			default:
-			}
+// collectMetrics refreshes the Prometheus gauges straight from the in-memory store.
+// It recomputes once at start, on every store change notification and on every
+// interval tick, and blocks until ctx is canceled.
+func collectMetrics(ctx context.Context, svr *Sk8lServer, cronjobsMap *sync.Map, interval time.Duration) {
+	defer func() {
+		log.Info().
+			Str("component", "metrics").
+			Msg("Stopping metrics collection")
+	}()
 
-			if err := collectMetricsStream(ctx, c, subSystem, cronjobsMap); err != nil {
-				if errors.Is(err, context.Canceled) {
-					return
-				}
+	st := svr.GetStore()
+	if st == nil {
+		log.Error().
+			Err(ErrStoreNil).
+			Str("operation", "collectMetrics").
+			Msg("metrics collection disabled")
+		return
+	}
+
+	subSystem := ""
+	if cl := svr.GetK8sClient(); cl != nil {
+		subSystem = cl.Namespace()
+	}
+
+	// Subscribe before the first refresh so a change between both steps is not missed.
+	notifyCh := st.Subscribe(ctx)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	refresh := func() {
+		cronjobs, err := svr.buildCronjobResponses(ctx, st)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
 				log.Error().
 					Err(err).
-					Str("operation", "recordMetrics").
-					Msg(fmt.Sprintf("metrics collection error, retrying in %s", metricsRetryDelay))
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(metricsRetryDelay):
-				}
+					Str("operation", "collectMetrics").
+					Msg("buildCronjobResponses failed")
 			}
+			return
 		}
-	}()
+		processCronjobsResponse(cronjobs, subSystem, cronjobsMap)
+	}
+
+	refresh()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-notifyCh:
+			if !ok {
+				return
+			}
+			refresh()
+		case <-ticker.C:
+			refresh()
+		}
+	}
 }
