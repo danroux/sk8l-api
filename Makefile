@@ -86,11 +86,23 @@ metrics-smoke-tests: # metrics-smoke-tests
 	kubectl apply -f testdata/sk8l-cronjobs.yml -n sk8l > /dev/null
 	kubectl apply -f testdata/sk8l-demo-job.yml -n sk8l > /dev/null
 	kubectl wait -n sk8l --for=condition=ready pod -l app.kubernetes.io/pod=sk8l-ui --timeout=300s
-	sleep 60
 	./ci/collect_workload_info.sh sk8l > expected_output.txt
-	sleep 18
-	curl -k https://localhost:8590/metrics > current_state.txt
-	./ci/check_strings_in_file.sh > job_output.txt
+	@echo "Waiting for cronjob executions and metrics to become available..."
+	@passed=0; \
+	for i in $$(seq 1 45); do \
+	  curl -k -s https://localhost:8590/metrics > current_state.txt 2>/dev/null || true; \
+	  if ./ci/check_strings_in_file.sh > job_output.txt 2>&1; then \
+	    echo "Smoke tests passed in $${i} polling attempt(s)."; \
+	    passed=1; \
+	    break; \
+	  fi; \
+	  sleep 2; \
+	done; \
+	if [ $$passed -ne 1 ]; then \
+	  echo "Error: Smoke tests timed out waiting for metrics."; \
+	  ./ci/check_strings_in_file.sh; \
+	  exit 1; \
+	fi
 
 api-smoke-tests: # api-smoke-tests
 	./ci/api_smoke_tests.sh

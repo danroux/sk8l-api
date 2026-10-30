@@ -32,9 +32,6 @@ while read -r cronjob_json; do
   echo "sk8l_cronjob_active_jobs{cronjob=\"${cronjob_name}\",namespace=\"${namespace}\"}"
   echo "sk8l_cronjob_jobs_count{cronjob=\"${cronjob_name}\",namespace=\"${namespace}\",status=\"succeeded\"}"
   echo "sk8l_cronjob_jobs_count{cronjob=\"${cronjob_name}\",namespace=\"${namespace}\",status=\"failed\"} 0"
+  echo "sk8l_cronjob_last_run_duration_seconds{cronjob=\"${cronjob_name}\",namespace=\"${namespace}\"}"
 done < <(echo "$cronjobs" | tr -d '[:cntrl:]' | jq -c '.items[]')
-
-echo "sk8l_cronjob_last_run_duration_seconds{cronjob=\"download-report-files\",namespace=\"${namespace}\"}"
-echo "sk8l_cronjob_last_run_duration_seconds{cronjob=\"process-csv-files\",namespace=\"${namespace}\"}"
-echo "sk8l_cronjob_last_run_duration_seconds{cronjob=\"process-videos\",namespace=\"${namespace}\"}"
 

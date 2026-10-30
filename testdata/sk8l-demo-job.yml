@@ -9,5 +9,5 @@ spec:
       containers:
         - name: demo-job
           image: busybox:latest
-          command: ["/bin/sh", "-c", "echo 'Running job'; sleep 60;"]
+          command: ["/bin/sh", "-c", "echo 'Running job'; sleep 2;"]
       restartPolicy: OnFailure
