@@ -92,13 +92,14 @@ jobs:
         id: grpcurl-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ./grpcurl_${{ env.GRPCURL_VERSION }}_linux_amd64.deb
-          key: grpcurl_${{ env.GRPCURL_VERSION }}_linux_amd64
-      - name: Download deps
+          path: ~/.local/bin/grpcurl
+          key: grpcurl-${{ env.GRPCURL_VERSION }}-linux-x86_64
+      - name: Install grpcurl
         if: steps.grpcurl-cache.outputs.cache-hit != 'true'
         run: |
-          wget https://github.com/fullstorydev/grpcurl/releases/download/v${{ env.GRPCURL_VERSION }}/grpcurl_${{ env.GRPCURL_VERSION }}_linux_amd64.deb
+          mkdir -p ~/.local/bin
+          curl -sSL "https://github.com/fullstorydev/grpcurl/releases/download/v${{ env.GRPCURL_VERSION }}/grpcurl_${{ env.GRPCURL_VERSION }}_linux_x86_64.tar.gz" | tar -xz -C ~/.local/bin grpcurl
+          chmod +x ~/.local/bin/grpcurl
       - name: smoke tests
         run: |
-          sudo apt install -y ./grpcurl_${{ env.GRPCURL_VERSION }}_linux_amd64.deb
           make api-smoke-tests
