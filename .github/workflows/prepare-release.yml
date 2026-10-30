@@ -130,10 +130,37 @@ jobs:
           echo "${NOTES}" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch sk8l-ui Changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          UI_VER="${{ steps.vars.outputs.ui_version }}"
+          echo "Fetching CHANGELOG.md from danroux/sk8l-ui for ${UI_VER}..."
+          if gh api "repos/danroux/sk8l-ui/contents/CHANGELOG.md?ref=${UI_VER}" -q '.content' | base64 --decode > ui_changelog.md 2>/dev/null; then
+            echo "Successfully downloaded ui_changelog.md for tag ${UI_VER}"
+          else
+            echo "Warning: Could not fetch CHANGELOG.md for ref ${UI_VER}, attempting default branch..."
+            gh api "repos/danroux/sk8l-ui/contents/CHANGELOG.md" -q '.content' | base64 --decode > ui_changelog.md 2>/dev/null || rm -f ui_changelog.md
+          fi
+
       - name: Update ArtifactHub annotations in Chart.yaml
+        id: chart_changes
         run: |
           chmod +x ci/parse_changelog.sh
-          ./ci/parse_changelog.sh CHANGELOG.md charts/sk8l/Chart.yaml
+          UI_CHANGELOG=""
+          if [ -f ui_changelog.md ] && [ -s ui_changelog.md ]; then
+            UI_CHANGELOG="ui_changelog.md"
+          fi
+          ./ci/parse_changelog.sh CHANGELOG.md charts/sk8l/Chart.yaml "${UI_CHANGELOG}" "${{ steps.vars.outputs.ui_version }}"
+
+          UI_NOTES=""
+          if [ -n "${UI_CHANGELOG}" ]; then
+            UI_NOTES=$(./ci/parse_changelog.sh --raw "${UI_CHANGELOG}" "${{ steps.vars.outputs.ui_version }}" 2>/dev/null || true)
+          fi
+
+          echo "ui_notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${UI_NOTES}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Create Release Pull Request
         env:
@@ -145,6 +172,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          rm -f ui_changelog.md
           git checkout -B "${BRANCH_NAME}"
           git add Makefile CHANGELOG.md charts/sk8l/
           MSG_FILE=$(mktemp)
@@ -153,5 +181,11 @@ jobs:
           rm -f "${MSG_FILE}"
           git push origin "${BRANCH_NAME}" --force
 
-          BODY=$(printf "### %s\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${{ steps.changelog.outputs.notes }}")
+          PR_NOTES="${{ steps.changelog.outputs.notes }}"
+          UI_NOTES="${{ steps.chart_changes.outputs.ui_notes }}"
+          if [ -n "${UI_NOTES}" ]; then
+            BODY=$(printf "### %s\n\n#### sk8l-api (%s)\n\n%s\n\n#### sk8l-ui (%s)\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${{ steps.vars.outputs.api_tag }}" "${PR_NOTES}" "${{ steps.vars.outputs.ui_version }}" "${UI_NOTES}")
+          else
+            BODY=$(printf "### %s\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${PR_NOTES}")
+          fi
           gh pr create --title "${TITLE}" --body "${BODY}" --base main --head "${BRANCH_NAME}" || true
