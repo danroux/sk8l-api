@@ -627,7 +627,7 @@ func newHealthServer(t *testing.T) (*Sk8lServer, func()) {
 	k8sClient := k8s.NewClientWithInterface(fakeClientset)
 	fs := &fakeHealthStore{}
 	fs.ready.Store(true)
-	s := NewSk8lServer("", fs, k8sClient, nil)
+	s := NewSk8lServer(fs, k8sClient, nil)
 	s.watchInterval = 10 * time.Millisecond
 	return s, func() { fs.ready.Store(false) }
 }

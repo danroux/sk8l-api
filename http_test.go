@@ -29,7 +29,7 @@ func newHTTPTestServer(t *testing.T) (*Sk8lServer, func()) {
 	k8sClient := k8s.NewClientWithInterface(fakeClientset)
 	fs := &fakeStore{}
 	fs.ready.Store(true)
-	s := NewSk8lServer("", fs, k8sClient, nil)
+	s := NewSk8lServer(fs, k8sClient, nil)
 	return s, func() { fs.ready.Store(false) }
 }
 

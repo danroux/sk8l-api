@@ -1,0 +1,3 @@
+```release-note:improvement
+go: Decouple Prometheus metrics collection from internal gRPC loopback and query in-memory store directly
+```

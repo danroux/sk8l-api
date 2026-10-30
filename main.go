@@ -55,7 +55,6 @@ func main() {
 		log.Fatal().Err(err).Msg("setupTLS")
 	}
 	listenTarget := fmt.Sprintf("0.0.0.0:%s", APIPort)
-	dialTarget := fmt.Sprintf("127.0.0.1:%s", APIPort)
 	lc := net.ListenConfig{}
 	rootCtx := context.Background()
 	ln, err := lc.Listen(rootCtx, "tcp", listenTarget)
@@ -86,16 +85,11 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize informerStore")
 	}
-	clientTLSConfig := serverTLSConfig.Clone()
-	clientTLSConfig.InsecureSkipVerify = true
-	internalClientCreds := credentials.NewTLS(clientTLSConfig)
 
 	sk8lServer := NewSk8lServer(
-		dialTarget,
 		informerStore,
 		k8sClient,
 		metricsNamesMap,
-		grpc.WithTransportCredentials(internalClientCreds),
 	)
 
 	healthgrpc.RegisterHealthServer(probeS, sk8lServer)

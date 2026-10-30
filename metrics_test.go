@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/protos"
+	"github.com/danroux/sk8l/testutil"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func getGaugeValue(g prometheus.Gauge) float64 {
@@ -15,6 +21,94 @@ func getGaugeValue(g prometheus.Gauge) float64 {
 		return 0
 	}
 	return m.GetGauge().GetValue()
+}
+
+// waitForValue polls read until it returns want or the deadline expires.
+// read must resolve the gauge on every call: processCronjobsResponse resets the
+// vectors, so a child gauge captured once would never observe later updates.
+func waitForValue(t *testing.T, read func() float64, want float64) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := read()
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for gauge value %v, last value %v", want, got)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestCollectMetrics_InMemory verifies that metrics are computed straight from the
+// store (no gRPC loopback), refreshed on store notifications and stopped on cancel.
+func TestCollectMetrics_InMemory(t *testing.T) {
+	const ns = "metrics-inmem"
+
+	cronjob := testutil.NewCronJobBuilder().
+		WithName("backup").
+		WithNamespace(ns).
+		Build()
+	clientSet := fake.NewClientset(cronjob)
+	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace(ns))
+	st := setupTestInformerStore(t, clientSet, ns)
+	s := NewSk8lServer(st, k8sClient, nil)
+	cronjobsMap := &sync.Map{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// A long interval ensures updates below come from store notifications, not the ticker.
+		collectMetrics(ctx, s, cronjobsMap, time.Hour)
+	}()
+
+	registered := func() float64 {
+		return getGaugeValue(cronjobsCountGauge.WithLabelValues(ns, "registered"))
+	}
+
+	// Initial refresh runs without waiting for any store event.
+	waitForValue(t, registered, 1)
+
+	second := testutil.NewCronJobBuilder().
+		WithName("cleanup").
+		WithNamespace(ns).
+		Build()
+	if _, err := clientSet.BatchV1().CronJobs(ns).Create(ctx, second, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create cronjob %q: %v", second.Name, err)
+	}
+
+	waitForValue(t, registered, 2)
+	if _, ok := cronjobsMap.Load("cleanup"); !ok {
+		t.Error("expected cleanup to be tracked in cronjobsMap")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("collectMetrics did not stop after context cancellation")
+	}
+}
+
+// TestCollectMetrics_NilStore verifies the collector returns immediately when no store is configured.
+func TestCollectMetrics_NilStore(t *testing.T) {
+	s := NewSk8lServer(nil, nil, nil)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		collectMetrics(context.Background(), s, nil, time.Hour)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("collectMetrics should return immediately when the store is nil")
+	}
 }
 
 func TestProcessCronjobsResponse_OpenMetrics(t *testing.T) {
