@@ -1,3 +1,37 @@
+## v0.23.0 (October 30, 2026)
+
+
+ENHANCEMENTS:
+
+* ci/dependabot: gha:(deps): bump actions/cache from 5 to 6 [[GH-281](https://github.com/danroux/sk8l-api/issues/281)]
+* ci/dependabot: gha:(deps): bump actions/upload-artifact from 7.0.0 to 7.0.1 [[GH-284](https://github.com/danroux/sk8l-api/issues/284)]
+* ci/dependabot: gha:(deps): bump azure/setup-helm from 5.0.0 to 5.0.1 [[GH-286](https://github.com/danroux/sk8l-api/issues/286)]
+* ci/dependabot: gha:(deps): bump docker/build-push-action from 7.2.0 to 7.3.0 [[GH-283](https://github.com/danroux/sk8l-api/issues/283)]
+* ci/dependabot: gha:(deps): bump docker/login-action from 4.2.0 to 4.6.0 [[GH-285](https://github.com/danroux/sk8l-api/issues/285)]
+* ci/dependabot: gha:(deps): bump golangci/golangci-lint-action from 9.2.1 to 9.3.0 [[GH-280](https://github.com/danroux/sk8l-api/issues/280)]
+* ci: Incorporate sk8l-ui release notes into ArtifactHub annotations and release PRs [[GH-342](https://github.com/danroux/sk8l-api/issues/342)]
+
+IMPROVEMENTS:
+
+* ci: Update smoke tests, eliminate blind sleeps, and dump server logs on test errors [[GH-340](https://github.com/danroux/sk8l-api/issues/340)]
+* go: Decouple Prometheus metrics collection from internal gRPC loopback and query in-memory store directly [[GH-339](https://github.com/danroux/sk8l-api/issues/339)]
+* go: Index pods by both batch.kubernetes.io/job-name and legacy job-name labels, defaulting informer selector to the standard batch label for Kubernetes >= 1.25 [[GH-338](https://github.com/danroux/sk8l-api/issues/338)]
+
+BUG FIXES:
+
+* go: Populate FinishedAt timestamp for successfully completed pods and restrict failed container tracking to non-zero exit codes or errors [[GH-334](https://github.com/danroux/sk8l-api/issues/334)]
+
+DEPENDENCIES:
+
+* ci/dependabot: docker:(deps): bump golang from 1.27.2 to 1.27.3 [[GH-332](https://github.com/danroux/sk8l-api/issues/332)]
+* ci/dependabot: gha:(deps): bump actions/checkout from 4 to 7 [[GH-282](https://github.com/danroux/sk8l-api/issues/282)]
+* ci/dependabot: gha:(deps): bump actions/setup-go from 5 to 7 [[GH-287](https://github.com/danroux/sk8l-api/issues/287)]
+* ci/dependabot: gha:(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2 [[GH-337](https://github.com/danroux/sk8l-api/issues/337)]
+* ci/dependabot: gha:(deps): bump docker/build-push-action from 7.3.0 to 7.4.0 [[GH-335](https://github.com/danroux/sk8l-api/issues/335)]
+* ci/dependabot: gha:(deps): bump docker/login-action from 4.6.0 to 4.7.0 [[GH-336](https://github.com/danroux/sk8l-api/issues/336)]
+* ci/dependabot: gha:(deps): bump docker/setup-buildx-action from 4.1.0 to 4.4.1 [[GH-288](https://github.com/danroux/sk8l-api/issues/288)]
+* ci/dependabot: gha:(deps): bump helm/kind-action from 1.15.0 to 1.15.1 [[GH-313](https://github.com/danroux/sk8l-api/issues/313)]
+
 ## v0.22.0 (October 23, 2026)
 
 
