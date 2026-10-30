@@ -142,8 +142,9 @@ bump-version: ## Bump all version strings across chart and templates
 	$(MAKE) bump-chart-version
 	$(MAKE) bump-chart-appVersion
 
+UI_CHANGELOG ?=
 update-chart-changes: ## Extract latest CHANGELOG section into Chart.yaml artifacthub.io/changes
-	./ci/parse_changelog.sh CHANGELOG.md charts/sk8l/Chart.yaml
+	./ci/parse_changelog.sh CHANGELOG.md charts/sk8l/Chart.yaml "$(UI_CHANGELOG)" "$(UI_VERSION)"
 
 LAST_RELEASE_TAG ?= $(shell git describe --tags $$(git rev-list --tags --max-count=1) 2>/dev/null || echo "v0.0.0")
 THIS_RELEASE_TAG ?= HEAD
