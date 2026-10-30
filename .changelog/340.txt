@@ -1,0 +1,3 @@
+```release-note:improvement
+ci: Update smoke tests, eliminate blind sleeps, and dump server logs on test errors
+```

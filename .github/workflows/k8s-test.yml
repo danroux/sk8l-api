@@ -78,27 +78,42 @@ jobs:
       - name: /metrics smoke tests error output
         if: ${{ failure() && steps.metrics_smoke_tests.conclusion == 'failure' }}
         run: |
-          echo "----------------------------"
+          echo "=== PODS ==="
           kubectl get pods -n sk8l
+          echo "=== CRONJOBS ==="
           kubectl get cronjobs -n sk8l
-          echo "----------------------------"
-          cat current_state.txt
-          echo "----------------------------"
-          cat expected_output.txt
-          echo "----------------------------"
-          cat job_output.txt
+          echo "=== SK8L-API POD LOGS ==="
+          kubectl logs -n sk8l -l app.kubernetes.io/pod=sk8l-api --all-containers=true --tail=100 || true
+          echo "=== CURRENT STATE (METRICS) ==="
+          cat current_state.txt || true
+          echo "=== EXPECTED OUTPUT ==="
+          cat expected_output.txt || true
+          echo "=== JOB OUTPUT ==="
+          cat job_output.txt || true
           exit 1
       - name: Fetch grpcurl
         id: grpcurl-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ./grpcurl_${{ env.GRPCURL_VERSION }}_linux_amd64.deb
-          key: grpcurl_${{ env.GRPCURL_VERSION }}_linux_amd64
-      - name: Download deps
+          path: ~/.local/bin/grpcurl
+          key: grpcurl-${{ env.GRPCURL_VERSION }}-linux-x86_64
+      - name: Install grpcurl
         if: steps.grpcurl-cache.outputs.cache-hit != 'true'
         run: |
-          wget https://github.com/fullstorydev/grpcurl/releases/download/v${{ env.GRPCURL_VERSION }}/grpcurl_${{ env.GRPCURL_VERSION }}_linux_amd64.deb
+          mkdir -p ~/.local/bin
+          curl -sSL "https://github.com/fullstorydev/grpcurl/releases/download/v${{ env.GRPCURL_VERSION }}/grpcurl_${{ env.GRPCURL_VERSION }}_linux_x86_64.tar.gz" | tar -xz -C ~/.local/bin grpcurl
+          chmod +x ~/.local/bin/grpcurl
       - name: smoke tests
+        id: api_smoke_tests
         run: |
-          sudo apt install -y ./grpcurl_${{ env.GRPCURL_VERSION }}_linux_amd64.deb
           make api-smoke-tests
+      - name: api smoke tests error output
+        if: ${{ failure() && steps.api_smoke_tests.conclusion == 'failure' }}
+        run: |
+          echo "=== SK8L-API POD LOGS ==="
+          kubectl logs -n sk8l -l app.kubernetes.io/pod=sk8l-api --all-containers=true --tail=100 || true
+          echo "=== CRONJOBS.JSON ==="
+          cat cronjobs.json || true
+          echo "=== JOBS.JSON ==="
+          cat jobs.json || true
+          exit 1

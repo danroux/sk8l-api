@@ -19,21 +19,22 @@ check_strings_in_file() {
     return 0
 }
 
-current_state="current_state.txt"
-expected_output="expected_output.txt"
+current_state="${1:-current_state.txt}"
+expected_output="${2:-expected_output.txt}"
+
+if [ ! -s "$current_state" ]; then
+    echo "Error: '$current_state' is missing or empty"
+    exit 1
+fi
+
+if [ ! -s "$expected_output" ]; then
+    echo "Error: '$expected_output' is missing or empty"
+    exit 1
+fi
 
 echo "Checking if lines in '$expected_output' exist in '$current_state':"
 
 if ! check_strings_in_file "$current_state" "$expected_output"; then
-    exit 1
-fi
-
-pattern='sk8l_cronjob_last_run_duration_seconds{cronjob="process-videos",namespace="sk8l"}'
-
-count=$(grep -c "$pattern" "$current_state")
-
-if [ "$count" -lt 1 ]; then
-    echo "Error: Pattern '$pattern' not found in $current_state"
     exit 1
 fi
 

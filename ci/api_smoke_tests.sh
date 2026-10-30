@@ -23,10 +23,7 @@ fi
 
 echo "----------------------------"
 
-grpcurl -cacert $CA_CERT_FILE -import-path protos -proto sk8l.proto -d '{}' localhost:9080 sk8l.Cronjob/GetCronjobs > cronjobs.json &
-pid=$!
-sleep 5
-kill $pid
+grpcurl -cacert $CA_CERT_FILE -import-path protos -proto sk8l.proto -max-time 2 -d '{}' localhost:9080 sk8l.Cronjob/GetCronjobs > cronjobs.json 2>/dev/null || true
 
 cronjobs_count=$(jq -s 'last | [.cronjobs[].name] | length' cronjobs.json)
 
@@ -39,10 +36,7 @@ fi
 
 echo "----------------------------"
 
-grpcurl -cacert $CA_CERT_FILE -import-path protos -proto sk8l.proto -d '{}' localhost:9080 sk8l.Cronjob/GetJobs > jobs.json &
-pid=$!
-sleep 5
-kill $pid
+grpcurl -cacert $CA_CERT_FILE -import-path protos -proto sk8l.proto -max-time 2 -d '{}' localhost:9080 sk8l.Cronjob/GetJobs > jobs.json 2>/dev/null || true
 
 jq -s 'last | [.jobs[].name]' jobs.json > jobs_names.json
 if grep -q "sk8l-demo-job" jobs_names.json; then
