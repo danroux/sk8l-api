@@ -75,7 +75,7 @@ jobs:
           file: Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: false
           load: false
           outputs: type=oci,dest=sk8l-api:dev-${{ inputs.image_tag }}.tar,tar=true
