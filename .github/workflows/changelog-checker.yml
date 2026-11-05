@@ -42,9 +42,9 @@ jobs:
               "$FIRST_COMMIT_BODY" > "$FILE"
 
             git config user.name "dependabot[bot]"
-            git config user.email "dependabot[bot]@users.noreply.github.com"
+            git config user.email "49699333+dependabot[bot]@users.noreply.github.com"
             git add "$FILE"
-            git commit -m "Add .changelog/${PR_NUM}.txt"
+            printf 'Add .changelog/%s.txt\n\n\nskip-checks: true\n' "$PR_NUM" | git commit --cleanup=verbatim -F -
             git push
           fi
 
@@ -53,8 +53,8 @@ jobs:
           PR_NUM="${{ github.event.pull_request.number }}"
           FILE=".changelog/${PR_NUM}.txt"
 
-          if [ "${{ contains(github.event.pull_request.labels.*.name, 'pr/no-changelog') }}" = "true" ]; then
-            echo "Skipping: 'pr/no-changelog' label is present."
+          if [[ "${{ github.event.pull_request.head.ref }}" =~ ^release- ]] || [ "${{ contains(github.event.pull_request.labels.*.name, 'pr/no-changelog') }}" = "true" ]; then
+            echo "Skipping: release branch or 'pr/no-changelog' label is present."
             exit 0
           fi
 
