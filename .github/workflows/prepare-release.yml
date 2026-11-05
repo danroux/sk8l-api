@@ -188,4 +188,4 @@ jobs:
           else
             BODY=$(printf "### %s\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${PR_NOTES}")
           fi
-          gh pr create --title "${TITLE}" --body "${BODY}" --base main --head "${BRANCH_NAME}" || true
+          gh pr create --title "${TITLE}" --body "${BODY}" --base main --head "${BRANCH_NAME}" --label "pr/no-changelog" || true
