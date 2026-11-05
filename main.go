@@ -25,10 +25,8 @@ import (
 )
 
 const (
-	ReadTimeoutSeconds  = 10
-	WriteTimeoutSeconds = 30
-	ReadTimeout         = ReadTimeoutSeconds * time.Second
-	WriteTimeout        = WriteTimeoutSeconds * time.Second
+	ReadTimeoutSeconds = 10
+	ReadTimeout        = ReadTimeoutSeconds * time.Second
 
 	shutdownTimeoutSeconds = 5
 	shutdownTimeout        = shutdownTimeoutSeconds * time.Second
@@ -97,12 +95,11 @@ func main() {
 	mux := &http.ServeMux{}
 	setupHTTPRoutes(mux, sk8lServer)
 	httpS := &http.Server{
-		Addr:         fmt.Sprintf("0.0.0.0:%s", MetricsPort),
-		IdleTimeout:  time.Minute,
-		ReadTimeout:  ReadTimeout,
-		WriteTimeout: WriteTimeout,
-		TLSConfig:    serverTLSConfig,
-		Handler:      mux,
+		Addr:              fmt.Sprintf("0.0.0.0:%s", MetricsPort),
+		IdleTimeout:       time.Minute,
+		ReadHeaderTimeout: ReadTimeout,
+		TLSConfig:         serverTLSConfig,
+		Handler:           mux,
 	}
 	log.Info().
 		Msg(fmt.Sprintf("Starting %s server %s on %s", "sk8l", Version(), ln.Addr().String()))

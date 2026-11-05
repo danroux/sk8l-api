@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package sk8l_custom;
 
+option go_package = "github.com/danroux/sk8l/protos;protos";
+
 // JobStatus represents the current state of a Job.
 message JobStatus {
   // The latest available observations of an object's current state. When a Job

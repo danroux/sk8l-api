@@ -57,3 +57,15 @@ else
 fi
 
 echo "----------------------------"
+
+connect_ann=$(curl --cacert $CA_CERT_FILE -s -f -X POST -H "Content-Type: application/json" -d '{}' https://localhost:8590/sk8l.Cronjob/GetDashboardAnnotations | jq -rc '.annotations' | jq '[.panels[] | select(.targets != null) | .targets[].expr]')
+connect_ann_length=$(echo "$connect_ann" | jq 'length')
+
+if [ "$connect_ann_length" -ne "$EXPECTED_ANN_COUNT" ]; then
+  echo "Error: ConnectRPC expected $EXPECTED_ANN_COUNT .targets[].expr values, but got $connect_ann_length"
+  exit 1
+else
+  echo "Success: ConnectRPC on :8590 returned $connect_ann_length .targets[].expr values, as expected."
+fi
+
+echo "----------------------------"
