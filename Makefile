@@ -33,6 +33,14 @@ GO_LDFLAGS += '
 go-out:
 	CGO_ENABLED=0 GOEXPERIMENT=loopvar GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags $(GO_LDFLAGS) -o ./sk8l .
 
+.PHONY: proto
+proto: ## Generate protobuf, gRPC, and Connect-Go stubs from protos/*.proto
+	protoc -I protos \
+		--go_out=protos --go_opt=paths=source_relative \
+		--go-grpc_out=protos --go-grpc_opt=paths=source_relative \
+		--connect-go_out=protos --connect-go_opt=paths=source_relative \
+		protos/sk8l.proto protos/sk8l_custom.proto
+
 version:
 	@echo $(API_VERSION)
 

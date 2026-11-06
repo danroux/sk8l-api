@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/internal/mapper"
 	"github.com/danroux/sk8l/internal/store"
@@ -49,9 +50,18 @@ const (
 	previousJobOffset = 2
 )
 
+// serverStream is the minimal server-streaming contract used by Sk8lServer,
+// satisfied by both gRPC (protos.Cronjob_Get*Server) and ConnectRPC (*connect.ServerStream[T]).
+type serverStream[T any] interface {
+	Send(*T) error
+}
+
 // isClientCanceled checks if the error or context indicates a client-side cancellation.
 func isClientCanceled(ctx context.Context, err error) bool {
 	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	if connect.CodeOf(err) == connect.CodeCanceled {
 		return true
 	}
 	return grpcstatus.Code(err) == codes.Canceled
@@ -232,7 +242,10 @@ func (s *Sk8lServer) buildCronjobResponses(ctx context.Context, st store.Store) 
 }
 
 func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
-	ctx := stream.Context()
+	return s.streamCronjobs(stream.Context(), in, stream)
+}
+
+func (s *Sk8lServer) streamCronjobs(ctx context.Context, _ *protos.CronjobsRequest, stream serverStream[protos.CronjobsResponse]) error {
 	st := s.GetStore()
 	if st == nil {
 		return fmt.Errorf("sk8l#GetCronjobs: %w", ErrStoreNil)
@@ -295,7 +308,10 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 }
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
-	ctx := stream.Context()
+	return s.streamCronjob(stream.Context(), in, stream)
+}
+
+func (s *Sk8lServer) streamCronjob(ctx context.Context, in *protos.CronjobRequest, stream serverStream[protos.CronjobResponse]) error {
 	st := s.GetStore()
 	if st == nil {
 		return fmt.Errorf("sk8l#GetCronjob: %w", ErrStoreNil)
@@ -369,7 +385,10 @@ func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob
 }
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
-	ctx := stream.Context()
+	return s.streamCronjobPods(stream.Context(), in, stream)
+}
+
+func (s *Sk8lServer) streamCronjobPods(ctx context.Context, in *protos.CronjobPodsRequest, stream serverStream[protos.CronjobPodsResponse]) error {
 	st := s.GetStore()
 	if st == nil {
 		return fmt.Errorf("sk8l#GetCronjobPods: %w", ErrStoreNil)
@@ -457,7 +476,10 @@ func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos
 }
 
 func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJobsServer) error {
-	ctx := stream.Context()
+	return s.streamJobs(stream.Context(), in, stream)
+}
+
+func (s *Sk8lServer) streamJobs(ctx context.Context, _ *protos.JobsRequest, stream serverStream[protos.JobsResponse]) error {
 	st := s.GetStore()
 	if st == nil {
 		return fmt.Errorf("sk8l#GetJobs: %w", ErrStoreNil)

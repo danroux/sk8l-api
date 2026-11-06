@@ -3,6 +3,7 @@ module github.com/danroux/sk8l
 go 1.26.0
 
 require (
+	connectrpc.com/connect v1.21.1
 	github.com/google/go-cmp v0.7.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3

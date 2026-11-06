@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/danroux/sk8l/protos/protosconnect"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 )
@@ -19,6 +20,9 @@ func setupHTTPRoutes(mux *http.ServeMux, s *Sk8lServer) {
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/readyz", readyzHandler(s))
+
+	path, handler := protosconnect.NewCronjobHandler(NewConnectHandler(s))
+	mux.Handle(path, withCORS(handler))
 }
 
 // healthzHandler is a liveness probe: it reports that the process is running.
