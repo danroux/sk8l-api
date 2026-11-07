@@ -10,8 +10,8 @@ on:
       - main
 
 permissions:
-  pull-requests: write
-  contents: write
+  pull-requests: read
+  contents: read
 
 jobs:
   changelog:
@@ -23,43 +23,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
-
-      - name: Auto-generate Dependabot changelog
-        if: github.actor == 'dependabot[bot]'
-        run: |
-          PR_NUM="${{ github.event.pull_request.number }}"
-          FILE=".changelog/${PR_NUM}.txt"
-
-          if [ ! -f "$FILE" ]; then
-            mkdir -p .changelog
-            FIRST_COMMIT=$(git log -10 --pretty=format:%H origin/main..HEAD | tail -1)
-            FIRST_COMMIT_BODY=$(git log -1 --pretty=format:%B "$FIRST_COMMIT")
-
-            printf '```release-note:dependency\nci/dependabot: %s\n\n%s\n```\n' \
-              "${{ github.event.pull_request.title }}" \
-              "$FIRST_COMMIT_BODY" > "$FILE"
-
-            git config user.name "dependabot[bot]"
-            git config user.email "49699333+dependabot[bot]@users.noreply.github.com"
-            git add "$FILE"
-            printf 'Add .changelog/%s.txt\n\n\nskip-checks: true\n' "$PR_NUM" | git commit --cleanup=verbatim -F -
-            git push
-          fi
 
       - name: Validate changelog
         run: |
           PR_NUM="${{ github.event.pull_request.number }}"
           FILE=".changelog/${PR_NUM}.txt"
 
+          if [ -f "$FILE" ]; then
+            echo "Found changelog entry: $FILE"
+            exit 0
+          fi
+
+          if [ "${{ github.event.pull_request.user.login }}" = "dependabot[bot]" ] || [ "${{ github.actor }}" = "dependabot[bot]" ]; then
+            echo "Skipping: Dependabot PR changelog entry will be generated during prepare-release."
+            exit 0
+          fi
+
           if [[ "${{ github.event.pull_request.head.ref }}" =~ ^release- ]] || [ "${{ contains(github.event.pull_request.labels.*.name, 'pr/no-changelog') }}" = "true" ]; then
             echo "Skipping: release branch or 'pr/no-changelog' label is present."
             exit 0
           fi
 
-          if [ -f "$FILE" ]; then
-            echo "Found changelog entry: $FILE"
+          CHANGED_FILES=$(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}...HEAD")
+          if [ -n "$CHANGED_FILES" ] && ! echo "$CHANGED_FILES" | grep -qvE '^(\.github/|ci/|\.devcontainer/|\.agents/|\.golangci\.yml$)'; then
+            echo "Skipping: PR only modifies CI/internal configuration files."
             exit 0
           fi
 
