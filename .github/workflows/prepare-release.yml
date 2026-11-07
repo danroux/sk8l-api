@@ -104,9 +104,68 @@ jobs:
 
       - name: Generate Changelog & Update CHANGELOG.md
         id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          BRANCH_NAME="release-${{ steps.vars.outputs.api_tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${BRANCH_NAME}"
+
           LAST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || echo "")
           echo "Generating notes from ${LAST_TAG} to HEAD"
+
+          mkdir -p .changelog
+          RANGE="${LAST_TAG:+${LAST_TAG}..}HEAD"
+          for SHA in $(git log "${RANGE}" --no-merges --reverse --pretty=format:"%H"); do
+            AUTHOR=$(git log -1 --pretty=format:"%an <%ae>" "$SHA")
+            COMMIT_BODY=$(git log -1 --pretty=format:"%B" "$SHA")
+            if [[ "$AUTHOR" != *"dependabot"* ]] && [[ "$COMMIT_BODY" != *"Signed-off-by: dependabot[bot]"* ]]; then
+              continue
+            fi
+
+            SUBJECT=$(git log -1 --pretty=format:%s "$SHA")
+            COMMIT_FILES=$(git diff-tree --no-commit-id --name-only -r "$SHA")
+            if [[ "$SUBJECT" == gha:* ]] || ( [ -n "$COMMIT_FILES" ] && ! echo "$COMMIT_FILES" | grep -qvE '^(\.github/|ci/|\.devcontainer/)' ); then
+              echo "Skipping CI/internal Dependabot commit ${SHA} (${SUBJECT})."
+              continue
+            fi
+
+            if ! PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${SHA}/pulls" 2>/dev/null); then
+              PR_JSON="[]"
+            fi
+
+            NO_CHANGELOG=$(echo "$PR_JSON" | jq -r '[.[] | select(.merged_at != null)][0].labels // [] | map(.name) | index("pr/no-changelog") != null')
+            if [ "$NO_CHANGELOG" = "true" ]; then
+              echo "Skipping Dependabot commit ${SHA}: PR has 'pr/no-changelog' label."
+              continue
+            fi
+
+            PR_NUM=$(echo "$PR_JSON" | jq -r '[.[] | select(.merged_at != null)][0].number // empty')
+            if [ -z "$PR_NUM" ]; then
+              PR_NUM=$(echo "$SUBJECT" | sed -nE 's/.*\(#([0-9]+)\)$/\1/p')
+            fi
+            if [ -z "$PR_NUM" ]; then
+              echo "::error::Could not determine PR number for Dependabot commit ${SHA} (${SUBJECT})."
+              exit 1
+            fi
+
+            FILE=".changelog/${PR_NUM}.txt"
+            if [ ! -f "$FILE" ]; then
+              TITLE=$(echo "$PR_JSON" | jq -r '[.[] | select(.merged_at != null)][0].title // empty')
+              if [ -z "$TITLE" ]; then
+                TITLE=$(echo "$SUBJECT" | sed -E "s/ \(#${PR_NUM}\)$//")
+              fi
+              TITLE=$(echo "$TITLE" | tr -d '\r\n' | sed 's/```//g')
+              printf '```release-note:dependency\nci/dependabot: %s\n```\n' "$TITLE" > "$FILE"
+              echo "Generated missing Dependabot changelog entry: $FILE"
+            fi
+          done
+
+          if [ -n "$(git status --porcelain .changelog/)" ]; then
+            git add .changelog/
+            git commit -m "changelog: add Dependabot entries for ${{ steps.vars.outputs.api_tag }}"
+          fi
 
           RAW_NOTES=$(changelog-build \
             -last-release "${LAST_TAG}" \
@@ -117,6 +176,11 @@ jobs:
 
           chmod +x ci/clean_changelog.sh
           NOTES=$(echo "${RAW_NOTES}" | ./ci/clean_changelog.sh)
+
+          if [ -n "${LAST_TAG}" ] && [ -n "$(git diff --name-only "${LAST_TAG}" HEAD -- '.changelog/*.txt')" ] && [ -z "$(echo "${NOTES}" | tr -d '[:space:]')" ]; then
+            echo "::error::Changelog entries exist since ${LAST_TAG}, but generated release notes are empty."
+            exit 1
+          fi
 
           RELEASE_DATE=$(date '+%B %d, %Y')
           HEADER="## ${{ steps.vars.outputs.api_tag }} (${RELEASE_DATE})"
@@ -173,8 +237,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           rm -f ui_changelog.md
-          git checkout -B "${BRANCH_NAME}"
-          git add Makefile CHANGELOG.md charts/sk8l/
+          git reset --soft origin/main
+          git add Makefile CHANGELOG.md charts/sk8l/ .changelog/
           MSG_FILE=$(mktemp)
           printf "%s\n\n%s\n" "${TITLE}" "${{ steps.changelog.outputs.notes }}" > "${MSG_FILE}"
           git commit -F "${MSG_FILE}"
@@ -188,4 +252,5 @@ jobs:
           else
             BODY=$(printf "### %s\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${PR_NOTES}")
           fi
-          gh pr create --title "${TITLE}" --body "${BODY}" --base main --head "${BRANCH_NAME}" --label "pr/no-changelog" || true
+          gh pr create --title "${TITLE}" --body "${BODY}" --base main --head "${BRANCH_NAME}" --label "pr/no-changelog" || \
+            gh pr edit "${BRANCH_NAME}" --title "${TITLE}" --body "${BODY}" || true
