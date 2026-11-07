@@ -1,3 +1,15 @@
+## v0.24.0 (November 07, 2026)
+
+
+ENHANCEMENTS:
+
+* go: Expose Cronjob service over Connect, gRPC-Web, and gRPC via connectrpc.com/connect on the HTTP server [[GH-347](https://github.com/danroux/sk8l-api/issues/347)]
+
+DEPENDENCIES:
+
+* ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.84.0 to 1.85.0 [[GH-341](https://github.com/danroux/sk8l-api/issues/341)]
+* ci/dependabot: go:(deps): bump k8s.io/client-go from 0.37.1 to 0.37.2 [[GH-344](https://github.com/danroux/sk8l-api/issues/344)]
+
 ## v0.23.0 (October 30, 2026)
 
 
