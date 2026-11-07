@@ -248,9 +248,9 @@ jobs:
           PR_NOTES="${{ steps.changelog.outputs.notes }}"
           UI_NOTES="${{ steps.chart_changes.outputs.ui_notes }}"
           if [ -n "${UI_NOTES}" ]; then
-            BODY=$(printf "### %s\n\n#### sk8l-api (%s)\n\n%s\n\n#### sk8l-ui (%s)\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${{ steps.vars.outputs.api_tag }}" "${PR_NOTES}" "${{ steps.vars.outputs.ui_version }}" "${UI_NOTES}")
+            BODY=$(printf "### %s\n\n#### sk8l-api (%s)\n\n%s\n\n#### sk8l-ui (%s)\n\n%s" "${TITLE}" "${{ steps.vars.outputs.api_tag }}" "${PR_NOTES}" "${{ steps.vars.outputs.ui_version }}" "${UI_NOTES}")
           else
-            BODY=$(printf "### %s\n\n%s\n\n---\n*Auto-generated release PR by prepare-release workflow.*" "${TITLE}" "${PR_NOTES}")
+            BODY=$(printf "### %s\n\n%s" "${TITLE}" "${PR_NOTES}")
           fi
           gh pr create --title "${TITLE}" --body "${BODY}" --base main --head "${BRANCH_NAME}" --label "pr/no-changelog" || \
             gh pr edit "${BRANCH_NAME}" --title "${TITLE}" --body "${BODY}" || true
