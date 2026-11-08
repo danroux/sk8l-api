@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -28,19 +31,31 @@ const (
 	shutdownTimeout        = shutdownTimeoutSeconds * time.Second
 
 	defaultHTTPPort      = "8590"
+	defaultCertsDir      = "/etc/sk8l-certs"
 	envSK8LHTTPPort      = "SK8L_HTTP_PORT"
 	envServiceHTTPPort   = "SK8L_SERVICE_PORT_HTTP"
 	envLegacyMetricsPort = "SK8L_SERVICE_PORT_SK8L_API_METRICS"
+	envTLSEnabled        = "TLS_ENABLED"
+	envTLSCertFile       = "TLS_CERT_FILE"
+	envTLSKeyFile        = "TLS_KEY_FILE"
+	envTLSCAFile         = "TLS_CA_FILE"
 )
 
 var (
 	K8Namespace = os.Getenv("K8_NAMESPACE")
 	UIAPIURL    = os.Getenv("VITE_SK8L_API_URL")
 	HTTPPort    = resolveHTTPPort()
-	certFile    = filepath.Join("/etc", "sk8l-certs", "server-cert.pem")
-	certKeyFile = filepath.Join("/etc", "sk8l-certs", "server-key.pem")
-	caFile      = filepath.Join("/etc", "sk8l-certs", "ca-cert.pem")
+	certFile    = resolveEnvOrDefault(envTLSCertFile, filepath.Join(defaultCertsDir, "server-cert.pem"))
+	certKeyFile = resolveEnvOrDefault(envTLSKeyFile, filepath.Join(defaultCertsDir, "server-key.pem"))
+	caFile      = resolveEnvOrDefault(envTLSCAFile, filepath.Join(defaultCertsDir, "ca-cert.pem"))
 )
+
+func resolveEnvOrDefault(envKey, fallback string) string {
+	if val := os.Getenv(envKey); val != "" {
+		return val
+	}
+	return fallback
+}
 
 func resolveHTTPPort() string {
 	for _, envKey := range []string{
@@ -55,12 +70,50 @@ func resolveHTTPPort() string {
 	return defaultHTTPPort
 }
 
+func parseTLSEnabled(raw string) (bool, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return false, nil
+	}
+	enabled, err := strconv.ParseBool(trimmed)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s value %q: %w", envTLSEnabled, raw, err)
+	}
+	return enabled, nil
+}
+
+func newHTTPServer(addr string, handler http.Handler, tlsConfig *tls.Config) *http.Server {
+	srv := &http.Server{
+		Addr:              addr,
+		IdleTimeout:       time.Minute,
+		ReadHeaderTimeout: ReadTimeout,
+		Handler:           handler,
+	}
+	if tlsConfig != nil {
+		srv.TLSConfig = tlsConfig
+		return srv
+	}
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	srv.Protocols = protocols
+	return srv
+}
+
 func main() {
 	logger.SetupZeroLog()
-	certPool := x509.NewCertPool()
-	serverTLSConfig, err := setupTLS(certFile, certKeyFile, caFile, certPool)
+	tlsEnabled, err := parseTLSEnabled(os.Getenv(envTLSEnabled))
 	if err != nil {
-		log.Fatal().Err(err).Msg("setupTLS")
+		log.Fatal().Err(err).Msg("failed to parse TLS_ENABLED")
+	}
+
+	var serverTLSConfig *tls.Config
+	if tlsEnabled {
+		certPool := x509.NewCertPool()
+		serverTLSConfig, err = setupTLS(certFile, certKeyFile, caFile, certPool)
+		if err != nil {
+			log.Fatal().Err(err).Msg("setupTLS")
+		}
 	}
 
 	rootCtx := context.Background()
@@ -87,15 +140,9 @@ func main() {
 
 	mux := &http.ServeMux{}
 	setupHTTPRoutes(mux, sk8lServer)
-	httpS := &http.Server{
-		Addr:              fmt.Sprintf("0.0.0.0:%s", HTTPPort),
-		IdleTimeout:       time.Minute,
-		ReadHeaderTimeout: ReadTimeout,
-		TLSConfig:         serverTLSConfig,
-		Handler:           mux,
-	}
+	httpS := newHTTPServer(fmt.Sprintf("0.0.0.0:%s", HTTPPort), mux, serverTLSConfig)
 
-	log.Info().Msg(fmt.Sprintf("Starting sk8l server %s on %s", Version(), httpS.Addr))
+	log.Info().Bool("tls", tlsEnabled).Msg(fmt.Sprintf("Starting sk8l server %s on %s", Version(), httpS.Addr))
 	errCh := startHTTPServer(httpS)
 	metricsCtx, metricsCancel := context.WithCancel(rootCtx)
 	sk8lServer.Run(metricsCtx)
@@ -117,7 +164,13 @@ func main() {
 func startHTTPServer(httpS *http.Server) <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
-		if err := httpS.ListenAndServeTLS(certFile, certKeyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if httpS.TLSConfig != nil {
+			err = httpS.ListenAndServeTLS(certFile, certKeyFile)
+		} else {
+			err = httpS.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("httpS error: %w", err)
 		}
 	}()

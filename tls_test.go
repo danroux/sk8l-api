@@ -8,6 +8,12 @@ import (
 	"testing"
 )
 
+const (
+	testValidCertFile = "testdata/server-cert.pem"
+	testValidKeyFile  = "testdata/server-key.key"
+	testValidCAFile   = "testdata/ca-cert.pem"
+)
+
 type CustomCertPool struct {
 	certPool *x509.CertPool
 }
@@ -25,59 +31,68 @@ func TestSetupTLS(t *testing.T) {
 		certFile       string
 		keyFile        string
 		caFile         string
-		expectedSN     string
 		expectedMinVer uint16
 		expectedMaxVer uint16
 		expectedCAs    bool
 	}{
 		{
-			name:           "ValidFiles",
-			certFile:       "testdata/server-cert.pem",
-			keyFile:        "testdata/server-key.key",
-			caFile:         "testdata/ca-cert.pem",
+			name:           "ValidFilesWithCA",
+			certFile:       testValidCertFile,
+			keyFile:        testValidKeyFile,
+			caFile:         testValidCAFile,
 			certPool:       x509.NewCertPool(),
 			expectedError:  nil,
-			expectedErrMsg: "",
 			expectedMinVer: tls.VersionTLS12,
 			expectedMaxVer: tls.VersionTLS13,
 			expectedCAs:    true,
-			expectedSN:     "127.0.0.1",
 		},
 		{
-			name:           "InvalidCA",
+			name:           "ValidFilesWithoutCA",
+			certFile:       testValidCertFile,
+			keyFile:        testValidKeyFile,
+			caFile:         "",
+			certPool:       x509.NewCertPool(),
+			expectedError:  nil,
+			expectedMinVer: tls.VersionTLS12,
+			expectedMaxVer: tls.VersionTLS13,
+			expectedCAs:    false,
+		},
+		{
+			name:           "OptionalMissingCACertSucceeds",
+			certFile:       testValidCertFile,
+			keyFile:        testValidKeyFile,
+			caFile:         "testdata/no-ca-cert.pem",
+			certPool:       x509.NewCertPool(),
+			expectedError:  nil,
+			expectedMinVer: tls.VersionTLS12,
+			expectedMaxVer: tls.VersionTLS13,
+			expectedCAs:    false,
+		},
+		{
+			name:           "InvalidKeyPair",
 			certFile:       "testdata/invalid-cert.pem",
-			keyFile:        "testdata/server-key.key",
-			caFile:         "testdata/ca-cert.pem",
+			keyFile:        testValidKeyFile,
+			caFile:         testValidCAFile,
 			certPool:       &x509.CertPool{},
 			expectedError:  ErrTLS,
 			expectedErrMsg: "CertError: TLS Error - tls: private key does not match public key (testdata/invalid-cert.pem)",
-			expectedMinVer: 0,
-			expectedCAs:    false,
-			expectedSN:     "",
 		},
 		{
 			name:           "FailedToAppend",
-			certFile:       "testdata/server-cert.pem",
-			keyFile:        "testdata/server-key.key",
-			caFile:         "testdata/ca-cert.pem",
+			certFile:       testValidCertFile,
+			keyFile:        testValidKeyFile,
+			caFile:         testValidCAFile,
 			certPool:       &CustomCertPool{certPool: x509.NewCertPool()},
 			expectedError:  ErrFailedToAppend,
 			expectedErrMsg: "CertError: failed to append Root certificate -  (testdata/server-cert.pem)",
-			expectedMinVer: 0,
-			expectedCAs:    false,
-			expectedSN:     "",
 		},
 		{
-			name:           "MissingCACert",
-			certFile:       "testdata/server-cert.pem",
-			keyFile:        "testdata/server-key.key",
-			caFile:         "testdata/no-ca-cert.pem",
-			certPool:       x509.NewCertPool(),
-			expectedError:  ErrCACertFile,
-			expectedErrMsg: "CertError: caCertFile Error - open testdata/no-ca-cert.pem: no such file or directory (testdata/server-cert.pem)",
-			expectedMinVer: 0,
-			expectedCAs:    false,
-			expectedSN:     "",
+			name:          "UnreadableCAPathError",
+			certFile:      testValidCertFile,
+			keyFile:       testValidKeyFile,
+			caFile:        "testdata",
+			certPool:      x509.NewCertPool(),
+			expectedError: ErrCACertFile,
 		},
 	}
 
@@ -87,52 +102,50 @@ func TestSetupTLS(t *testing.T) {
 
 			if err != nil {
 				if !errors.Is(err, tc.expectedError) {
-					t.Errorf("expected error to be %v, got %v", tc.expectedError, err)
+					t.Fatalf("expected error %v, got %v", tc.expectedError, err)
 				}
 
 				if tc.expectedError != nil {
 					var certError *CertError
 					if !errors.As(err, &certError) {
-						t.Errorf("unexpected error type: got %T, want *CertError", err)
-						return
+						t.Fatalf("unexpected error type: got %T, want *CertError", err)
 					}
 
 					if !errors.Is(certError.Err, tc.expectedError) {
-						t.Errorf("unexpected error type: got %v, want %v", certError.Err, tc.expectedError)
+						t.Errorf("unexpected wrapped error: got %v, want %v", certError.Err, tc.expectedError)
 					}
 
-					if err.Error() != tc.expectedErrMsg {
+					if tc.expectedErrMsg != "" && err.Error() != tc.expectedErrMsg {
 						t.Errorf("unexpected error message: got %s, want %s", err.Error(), tc.expectedErrMsg)
 					}
 				}
-			} else {
-				if tlsConfig.MinVersion != tc.expectedMinVer {
-					t.Error("Unexpected MinVersion value")
-				}
+				return
+			}
 
-				if tlsConfig.MaxVersion != tc.expectedMaxVer {
-					t.Error("Unexpected MaxVersion value")
-				}
+			if tc.expectedError != nil {
+				t.Fatalf("expected error %v, got nil", tc.expectedError)
+			}
 
-				if tlsConfig.ClientCAs == nil || tlsConfig.RootCAs == nil {
-					if tc.expectedCAs {
-						t.Error("Expected ClientCAs and RootCAs to be non-nil")
-					}
-				} else {
-					if tlsConfig.ClientCAs != tc.certPool || tlsConfig.RootCAs != tc.certPool {
-						if tc.expectedCAs {
-							t.Error("ClientCAs and RootCAs should match the passed certPool")
-						}
-					}
-				}
+			if tlsConfig.MinVersion != tc.expectedMinVer {
+				t.Error("Unexpected MinVersion value")
+			}
 
-				if tlsConfig.ServerName != tc.expectedSN {
-					t.Error("Unexpected ServerName value")
-				}
+			if tlsConfig.MaxVersion != tc.expectedMaxVer {
+				t.Error("Unexpected MaxVersion value")
+			}
 
-				if !slices.Equal(tlsConfig.NextProtos, []string{"h2", "http/1.1"}) {
-					t.Errorf("expected NextProtos [h2 http/1.1], got %v", tlsConfig.NextProtos)
+			if tc.expectedCAs {
+				if tlsConfig.ClientCAs == nil {
+					t.Error("Expected ClientCAs to be non-nil")
+				} else if tlsConfig.ClientCAs != tc.certPool {
+					t.Error("ClientCAs should match the passed certPool")
 				}
+			} else if tlsConfig.ClientCAs != nil {
+				t.Error("Expected ClientCAs to be nil when CA cert is omitted")
+			}
+
+			if !slices.Equal(tlsConfig.NextProtos, []string{"h2", "http/1.1"}) {
+				t.Errorf("expected NextProtos [h2 http/1.1], got %v", tlsConfig.NextProtos)
 			}
 		})
 	}

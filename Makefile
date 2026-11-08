@@ -82,12 +82,14 @@ setup-certs: # setup-certs
 	kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=trust-manager -n cert-manager --timeout=120s
 	for i in $$(seq 1 10); do kubectl apply -f testdata/sk8l-trust.yml && break || sleep 3; done
 
+TLS_ENABLED ?= false
+
 install-chart-ci: # install-chart-ci
-	helm repo add sk8l https://sk8l.io/charts
 	helm upgrade --install sk8l -f testdata/sk8l-values.yml --namespace sk8l \
 	  --create-namespace=true \
 	  --set namespace.create=false \
 	  --set namespace.name=sk8l \
+	  --set tls.enabled=$(TLS_ENABLED) \
 	  charts/sk8l
 
 metrics-smoke-tests: # metrics-smoke-tests
@@ -95,10 +97,12 @@ metrics-smoke-tests: # metrics-smoke-tests
 	kubectl apply -f testdata/sk8l-demo-job.yml -n sk8l > /dev/null
 	kubectl wait -n sk8l --for=condition=ready pod -l app.kubernetes.io/pod=sk8l-api --timeout=300s
 	./ci/collect_workload_info.sh sk8l > expected_output.txt
-	@echo "Waiting for cronjob executions and metrics to become available..."
-	@passed=0; \
+	@scheme="http"; curl_tls=""; \
+	if [ "$(TLS_ENABLED)" = "true" ]; then scheme="https"; curl_tls="-k"; fi; \
+	echo "Waiting for cronjob executions and metrics to become available ($$scheme)..."; \
+	passed=0; \
 	for i in $$(seq 1 45); do \
-	  curl -k -s https://localhost:8590/metrics > current_state.txt 2>/dev/null || true; \
+	  curl $$curl_tls -s "$$scheme://localhost:8590/metrics" > current_state.txt 2>/dev/null || true; \
 	  if ./ci/check_strings_in_file.sh > job_output.txt 2>&1; then \
 	    echo "Smoke tests passed in $${i} polling attempt(s)."; \
 	    passed=1; \
@@ -113,7 +117,7 @@ metrics-smoke-tests: # metrics-smoke-tests
 	fi
 
 api-smoke-tests: # api-smoke-tests
-	./ci/api_smoke_tests.sh
+	TLS_ENABLED=$(TLS_ENABLED) ./ci/api_smoke_tests.sh
 
 GITHUB_PR_IMAGE_TAG ?=''
 update-config-files: # update-config-files

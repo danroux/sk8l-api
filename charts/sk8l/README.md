@@ -4,13 +4,15 @@ This chart installs sk8l(skål)(https://sk8l.io). A cronjob/job monitoring and v
 
 ## Get Repository
 
-```
+```bash
 helm repo add sk8l https://sk8l.io/charts
 helm repo update
 helm search repo sk8l
 ```
 
 ## Install chart
+
+By default (`tls.enabled: false`), `sk8l` installs with zero external certificate prerequisites and serves the embedded UI, Connect/gRPC-Web/gRPC API (`h2c`), health probes, and Prometheus metrics on port `8590`:
 
 ```bash
 helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
@@ -20,27 +22,27 @@ helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
 
 ## Uninstall Chart
 
-```
-helm uninstall [RELEASE_NAME]
+```bash
+helm uninstall [RELEASE_NAME] --namespace [NAMESPACE]
 ```
 
 ## Configuration
 
-To see all configurable options with detailed comments, visit the chart's values.yaml, or run these configuration commands:
+To see all configurable options with detailed comments, visit the chart's `values.yaml`, or run:
 
-```
+```bash
 helm show values sk8l/sk8l
 ```
 
 ### Prometheus
 
-If you wish to consume the exported metrics with prometheus, you can point prometheus to port 8590(HTTPS).
+If you wish to consume the exported metrics with Prometheus, point Prometheus to `/metrics` on port `8590` (`HTTP` by default, or `HTTPS` when `tls.enabled: true`).
 
 #### Kubernetes SD configurations
 
-You can also benefit from prometheus support of Kubernetes SD and use the pod's label `sk8l.io/api-scrape-port` to configure the scrapping jobs:
+You can also benefit from Prometheus Kubernetes SD and use the pod annotation `sk8l.io/api-scrape-port` to configure scraping jobs:
 
-```
+```yaml
 kubernetes_sd_configs:
   - role: pod
 relabel_configs:
@@ -54,20 +56,26 @@ relabel_configs:
     target_label: __address__
 ```
 
-### Secrets
+### Optional In-Pod TLS
 
-#### TLS
+By default `tls.enabled` is `false` (ideal when terminating TLS at an Ingress Controller, Gateway API, Service Mesh, or accessing locally via `kubectl port-forward`).
 
-The commmunication between apps is encrypted.
+To enable end-to-end HTTPS/TLS directly on the `sk8l-api` pod:
 
-To manually configure TLS, first create/retrieve a key & certificate pair. Then create TLS secrets in the namespace:
-
-```
-kubectl create secret tls -n NAMESPACE sk8l-server-cert-secret --cert=path/to/tls.cert --key=path/to/tls.key
-kubectl create secret tls -n NAMESPACE sk8l-ca-root-cert-secret --cert=ca-cert.pem --key=ca-key.pem
-```
-
-### Labels
+1. Create a standard Kubernetes TLS secret in the target namespace:
+   ```bash
+   kubectl create secret tls -n [NAMESPACE] sk8l-server-cert-secret \
+     --cert=path/to/tls.crt \
+     --key=path/to/tls.key
+   ```
+2. Enable TLS in Helm values:
+   ```bash
+   helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
+     --namespace [NAMESPACE] \
+     --set tls.enabled=true \
+     --set tls.secretName=sk8l-server-cert-secret
+   ```
+   *(Optional: set `tls.caSecretName` if you also want to mount a separate CA bundle secret into `ClientCAs`).*
 
 ### Environment Variables
 
@@ -75,7 +83,13 @@ The web UI is embedded directly in `sk8l-api` and uses same-origin ConnectRPC/gR
 
 ## Usage
 
-After installation and once the `sk8l-api` pod is running, port-forward `svc/sk8l` on `8590:8590` and navigate to https://localhost:8590 to view your cronjobs and jobs.
+After installation and once the `sk8l-api` pod is running, port-forward `svc/sk8l` on `8590:8590`:
+
+```bash
+kubectl -n [NAMESPACE] port-forward svc/sk8l 8590:8590
+```
+
+Navigate to `http://localhost:8590` (or `https://localhost:8590` when `tls.enabled: true`) to view your cronjobs and jobs.
 
 ## More Info
 

@@ -2,6 +2,15 @@
 {{- if and .Values.service .Values.service.ports (gt (len .Values.service.ports) 0) }}
 {{- $httpPort = (index .Values.service.ports 0).port | default 8590 }}
 {{- end }}
+{{- $tlsEnabled := false }}
+{{- $tlsSecretName := "sk8l-server-cert-secret" }}
+{{- $tlsCASecretName := "" }}
+{{- if .Values.tls }}
+{{- $tlsEnabled = .Values.tls.enabled | default false }}
+{{- $tlsSecretName = .Values.tls.secretName | default "sk8l-server-cert-secret" }}
+{{- $tlsCASecretName = .Values.tls.caSecretName | default "" }}
+{{- end }}
+{{- $probeScheme := ternary "HTTPS" "HTTP" $tlsEnabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -47,60 +56,70 @@ spec:
               containerPort: {{ $httpPort }}
           {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 10 }}
+            {{- toYaml $.Values.resources | nindent 10 }}
           {{- end }}
           startupProbe:
             httpGet:
               path: /healthz
               port: http
-              scheme: HTTPS
+              scheme: {{ $probeScheme }}
             failureThreshold: 30
             periodSeconds: 2
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
-              scheme: HTTPS
+              scheme: {{ $probeScheme }}
             periodSeconds: 20
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
-              scheme: HTTPS
+              scheme: {{ $probeScheme }}
             initialDelaySeconds: 5
             periodSeconds: 10
             failureThreshold: 2
           envFrom:
             - configMapRef:
                 name: sk8l-api-configmap
+          {{- if or $tlsEnabled .Values.sk8lApi.volumeMounts }}
           volumeMounts:
+            {{- if $tlsEnabled }}
             - name: tls-certs
               mountPath: /etc/sk8l-certs
               readOnly: true
+            {{- end }}
             {{- if .Values.sk8lApi.volumeMounts }}
             {{- toYaml .Values.sk8lApi.volumeMounts | nindent 12 }}
             {{- end }}
+          {{- end }}
       terminationGracePeriodSeconds: 30
+      {{- if or $tlsEnabled .Values.sk8lApi.volumes }}
       volumes:
+        {{- if $tlsEnabled }}
         - name: tls-certs
           projected:
             sources:
-            - secret:
-                name: sk8l-server-cert-secret
-                items:
-                  - key: tls.crt
-                    path: server-cert.pem
-                  - key: tls.key
-                    path: server-key.pem
-            - secret:
-                name: sk8l-ca-root-cert-secret
-                items:
-                  - key: tls.crt
-                    path: ca-cert.pem
+              - secret:
+                  name: {{ $tlsSecretName | quote }}
+                  items:
+                    - key: tls.crt
+                      path: server-cert.pem
+                    - key: tls.key
+                      path: server-key.pem
+              {{- if $tlsCASecretName }}
+              - secret:
+                  name: {{ $tlsCASecretName | quote }}
+                  items:
+                    - key: tls.crt
+                      path: ca-cert.pem
+              {{- end }}
+        {{- end }}
         {{- if .Values.sk8lApi.volumes }}
         {{- toYaml .Values.sk8lApi.volumes | nindent 8 }}
         {{- end }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

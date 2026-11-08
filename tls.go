@@ -57,9 +57,15 @@ func setupTLS(certFile, certKeyFile, caFile string, certPool CertPool) (*tls.Con
 		return nil, cErr
 	}
 
-	caBytes, err := os.ReadFile(filepath.Clean(caFile))
+	if caFile == "" {
+		return tlsConfig, nil
+	}
 
+	caBytes, err := os.ReadFile(filepath.Clean(caFile))
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return tlsConfig, nil
+		}
 		cErr := &CertError{
 			CertFile: certFile,
 			Msg:      err.Error(),
@@ -69,7 +75,6 @@ func setupTLS(certFile, certKeyFile, caFile string, certPool CertPool) (*tls.Con
 	}
 
 	ok := certPool.AppendCertsFromPEM(caBytes)
-
 	if !ok {
 		cErr := &CertError{
 			CertFile: certFile,
@@ -79,7 +84,6 @@ func setupTLS(certFile, certKeyFile, caFile string, certPool CertPool) (*tls.Con
 	}
 
 	certPoolAsX509CertPool, ok := certPool.(*x509.CertPool)
-
 	if !ok {
 		cErr := &CertError{
 			CertFile: certFile,
@@ -89,8 +93,6 @@ func setupTLS(certFile, certKeyFile, caFile string, certPool CertPool) (*tls.Con
 	}
 
 	tlsConfig.ClientCAs = certPoolAsX509CertPool
-	tlsConfig.RootCAs = certPoolAsX509CertPool
-	tlsConfig.ServerName = "127.0.0.1"
 
 	return tlsConfig, nil
 }

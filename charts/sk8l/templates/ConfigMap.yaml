@@ -2,6 +2,10 @@
 {{- if and .Values.service .Values.service.ports (gt (len .Values.service.ports) 0) }}
 {{- $httpPort = (index .Values.service.ports 0).port | default 8590 }}
 {{- end }}
+{{- $tlsEnabled := false }}
+{{- if .Values.tls }}
+{{- $tlsEnabled = .Values.tls.enabled | default false }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -10,6 +14,7 @@ metadata:
   namespace: {{ include "sk8l.namespace" . }}
 data:
   SK8L_HTTP_PORT: {{ $httpPort | quote }}
+  TLS_ENABLED: {{ ternary "true" "false" $tlsEnabled | quote }}
   {{- if .Values.rbac.clusterWide }}
   K8_NAMESPACE: {{ .Values.sk8lApi.targetNamespace | default "" | quote }}
   {{- else }}
