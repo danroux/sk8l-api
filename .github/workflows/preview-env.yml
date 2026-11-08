@@ -34,15 +34,12 @@ jobs:
           FILE="apps/previews/api-pr-${PR_NUM}.yaml"
 
           CHART_VERSION=$(yq '.spec.sources[0].targetRevision' apps/sk8l.yaml)
-          STABLE_UI_TAG=$(yq '.sk8lUi.imageTag // "v0.21.0"' values/sk8l/values.yaml)
 
           mkdir -p apps/previews
 
           sed -e "s|APP_NAME_PLACEHOLDER|${APP_NAME}|g" \
               -e "s|NAMESPACE_PLACEHOLDER|${NAMESPACE}|g" \
               -e "s|CHART_VERSION_PLACEHOLDER|${CHART_VERSION}|g" \
-              -e "s|UI_IMAGE_PLACEHOLDER|danroux/sk8l-ui|g" \
-              -e "s|UI_TAG_PLACEHOLDER|${STABLE_UI_TAG}|g" \
               -e "s|API_IMAGE_PLACEHOLDER|ghcr.io/danroux/sk8l-api|g" \
               -e "s|API_TAG_PLACEHOLDER|dev-${PR_NUM}|g" \
               manifests/preview-template/application.yaml > "$FILE"
@@ -56,7 +53,7 @@ jobs:
             git push origin master
 
             if [ "${{ github.event.action }}" = "labeled" ]; then
-              COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **Image (PR)**: \`ghcr.io/danroux/sk8l-api:dev-%s\`\n\n\`\`\`bash\nwhile ! kubectl -n %s get deployment sk8l-api &>/dev/null; do sleep 3; done && \\\\\nkubectl -n %s rollout status deployment/sk8l-api --timeout=300s && \\\\\nkubectl -n %s port-forward svc/sk8l 8590:8590\n\`\`\`\nUI: http://localhost:8590" \
+              COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **Image (PR)**: \`ghcr.io/danroux/sk8l-api:dev-%s\`\n\n\`\`\`bash\nwhile ! kubectl -n %s get deployment sk8l-api &>/dev/null; do sleep 3; done && \\\\\nkubectl -n %s rollout status deployment/sk8l-api --timeout=300s && \\\\\nkubectl -n %s port-forward svc/sk8l 8001:8590\n\`\`\`\nUI: https://localhost:8001" \
                 "${NAMESPACE}" "${APP_NAME}" "${CHART_VERSION}" "${PR_NUM}" "${NAMESPACE}" "${NAMESPACE}" "${NAMESPACE}")
               gh pr comment "${PR_NUM}" --repo "${{ github.repository }}" --body "${COMMENT_BODY}" || true
             fi
