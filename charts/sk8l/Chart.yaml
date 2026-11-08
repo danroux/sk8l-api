@@ -1,7 +1,7 @@
 apiVersion: v2
 name: sk8l
-version: 0.28.0
-appVersion: 0.27.0
+version: 0.29.0
+appVersion: 0.28.0
 description: |
   sk8l is a Cronjob/Job monitoring and visualization tool in Kubernetes. It enables users to monitor Cronjob/Job status by collecting metrics from the configured targets and publish them to prometheus.
 icon: https://sk8l.io/charts/logo.png
@@ -24,42 +24,14 @@ maintainers:
 annotations:
   artifacthub.io/images: |
     - name: sk8l-api
-      image: danroux/sk8l-api:v0.24.0
+      image: danroux/sk8l-api:v0.25.0
   artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: "go: Expose Cronjob service over Connect, gRPC-Web, and gRPC via connectrpc.com/connect on the HTTP server"
+      description: "helm: Default tls.enabled to false so sk8l installs out of the box without cert-manager or pre-existing TLS secrets"
     - kind: changed
-      description: "ci/dependabot: go:(deps): bump google.golang.org/grpc from 1.84.0 to 1.85.0"
+      description: "helm: Remove separate UI/Envoy deployment, service, and legacy gRPC/health ports (8585, 8588, 8001, 9080) in favor of unified port 8590"
     - kind: changed
-      description: "ci/dependabot: go:(deps): bump k8s.io/client-go from 0.37.1 to 0.37.2"
+      description: "go: Embed sk8l-ui static assets via go:embed and serve SPA, Connect/gRPC-Web/gRPC RPCs, metrics, and health probes from a single server on port 8590"
     - kind: changed
-      description: "ui/docker: Migrate dev Dockerfile to node:22-bookworm-slim"
-    - kind: changed
-      description: "ui/js/deps: Remove legacy gRPC/CommonJS packages and move ConnectRPC runtime to dependencies"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump @connectrpc/connect-web from 2.1.1 to 2.3.0"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump @primer/octicons from 19.25.0 to 19.42.0"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump cronstrue from 3.32.0 to 3.38.0"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump happy-dom from 20.9.0 to 21.0.4"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump rollup from 4.60.3 to 4.67.4"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump shiki from 4.0.2 to 4.5.0"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump vitest from 4.1.5 to 5.0.5"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump vue from 3.5.33 to 3.5.44"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps): bump vue-router from 5.0.6 to 5.4.0"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps-dev): bump @bufbuild/protobuf from 2.15.0 to 2.16.0"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps-dev): bump @connectrpc/connect from 2.2.0 to 2.3.0"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps-dev): bump @vue/test-utils from 2.4.10 to 2.5.1"
-    - kind: changed
-      description: "ui/ci/dependabot: npm:(deps-dev): bump vue-tsc from 3.2.8 to 3.3.14"
+      description: "go: Support optional TLS (TLS_ENABLED) and unencrypted HTTP/2 (h2c) alongside HTTP/1.1 on port 8590, with configurable tls.secretName and optional tls.caSecretName in Helm"

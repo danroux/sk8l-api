@@ -1,3 +1,15 @@
+## v0.25.0 (November 08, 2026)
+
+BREAKING CHANGES:
+
+* helm: Default tls.enabled to false so sk8l installs out of the box without cert-manager or pre-existing TLS secrets [[GH-353](https://github.com/danroux/sk8l-api/issues/353)]
+* helm: Remove separate UI/Envoy deployment, service, and legacy gRPC/health ports (8585, 8588, 8001, 9080) in favor of unified port 8590 [[GH-352](https://github.com/danroux/sk8l-api/issues/352)]
+
+ENHANCEMENTS:
+
+* go: Embed sk8l-ui static assets via go:embed and serve SPA, Connect/gRPC-Web/gRPC RPCs, metrics, and health probes from a single server on port 8590 [[GH-352](https://github.com/danroux/sk8l-api/issues/352)]
+* go: Support optional TLS (TLS_ENABLED) and unencrypted HTTP/2 (h2c) alongside HTTP/1.1 on port 8590, with configurable tls.secretName and optional tls.caSecretName in Helm [[GH-353](https://github.com/danroux/sk8l-api/issues/353)]
+
 ## v0.24.0 (November 07, 2026)
 
 
