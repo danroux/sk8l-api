@@ -24,6 +24,7 @@ import (
 	"github.com/danroux/sk8l/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -392,11 +393,7 @@ func TestNativeGRPCOverTLSHTTPServer(t *testing.T) {
 	setupHTTPRoutes(mux, srv)
 
 	bl := bufconn.Listen(bufSize)
-	httpSrv := &http.Server{
-		Handler:           mux,
-		ReadHeaderTimeout: ReadTimeout,
-		TLSConfig:         serverTLS,
-	}
+	httpSrv := newHTTPServer("", mux, serverTLS)
 	go func() {
 		_ = httpSrv.Serve(tls.NewListener(bl, serverTLS))
 	}()
@@ -443,5 +440,148 @@ func TestNativeGRPCOverTLSHTTPServer(t *testing.T) {
 	}
 	if len(msg.GetCronjobs()) != 1 || msg.GetCronjobs()[0].GetName() != testConnectCronjobName {
 		t.Errorf("unexpected cronjobs over native gRPC: %+v", msg.GetCronjobs())
+	}
+}
+
+func TestParseTLSEnabled(t *testing.T) {
+	cases := []struct {
+		raw     string
+		want    bool
+		wantErr bool
+	}{
+		{raw: "", want: false, wantErr: false},
+		{raw: "   ", want: false, wantErr: false},
+		{raw: "false", want: false, wantErr: false},
+		{raw: "0", want: false, wantErr: false},
+		{raw: "true", want: true, wantErr: false},
+		{raw: "TRUE", want: true, wantErr: false},
+		{raw: "1", want: true, wantErr: false},
+		{raw: "not-a-bool", want: false, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		got, err := parseTLSEnabled(tc.raw)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("parseTLSEnabled(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("parseTLSEnabled(%q) = %v, want %v", tc.raw, got, tc.want)
+		}
+	}
+}
+
+// TestPlaintextH2CHTTPServer verifies that when TLS is disabled (tlsConfig == nil),
+// newHTTPServer serves both HTTP/1.1 requests and unencrypted HTTP/2 (h2c) native gRPC
+// on the same listener.
+func TestPlaintextH2CHTTPServer(t *testing.T) {
+	cronjob := testutil.NewCronJobBuilder().
+		WithName(testConnectCronjobName).
+		WithNamespace(testConnectNamespace).
+		Build()
+	clientSet := fake.NewClientset(cronjob)
+	k8sClient := k8s.NewClientWithInterface(clientSet)
+	st := setupTestInformerStore(t, clientSet, testConnectNamespace)
+	srv := NewSk8lServer(st, k8sClient, nil)
+
+	mux := &http.ServeMux{}
+	setupHTTPRoutes(mux, srv)
+
+	bl := bufconn.Listen(bufSize)
+	httpSrv := newHTTPServer("", mux, nil)
+	go func() {
+		_ = httpSrv.Serve(bl)
+	}()
+	t.Cleanup(func() {
+		_ = httpSrv.Close()
+		_ = bl.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
+
+	// 1. Verify native gRPC over plaintext h2c (prior-knowledge HTTP/2).
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(func(dialCtx context.Context, _ string) (net.Conn, error) {
+			c, dialErr := bl.DialContext(dialCtx)
+			if dialErr != nil {
+				return nil, fmt.Errorf("connect_test: failed to dial h2c bufconn: %w", dialErr)
+			}
+			return c, nil
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient failed: %v", err)
+	}
+	defer conn.Close()
+
+	grpcClient := protos.NewCronjobClient(conn)
+	annResp, err := grpcClient.GetDashboardAnnotations(ctx, &protos.DashboardAnnotationsRequest{})
+	if err != nil {
+		t.Fatalf("plaintext h2c gRPC GetDashboardAnnotations failed: %v", err)
+	}
+	if annResp.GetAnnotations() == "" {
+		t.Error("expected non-empty annotations over plaintext h2c gRPC")
+	}
+
+	stream, err := grpcClient.GetCronjobs(ctx, &protos.CronjobsRequest{})
+	if err != nil {
+		t.Fatalf("plaintext h2c gRPC GetCronjobs failed: %v", err)
+	}
+	msg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("plaintext h2c gRPC stream.Recv failed: %v", err)
+	}
+	if len(msg.GetCronjobs()) != 1 || msg.GetCronjobs()[0].GetName() != testConnectCronjobName {
+		t.Errorf("unexpected cronjobs over plaintext h2c gRPC: %+v", msg.GetCronjobs())
+	}
+
+	// 2. Verify standard HTTP/1.1 requests (kubelet probes + Connect JSON) on the same listener.
+	http1Client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(dialCtx context.Context, _, _ string) (net.Conn, error) {
+				c, dialErr := bl.DialContext(dialCtx)
+				if dialErr != nil {
+					return nil, fmt.Errorf("connect_test: failed to dial http1 bufconn: %w", dialErr)
+				}
+				return c, nil
+			},
+		},
+	}
+
+	for _, probePath := range []string{"/healthz", "/readyz"} {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, testConnectBaseURL+probePath, nil)
+		if reqErr != nil {
+			t.Fatalf("NewRequestWithContext(%s) failed: %v", probePath, reqErr)
+		}
+		resp, doErr := http1Client.Do(req)
+		if doErr != nil {
+			t.Fatalf("GET %s over plaintext HTTP/1.1 failed: %v", probePath, doErr)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s: expected 200 OK, got %d", probePath, resp.StatusCode)
+		}
+	}
+
+	connectReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		testConnectBaseURL+protosconnect.CronjobGetDashboardAnnotationsProcedure,
+		strings.NewReader("{}"),
+	)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext Connect JSON failed: %v", err)
+	}
+	connectReq.Header.Set("Content-Type", "application/json")
+	connectResp, err := http1Client.Do(connectReq)
+	if err != nil {
+		t.Fatalf("POST Connect JSON over plaintext HTTP/1.1 failed: %v", err)
+	}
+	_ = connectResp.Body.Close()
+	if connectResp.StatusCode != http.StatusOK {
+		t.Errorf("POST Connect JSON: expected 200 OK, got %d", connectResp.StatusCode)
 	}
 }

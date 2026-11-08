@@ -56,7 +56,7 @@ jobs:
             git push origin master
 
             if [ "${{ github.event.action }}" = "labeled" ]; then
-              COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **Image (PR)**: \`ghcr.io/danroux/sk8l-api:dev-%s\`\n\n\`\`\`bash\nwhile ! kubectl -n %s get deployment sk8l-api &>/dev/null; do sleep 3; done && \\\\\nkubectl -n %s rollout status deployment/sk8l-api --timeout=300s && \\\\\nkubectl -n %s port-forward svc/sk8l 8590:8590\n\`\`\`\nUI: https://localhost:8590" \
+              COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **Image (PR)**: \`ghcr.io/danroux/sk8l-api:dev-%s\`\n\n\`\`\`bash\nwhile ! kubectl -n %s get deployment sk8l-api &>/dev/null; do sleep 3; done && \\\\\nkubectl -n %s rollout status deployment/sk8l-api --timeout=300s && \\\\\nkubectl -n %s port-forward svc/sk8l 8590:8590\n\`\`\`\nUI: http://localhost:8590" \
                 "${NAMESPACE}" "${APP_NAME}" "${CHART_VERSION}" "${PR_NUM}" "${NAMESPACE}" "${NAMESPACE}" "${NAMESPACE}")
               gh pr comment "${PR_NUM}" --repo "${{ github.repository }}" --body "${COMMENT_BODY}" || true
             fi

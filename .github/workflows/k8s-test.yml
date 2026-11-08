@@ -18,27 +18,24 @@ on:
       k8s_image:
         required: true
         type: string
+      tls_enabled:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   k8s-tests:
     runs-on: ubuntu-latest
     env:
       GRPCURL_VERSION: 1.9.3
+      TLS_ENABLED: ${{ inputs.tls_enabled }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           submodules: recursive
-      # - name: Set up Go ${{ env.GO_VERSION }}
-      #   uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
-      #   with:
-      #     go-version: ${{ env.GO_VERSION }}
-      #     check-latest: false
-      #     cache: false
-      #   id: go
       - name: Update config files with dev image tag
-        if:
         run: |
           make update-config-files GITHUB_PR_IMAGE_TAG=dev-${{ inputs.image_tag }}
       - name: Setup Kubernetes cluster ${{ inputs.kind_version }}/${{ inputs.k8s_version }}
@@ -57,6 +54,7 @@ jobs:
         with:
           version: 'v3.13.3'
       - name: Setup certs
+        if: ${{ inputs.tls_enabled }}
         run: |
           make setup-certs > /dev/null
       - name: Fetch sk8l-api:dev-${{ inputs.image_tag }}
@@ -70,11 +68,11 @@ jobs:
           kind load image-archive sk8l-api:dev-${{ inputs.image_tag }}.tar -n sk8l-${{ inputs.kind_version }}-${{ inputs.k8s_version }}-${{ inputs.image_tag }}
       - name: Install Chart
         run: |
-          make install-chart-ci > /dev/null
+          make install-chart-ci TLS_ENABLED=${{ inputs.tls_enabled }} > /dev/null
       - name: /metrics smoke tests
         id: metrics_smoke_tests
         run: |
-          make metrics-smoke-tests
+          make metrics-smoke-tests TLS_ENABLED=${{ inputs.tls_enabled }}
       - name: /metrics smoke tests error output
         if: ${{ failure() && steps.metrics_smoke_tests.conclusion == 'failure' }}
         run: |
@@ -106,7 +104,7 @@ jobs:
       - name: smoke tests
         id: api_smoke_tests
         run: |
-          make api-smoke-tests
+          make api-smoke-tests TLS_ENABLED=${{ inputs.tls_enabled }}
       - name: api smoke tests error output
         if: ${{ failure() && steps.api_smoke_tests.conclusion == 'failure' }}
         run: |

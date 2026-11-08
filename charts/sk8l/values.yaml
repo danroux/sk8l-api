@@ -43,27 +43,17 @@ sk8lApi:
   autoscaling:
     enabled: true
     replicaCount: 1
-  # sk8l-api needs a TLS server and ca certificate(if self-signed)
   volumeMounts: []
-  # - name: tls-certs
-  #   mountPath: /etc/sk8l-certs
-  #   readOnly: true
   volumes: []
-  # - name: tls-certs
-  #   projected:
-  #     sources:
-  #     - secret:
-  #         name: sk8l-server-cert-secret
-  #         items:
-  #           - key: tls.crt
-  #             path: server-cert.pem
-  #           - key: tls.key
-  #             path: server-key.pem
-  #     - secret:
-  #         name: sk8l-ca-root-cert-secret
-  #         items:
-  #           - key: tls.crt
-  #             path: ca-cert.pem
+tls:
+  # enabled: When false (default), sk8l-api serves HTTP/1.1 and unencrypted HTTP/2 (h2c) on port 8590
+  # without requiring TLS certificates or cert-manager. Set to true to enable end-to-end HTTPS/TLS.
+  enabled: false
+  # secretName: Kubernetes TLS Secret containing tls.crt and tls.key when tls.enabled is true.
+  secretName: "sk8l-server-cert-secret"
+  # caSecretName: Optional Secret containing tls.crt for a custom CA (ClientCAs) when tls.enabled is true.
+  # Leave empty when using standard kubernetes.io/tls secrets without a separate CA bundle secret.
+  caSecretName: ""
 # Security context for the pod template and containers
 securityContext:
   pod:

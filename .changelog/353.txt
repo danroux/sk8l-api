@@ -1,0 +1,6 @@
+```release-note:breaking-change
+helm: Default tls.enabled to false so sk8l installs out of the box without cert-manager or pre-existing TLS secrets
+```
+```release-note:enhancement
+go: Support optional TLS (TLS_ENABLED) and unencrypted HTTP/2 (h2c) alongside HTTP/1.1 on port 8590, with configurable tls.secretName and optional tls.caSecretName in Helm
+```
