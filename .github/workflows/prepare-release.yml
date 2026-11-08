@@ -4,21 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       api_version:
-        description: 'API Version (e.g. 0.21.0 or v0.21.0)'
-        required: true
-        default: '0.21.0'
-      chart_version:
-        description: 'Helm Chart Version (e.g. 0.25.0)'
+        description: 'API Version (e.g. 0.25.0 or v0.25.0)'
         required: true
         default: '0.25.0'
+      chart_version:
+        description: 'Helm Chart Version (e.g. 0.29.0)'
+        required: true
+        default: '0.29.0'
       app_version:
-        description: 'Chart App Version (e.g. 0.24.0)'
+        description: 'Chart App Version (e.g. 0.28.0)'
         required: false
-        default: '0.24.0'
+        default: '0.28.0'
       ui_version:
-        description: 'UI Version Tag (e.g. v0.19.0)'
+        description: 'UI Version Tag (leave empty to keep Makefile UI_VERSION)'
         required: false
-        default: 'v0.19.0'
+        default: ''
 
 permissions:
   contents: write
@@ -63,11 +63,28 @@ jobs:
           fi
           [[ "$UI_VER" != v* ]] && UI_VER="v${UI_VER}"
 
+          LAST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || echo "")
+          PREV_UI_VER=""
+          if [ -n "$LAST_TAG" ]; then
+            PREV_UI_VER=$(git show "${LAST_TAG}:Makefile" 2>/dev/null | grep -E '^UI_VERSION \?=' | awk '{print $3}' || true)
+          fi
+          if [ -z "$PREV_UI_VER" ]; then
+            PREV_UI_VER=$(grep -E '^UI_VERSION \?=' Makefile | awk '{print $3}' || true)
+          fi
+          [[ -n "$PREV_UI_VER" && "$PREV_UI_VER" != v* ]] && PREV_UI_VER="v${PREV_UI_VER}"
+
+          UI_CHANGED="false"
+          if [ "$UI_VER" != "$PREV_UI_VER" ]; then
+            UI_CHANGED="true"
+          fi
+          echo "Previous UI version (${LAST_TAG:-HEAD}): ${PREV_UI_VER}, target UI version: ${UI_VER}, ui_changed=${UI_CHANGED}"
+
           echo "api_num=${API_NUM}" >> "$GITHUB_OUTPUT"
           echo "api_tag=${API_TAG}" >> "$GITHUB_OUTPUT"
           echo "chart_num=${CHART_NUM}" >> "$GITHUB_OUTPUT"
           echo "app_num=${APP_NUM}" >> "$GITHUB_OUTPUT"
           echo "ui_version=${UI_VER}" >> "$GITHUB_OUTPUT"
+          echo "ui_changed=${UI_CHANGED}" >> "$GITHUB_OUTPUT"
 
           IFS='.' read -r API_MAJOR API_MINOR API_PATCH <<< "${API_NUM}"
           IFS='.' read -r CHART_MAJOR CHART_MINOR CHART_PATCH <<< "${CHART_NUM}"
@@ -193,6 +210,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Fetch sk8l-ui Changelog
+        if: steps.vars.outputs.ui_changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -210,7 +228,7 @@ jobs:
         run: |
           chmod +x ci/parse_changelog.sh
           UI_CHANGELOG=""
-          if [ -f ui_changelog.md ] && [ -s ui_changelog.md ]; then
+          if [ "${{ steps.vars.outputs.ui_changed }}" = "true" ] && [ -f ui_changelog.md ] && [ -s ui_changelog.md ]; then
             UI_CHANGELOG="ui_changelog.md"
           fi
           ./ci/parse_changelog.sh CHANGELOG.md charts/sk8l/Chart.yaml "${UI_CHANGELOG}" "${{ steps.vars.outputs.ui_version }}"
