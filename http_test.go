@@ -115,6 +115,8 @@ func TestSetupHTTPRoutes(t *testing.T) {
 		{"/healthz", http.StatusOK},
 		{"/readyz", http.StatusOK},
 		{"/metrics", http.StatusOK},
+		// In unit tests dist/ only contains .keep, so / returns 404 without panicking.
+		{"/", http.StatusNotFound},
 	}
 
 	for _, tc := range routes {
@@ -127,4 +129,32 @@ func TestSetupHTTPRoutes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveHTTPPort(t *testing.T) {
+	t.Run("DefaultsTo8590", func(t *testing.T) {
+		t.Setenv(envSK8LHTTPPort, "")
+		t.Setenv(envServiceHTTPPort, "")
+		t.Setenv(envLegacyMetricsPort, "")
+		if got := resolveHTTPPort(); got != defaultHTTPPort {
+			t.Errorf("expected %q, got %q", defaultHTTPPort, got)
+		}
+	})
+
+	t.Run("PrefersSK8LHTTPPort", func(t *testing.T) {
+		t.Setenv(envSK8LHTTPPort, "9443")
+		t.Setenv(envLegacyMetricsPort, defaultHTTPPort)
+		if got := resolveHTTPPort(); got != "9443" {
+			t.Errorf("expected 9443, got %q", got)
+		}
+	})
+
+	t.Run("FallsBackToLegacyMetricsEnv", func(t *testing.T) {
+		t.Setenv(envSK8LHTTPPort, "")
+		t.Setenv(envServiceHTTPPort, "")
+		t.Setenv(envLegacyMetricsPort, "18590")
+		if got := resolveHTTPPort(); got != "18590" {
+			t.Errorf("expected 18590, got %q", got)
+		}
+	})
 }

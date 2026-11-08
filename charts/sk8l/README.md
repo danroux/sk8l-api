@@ -71,11 +71,11 @@ kubectl create secret tls -n NAMESPACE sk8l-ca-root-cert-secret --cert=ca-cert.p
 
 ### Environment Variables
 
-The frontend app calls the backend api on `https://localhost:9080`. You can change this by updating the ENV Variable `VITE_SK8L_API_URL` on the `sk8l-ui-configmap` configmap.
+The web UI is embedded directly in `sk8l-api` and uses same-origin ConnectRPC/gRPC-Web requests on port `8590` by default. If needed, you can override `sk8lApi.apiURL` in `values.yaml`.
 
 ## Usage
 
-After installation and once the apps are running, you should be able to navigate to https://localhost:8001 and see your cronjobs listed there.
+After installation and once the `sk8l-api` pod is running, port-forward `svc/sk8l` on `8590:8590` and navigate to https://localhost:8590 to view your cronjobs and jobs.
 
 ## More Info
 

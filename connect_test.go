@@ -2,7 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +22,8 @@ import (
 	"github.com/danroux/sk8l/protos"
 	"github.com/danroux/sk8l/protos/protosconnect"
 	"github.com/danroux/sk8l/testutil"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/test/bufconn"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +38,7 @@ const (
 	testConnectPodName        = "standalone-pod"
 	testConnectBaseURL        = "http://bufnet"
 	testConnectOrigin         = "https://localhost:8001"
+	testTLSServerName         = "localhost"
 	testConnectTimeoutSeconds = 5
 	testConnectTimeout        = testConnectTimeoutSeconds * time.Second
 )
@@ -333,4 +343,105 @@ func TestWithCORS(t *testing.T) {
 			t.Errorf("expected Access-Control-Allow-Origin %s, got %q", testConnectOrigin, got)
 		}
 	})
+}
+
+// TestNativeGRPCOverTLSHTTPServer verifies that native gRPC clients (such as grpcurl)
+// negotiate HTTP/2 ("h2" ALPN) and communicate directly with the unified Go http.Server.
+func TestNativeGRPCOverTLSHTTPServer(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: testTLSServerName},
+		DNSNames:     []string{testTLSServerName},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatalf("failed to create cert: %v", err)
+	}
+	parsedCert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("failed to parse cert: %v", err)
+	}
+	certPool := x509.NewCertPool()
+	certPool.AddCert(parsedCert)
+
+	serverTLS := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		MaxVersion:   tls.VersionTLS13,
+		NextProtos:   []string{"h2", "http/1.1"},
+		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: priv}},
+	}
+
+	cronjob := testutil.NewCronJobBuilder().
+		WithName(testConnectCronjobName).
+		WithNamespace(testConnectNamespace).
+		Build()
+	clientSet := fake.NewClientset(cronjob)
+	k8sClient := k8s.NewClientWithInterface(clientSet)
+	st := setupTestInformerStore(t, clientSet, testConnectNamespace)
+	srv := NewSk8lServer(st, k8sClient, nil)
+
+	mux := &http.ServeMux{}
+	setupHTTPRoutes(mux, srv)
+
+	bl := bufconn.Listen(bufSize)
+	httpSrv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: ReadTimeout,
+		TLSConfig:         serverTLS,
+	}
+	go func() {
+		_ = httpSrv.Serve(tls.NewListener(bl, serverTLS))
+	}()
+	t.Cleanup(func() {
+		_ = httpSrv.Close()
+		_ = bl.Close()
+	})
+
+	conn, err := grpc.NewClient(
+		"passthrough:///"+testTLSServerName,
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			c, dialErr := bl.DialContext(ctx)
+			if dialErr != nil {
+				return nil, fmt.Errorf("connect_test: failed to dial tls bufconn: %w", dialErr)
+			}
+			return c, nil
+		}),
+		grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(certPool, testTLSServerName)),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient failed: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
+
+	grpcClient := protos.NewCronjobClient(conn)
+	annResp, err := grpcClient.GetDashboardAnnotations(ctx, &protos.DashboardAnnotationsRequest{})
+	if err != nil {
+		t.Fatalf("native gRPC GetDashboardAnnotations over http.Server failed: %v", err)
+	}
+	if annResp.GetAnnotations() == "" {
+		t.Error("expected non-empty annotations over native gRPC")
+	}
+
+	stream, err := grpcClient.GetCronjobs(ctx, &protos.CronjobsRequest{})
+	if err != nil {
+		t.Fatalf("native gRPC GetCronjobs over http.Server failed: %v", err)
+	}
+	msg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("native gRPC stream.Recv failed: %v", err)
+	}
+	if len(msg.GetCronjobs()) != 1 || msg.GetCronjobs()[0].GetName() != testConnectCronjobName {
+		t.Errorf("unexpected cronjobs over native gRPC: %+v", msg.GetCronjobs())
+	}
 }

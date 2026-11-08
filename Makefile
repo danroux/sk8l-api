@@ -93,7 +93,7 @@ install-chart-ci: # install-chart-ci
 metrics-smoke-tests: # metrics-smoke-tests
 	kubectl apply -f testdata/sk8l-cronjobs.yml -n sk8l > /dev/null
 	kubectl apply -f testdata/sk8l-demo-job.yml -n sk8l > /dev/null
-	kubectl wait -n sk8l --for=condition=ready pod -l app.kubernetes.io/pod=sk8l-ui --timeout=300s
+	kubectl wait -n sk8l --for=condition=ready pod -l app.kubernetes.io/pod=sk8l-api --timeout=300s
 	./ci/collect_workload_info.sh sk8l > expected_output.txt
 	@echo "Waiting for cronjob executions and metrics to become available..."
 	@passed=0; \
@@ -136,13 +136,11 @@ bump-chart-appVersion: ## Bump Helm chart appVersion in Chart.yaml
 	@echo 'Bump chart appVersion to $(APP_VERSION)'
 	yq -i '.appVersion = "$(APP_VERSION)"' charts/sk8l/Chart.yaml
 
-bump-image-versions: ## Bump image tags in deployment templates and values.yaml
-	sed -i.bak -E 's/.Values.sk8lUi.imageTag \| default "[^"]+"/.Values.sk8lUi.imageTag | default "$(UI_VERSION)"/g' charts/sk8l/templates/ui-deployment.yaml && rm -f charts/sk8l/templates/ui-deployment.yaml.bak
+bump-image-versions: ## Bump image tags in Dockerfile, deployment template, values.yaml, and Chart.yaml
+	sed -i.bak -E 's#^(ARG UI_IMAGE=danroux/sk8l-ui:)[^ \t\r\n]+#\1$(UI_VERSION)#' Dockerfile && rm -f Dockerfile.bak
 	sed -i.bak -E 's/.Values.sk8lApi.imageTag \| default "[^"]+"/.Values.sk8lApi.imageTag | default "$(API_VERSION)"/g' charts/sk8l/templates/deployment.yaml && rm -f charts/sk8l/templates/deployment.yaml.bak
 	yq -i '.sk8lApi.imageTag = "$(API_VERSION)"' charts/sk8l/values.yaml
-	yq -i '.sk8lUi.imageTag = "$(UI_VERSION)"' charts/sk8l/values.yaml
 	sed -i.bak -E 's#(image: danroux/sk8l-api:)[^ \t\r\n]+#\1$(API_VERSION)#g' charts/sk8l/Chart.yaml && rm -f charts/sk8l/Chart.yaml.bak
-	sed -i.bak -E 's#(image: danroux/sk8l-ui:)[^ \t\r\n]+#\1$(UI_VERSION)#g' charts/sk8l/Chart.yaml && rm -f charts/sk8l/Chart.yaml.bak
 
 bump-version: ## Bump all version strings across chart and templates
 	@echo 'Bumping all version references...'
@@ -183,15 +181,10 @@ current-versions: ## Display current configured versions
 sk8lGhcrImages:
 	yq -i '.sk8lApi.image = "ghcr.io/danroux/sk8l-api"' charts/sk8l/values-local.yaml
 	yq -i '.sk8lApi.imageTag = "pre"' charts/sk8l/values-local.yaml
-	yq -i '.sk8lUi.image = "ghcr.io/danroux/sk8l-ui"' charts/sk8l/values-local.yaml
-	yq -i '.sk8lUi.imageTag = "dev"' charts/sk8l/values-local.yaml
 
 sk8lLocalImages:
-	yq -i '.sk8lApi.image = "localhost:5001/sk8l-api"' charts/sk8l/values-local.yaml \
-	&& yq -i '.sk8lUi.image = "localhost:5001/sk8l-ui"' charts/sk8l/values-local.yaml
+	yq -i '.sk8lApi.image = "localhost:5001/sk8l-api"' charts/sk8l/values-local.yaml
 
 sk8lImages:
-	yq -i '.sk8lApi.image = "danroux/sk8l-api"' charts/sk8l/values-local.yaml \
-	&& yq -i '.sk8lUi.image = "danroux/sk8l-ui"' charts/sk8l/values-local.yaml
+	yq -i '.sk8lApi.image = "danroux/sk8l-api"' charts/sk8l/values-local.yaml
 	yq -i '.sk8lApi.imageTag = "$(API_VERSION)"' charts/sk8l/values-local.yaml
-	yq -i ".sk8lUi.imageTag = \"$(UI_VERSION)\"" charts/sk8l/values-local.yaml

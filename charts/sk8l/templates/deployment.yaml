@@ -1,3 +1,7 @@
+{{- $httpPort := 8590 }}
+{{- if and .Values.service .Values.service.ports (gt (len .Values.service.ports) 0) }}
+{{- $httpPort = (index .Values.service.ports 0).port | default 8590 }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,9 +26,8 @@ spec:
         app.kubernetes.io/pod: sk8l-api
         app.kubernetes.io/name: sk8l
       annotations:
-        sk8l.io/api-scrape-port: "8590"
+        sk8l.io/api-scrape-port: {{ $httpPort | quote }}
         checksum/config: {{ include (print $.Template.BasePath "/ConfigMap.yaml") . | sha256sum }}
-        # checksum/config: {{/* include ("sk8l.configmap") . | sha256sum */}}
     spec:
       hostname: sk8l-api
       subdomain: sk8l
@@ -39,44 +42,32 @@ spec:
           image: {{ printf "%s:%s" $apiImage $apiTag }}
           imagePullPolicy: {{ .Values.sk8lApi.imagePullPolicy | default "IfNotPresent" | quote }}
           ports:
-            - name: api-port
+            - name: http
               protocol: TCP
-              {{- with (index .Values.service) }}
-              containerPort: {{ (index .ports 0).port }}
-              {{- end }}
-            - name: api-health-port
-              protocol: TCP
-              {{- with (index .Values.service) }}
-              containerPort: {{ (index .ports 1).port }}
-              {{- end }}
-            - name: metrics-port
-              protocol: TCP
-              {{- with (index .Values.service) }}
-              containerPort: {{ (index .ports 2).port }}
-              {{- end }}
+              containerPort: {{ $httpPort }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml .Values.resources | nindent 10 }}
           {{- end }}
           startupProbe:
-            grpc:
-              {{- with (index .Values.service) }}
-              port: {{ (index .ports 1).port }}
-              {{- end }}
+            httpGet:
+              path: /healthz
+              port: http
+              scheme: HTTPS
             failureThreshold: 30
             periodSeconds: 2
           livenessProbe:
-            grpc:
-              {{- with (index .Values.service) }}
-              port: {{ (index .ports 1).port }}
-              {{- end }}
+            httpGet:
+              path: /healthz
+              port: http
+              scheme: HTTPS
             periodSeconds: 20
             failureThreshold: 3
           readinessProbe:
-            grpc:
-              {{- with (index .Values.service) }}
-              port: {{ (index .ports 1).port }}
-              {{- end }}
+            httpGet:
+              path: /readyz
+              port: http
+              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 10
             failureThreshold: 2
@@ -109,10 +100,7 @@ spec:
                     path: ca-cert.pem
         {{- if .Values.sk8lApi.volumes }}
         {{- toYaml .Values.sk8lApi.volumes | nindent 8 }}
-        {{ end }}
-        {{- if .Values.sk8lUi.volumes }}
-        {{- toYaml .Values.sk8lUi.volumes | nindent 8 }}
-        {{ end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

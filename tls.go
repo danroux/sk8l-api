@@ -38,6 +38,7 @@ func setupTLS(certFile, certKeyFile, caFile string, certPool CertPool) (*tls.Con
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		MaxVersion: tls.VersionTLS13,
+		NextProtos: []string{"h2", "http/1.1"},
 	}
 	var err error
 

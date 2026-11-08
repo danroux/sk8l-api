@@ -93,14 +93,12 @@ jobs:
         run: |
           mkdir -p charts/sk8l/dashboards
           cp dashboards/sk8l-overview.json charts/sk8l/dashboards/sk8l-overview.json
+          sed -i -E "s#^(ARG UI_IMAGE=danroux/sk8l-ui:)[^ \t\r\n]+#\1${{ steps.vars.outputs.ui_version }}#" Dockerfile
           yq -i '.version = "${{ steps.vars.outputs.chart_num }}"' charts/sk8l/Chart.yaml
           yq -i '.appVersion = "${{ steps.vars.outputs.app_num }}"' charts/sk8l/Chart.yaml
           sed -i -E "s#(image: danroux/sk8l-api:)[^ \t\r\n]+#\1${{ steps.vars.outputs.api_tag }}#g" charts/sk8l/Chart.yaml
-          sed -i -E "s#(image: danroux/sk8l-ui:)[^ \t\r\n]+#\1${{ steps.vars.outputs.ui_version }}#g" charts/sk8l/Chart.yaml
           yq -i '.sk8lApi.imageTag = "${{ steps.vars.outputs.api_tag }}"' charts/sk8l/values.yaml
-          yq -i '.sk8lUi.imageTag = "${{ steps.vars.outputs.ui_version }}"' charts/sk8l/values.yaml
           sed -i -E "s/.Values.sk8lApi.imageTag \| default \"[^\"]+\"/.Values.sk8lApi.imageTag | default \"${{ steps.vars.outputs.api_tag }}\"/g" charts/sk8l/templates/deployment.yaml
-          sed -i -E "s/.Values.sk8lUi.imageTag \| default \"[^\"]+\"/.Values.sk8lUi.imageTag | default \"${{ steps.vars.outputs.ui_version }}\"/g" charts/sk8l/templates/ui-deployment.yaml
 
       - name: Generate Changelog & Update CHANGELOG.md
         id: changelog
@@ -238,7 +236,7 @@ jobs:
 
           rm -f ui_changelog.md
           git reset --soft origin/main
-          git add Makefile CHANGELOG.md charts/sk8l/ .changelog/
+          git add Makefile Dockerfile CHANGELOG.md charts/sk8l/ .changelog/
           MSG_FILE=$(mktemp)
           printf "%s\n\n%s\n" "${TITLE}" "${{ steps.changelog.outputs.notes }}" > "${MSG_FILE}"
           git commit -F "${MSG_FILE}"

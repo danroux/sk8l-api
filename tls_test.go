@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -127,6 +128,10 @@ func TestSetupTLS(t *testing.T) {
 
 				if tlsConfig.ServerName != tc.expectedSN {
 					t.Error("Unexpected ServerName value")
+				}
+
+				if !slices.Equal(tlsConfig.NextProtos, []string{"h2", "http/1.1"}) {
+					t.Errorf("expected NextProtos [h2 http/1.1], got %v", tlsConfig.NextProtos)
 				}
 			}
 		})

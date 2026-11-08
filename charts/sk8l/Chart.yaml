@@ -25,10 +25,6 @@ annotations:
   artifacthub.io/images: |
     - name: sk8l-api
       image: danroux/sk8l-api:v0.24.0
-    - name: sk8l-ui
-      image: danroux/sk8l-ui:v0.21.0
-    - name: envoy
-      image: envoyproxy/envoy:v1.30-latest
   artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/changes: |
     - kind: changed

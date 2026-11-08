@@ -18,7 +18,6 @@ import (
 	"github.com/danroux/sk8l/internal/mapper"
 	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/protos"
-	"google.golang.org/grpc/health/grpc_health_v1"
 	gyaml "sigs.k8s.io/yaml"
 
 	"github.com/rs/zerolog/log"
@@ -41,9 +40,6 @@ var (
 const (
 	streamHeartbeatSeconds  = 10
 	streamHeartbeatInterval = streamHeartbeatSeconds * time.Second
-
-	// defaultWatchInterval is how often the health Watch RPC re-evaluates the store status.
-	defaultWatchInterval = 5 * time.Second
 
 	// previousJobOffset is the 1-based offset from the end of the jobs list used to
 	// pick the last completed job when more than one job exists (the latest may be running).
@@ -68,12 +64,10 @@ func isClientCanceled(ctx context.Context, err error) bool {
 }
 
 type Sk8lServer struct {
-	grpc_health_v1.UnimplementedHealthServer
 	protos.UnimplementedCronjobServer
 	store           store.Store
 	k8sClient       k8s.ClientInterface
 	metricsNamesMap *sync.Map
-	watchInterval   time.Duration
 	mu              sync.RWMutex
 }
 
@@ -86,7 +80,6 @@ func NewSk8lServer(
 		store:           st,
 		k8sClient:       k8sCl,
 		metricsNamesMap: metricsNamesMap,
-		watchInterval:   defaultWatchInterval,
 	}
 }
 
@@ -118,80 +111,6 @@ func (s *Sk8lServer) SetK8sClient(cl k8s.ClientInterface) {
 func (s *Sk8lServer) IsHealthy() bool {
 	st := s.GetStore()
 	return st != nil && st.Ready()
-}
-
-func (s *Sk8lServer) Check(
-	ctx context.Context,
-	req *grpc_health_v1.HealthCheckRequest,
-) (*grpc_health_v1.HealthCheckResponse, error) {
-	status := grpc_health_v1.HealthCheckResponse_NOT_SERVING
-	if s.IsHealthy() {
-		status = grpc_health_v1.HealthCheckResponse_SERVING
-	}
-
-	log.Info().
-		Str("component", "probe").
-		Str("operation", "health").
-		Str("status", status.String()).
-		Msg("health check")
-
-	return &grpc_health_v1.HealthCheckResponse{Status: status}, nil
-}
-
-// Watch implements the gRPC Health Checking Protocol streaming RPC.
-// It sends an initial status immediately, then keeps the stream open and
-// pushes a new message whenever the health status transitions. The stream
-// is closed when the client disconnects or the server context is canceled.
-func (s *Sk8lServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
-	ticker := time.NewTicker(s.watchInterval)
-	defer ticker.Stop()
-
-	send := func(servingStatus grpc_health_v1.HealthCheckResponse_ServingStatus) error {
-		if err := stream.Send(&grpc_health_v1.HealthCheckResponse{Status: servingStatus}); err != nil {
-			if isClientCanceled(stream.Context(), err) {
-				log.Debug().Str("operation", "Watch#stream.Send").Msg("stream canceled by client")
-				return nil
-			}
-			log.Error().
-				Err(err).
-				Str("operation", "Watch#stream.Send").
-				Send()
-			return fmt.Errorf("sk8l#Watch: stream.Send failed: %w", err)
-		}
-		return nil
-	}
-
-	healthStatus := func() grpc_health_v1.HealthCheckResponse_ServingStatus {
-		if s.IsHealthy() {
-			return grpc_health_v1.HealthCheckResponse_SERVING
-		}
-		return grpc_health_v1.HealthCheckResponse_NOT_SERVING
-	}
-
-	// Send initial status immediately.
-	currentStatus := healthStatus()
-	if err := send(currentStatus); err != nil {
-		return err
-	}
-
-	for {
-		select {
-		case <-stream.Context().Done():
-			return nil
-		case <-ticker.C:
-			if stream.Context().Err() != nil {
-				return nil
-			}
-			newStatus := healthStatus()
-			if newStatus == currentStatus {
-				continue
-			}
-			currentStatus = newStatus
-			if err := send(currentStatus); err != nil {
-				return err
-			}
-		}
-	}
 }
 
 func (s *Sk8lServer) Run(metricsCxt context.Context) {

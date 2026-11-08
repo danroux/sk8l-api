@@ -33,7 +33,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -619,8 +618,6 @@ func (f *fakeHealthStore) Ready() bool {
 
 // newHealthServer builds a minimal Sk8lServer wired to a mock store
 // and returns the server along with a function to simulate a degraded state.
-// watchInterval is set to a small value so TestWatch/PushesStatusTransition
-// does not have to wait for the production 5s ticker.
 func newHealthServer(t *testing.T) (*Sk8lServer, func()) {
 	t.Helper()
 	fakeClientset := fake.NewClientset()
@@ -628,7 +625,6 @@ func newHealthServer(t *testing.T) (*Sk8lServer, func()) {
 	fs := &fakeHealthStore{}
 	fs.ready.Store(true)
 	s := NewSk8lServer(fs, k8sClient, nil)
-	s.watchInterval = 10 * time.Millisecond
 	return s, func() { fs.ready.Store(false) }
 }
 
@@ -652,145 +648,6 @@ func TestIsHealthy(t *testing.T) {
 		s := &Sk8lServer{}
 		if s.IsHealthy() {
 			t.Error("expected IsHealthy() == false when Store is nil")
-		}
-	})
-}
-
-func TestCheck(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("ServingWhenHealthy", func(t *testing.T) {
-		s, _ := newHealthServer(t)
-		resp, err := s.Check(ctx, nil)
-		if err != nil {
-			t.Fatalf("Check returned unexpected error: %v", err)
-		}
-		if resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
-			t.Errorf("expected SERVING, got %v", resp.Status)
-		}
-	})
-
-	t.Run("NotServingWhenDegraded", func(t *testing.T) {
-		s, degrade := newHealthServer(t)
-		degrade()
-		resp, err := s.Check(ctx, nil)
-		if err != nil {
-			t.Fatalf("Check returned unexpected error: %v", err)
-		}
-		if resp.Status != grpc_health_v1.HealthCheckResponse_NOT_SERVING {
-			t.Errorf("expected NOT_SERVING, got %v", resp.Status)
-		}
-	})
-}
-
-// mockWatchServer is a minimal grpc_health_v1.Health_WatchServer for testing.
-type mockWatchServer struct {
-	grpc.ServerStream
-	ctxFn    func() context.Context
-	received []*grpc_health_v1.HealthCheckResponse
-	mu       sync.Mutex
-}
-
-func newMockWatchServer(ctx context.Context) *mockWatchServer {
-	return &mockWatchServer{
-		ctxFn: func() context.Context { return ctx },
-	}
-}
-
-func (m *mockWatchServer) Send(resp *grpc_health_v1.HealthCheckResponse) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.received = append(m.received, resp)
-	return nil
-}
-
-func (m *mockWatchServer) Context() context.Context {
-	if m.ctxFn != nil {
-		return m.ctxFn()
-	}
-	return context.Background()
-}
-
-func (m *mockWatchServer) Received() []*grpc_health_v1.HealthCheckResponse {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]*grpc_health_v1.HealthCheckResponse, len(m.received))
-	copy(out, m.received)
-	return out
-}
-
-func TestWatch(t *testing.T) {
-	t.Run("SendsInitialStatus", func(t *testing.T) {
-		s, _ := newHealthServer(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		stream := newMockWatchServer(ctx)
-
-		done := make(chan error, 1)
-		go func() { done <- s.Watch(nil, stream) }()
-
-		// Give Watch time to send the initial message then cancel.
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-		<-done
-
-		msgs := stream.Received()
-		if len(msgs) == 0 {
-			t.Fatal("expected at least one message, got none")
-		}
-		if msgs[0].Status != grpc_health_v1.HealthCheckResponse_SERVING {
-			t.Errorf("expected initial status SERVING, got %v", msgs[0].Status)
-		}
-	})
-
-	t.Run("ExitsOnContextCancel", func(t *testing.T) {
-		s, _ := newHealthServer(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		stream := newMockWatchServer(ctx)
-
-		done := make(chan error, 1)
-		go func() { done <- s.Watch(nil, stream) }()
-
-		cancel()
-
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("expected nil error on context cancel, got %v", err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Error("Watch did not exit after context cancellation")
-		}
-	})
-
-	t.Run("PushesStatusTransition", func(t *testing.T) {
-		s, degrade := newHealthServer(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		stream := newMockWatchServer(ctx)
-
-		done := make(chan error, 1)
-		go func() { done <- s.Watch(nil, stream) }()
-
-		// Initial SERVING message lands almost immediately.
-		time.Sleep(50 * time.Millisecond)
-
-		// Simulate store degradation. With watchInterval=10ms the ticker fires quickly;
-		// wait just long enough for at least one tick to observe the degraded store.
-		degrade()
-		time.Sleep(100 * time.Millisecond)
-
-		cancel()
-		<-done
-
-		msgs := stream.Received()
-		if len(msgs) < 2 {
-			t.Fatalf("expected at least 2 messages (SERVING then NOT_SERVING), got %d", len(msgs))
-		}
-		if msgs[0].Status != grpc_health_v1.HealthCheckResponse_SERVING {
-			t.Errorf("expected first message SERVING, got %v", msgs[0].Status)
-		}
-		if msgs[1].Status != grpc_health_v1.HealthCheckResponse_NOT_SERVING {
-			t.Errorf("expected second message NOT_SERVING, got %v", msgs[1].Status)
 		}
 	})
 }

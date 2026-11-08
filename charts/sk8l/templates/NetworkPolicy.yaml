@@ -1,4 +1,8 @@
-{{- if eq (.Values.networkPolicy.enabled | toString) "true"  }}
+{{- if eq (.Values.networkPolicy.enabled | toString) "true" }}
+{{- $httpPort := 8590 }}
+{{- if and .Values.service .Values.service.ports (gt (len .Values.service.ports) 0) }}
+{{- $httpPort = (index .Values.service.ports 0).port | default 8590 }}
+{{- end }}
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
@@ -38,26 +42,19 @@ kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
   namespace: {{ include "sk8l.namespace" . }}
-  name: sk8l-api-ui
+  name: sk8l-allow-http
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/pod: sk8l-api
+  policyTypes:
+    - Ingress
   ingress:
-    - from:
-      - podSelector:
-          matchLabels:
-            app.kubernetes.io/pod: sk8l-ui
+    - {{- if .Values.networkPolicy.ingressFrom }}
+      from:
+        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
+      {{- end }}
       ports:
         - protocol: TCP
-          port: 8585
-  egress:
-    - to:
-      - podSelector:
-          matchLabels:
-            app.kubernetes.io/pod: sk8l-ui
-      ports:
-        - protocol: TCP
-          port: 8585
-
-{{ end }}
+          port: {{ $httpPort }}
+{{- end }}
