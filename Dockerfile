@@ -1,3 +1,7 @@
+ARG UI_IMAGE=danroux/sk8l-ui:v0.21.0
+
+FROM --platform=$BUILDPLATFORM ${UI_IMAGE} AS ui
+
 FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
 
 WORKDIR /src/
@@ -12,6 +16,8 @@ RUN --mount=type=cache,target=/go/pkg/mod,id=gomodcache go mod download -x
 COPY *.go .
 COPY protos/ ./protos
 COPY internal/ ./internal
+COPY --from=ui /app_tmp ./internal/ui/dist
+RUN rm -f ./internal/ui/dist/run_app.sh ./internal/ui/dist/replace-env-vars.sh
 COPY Makefile .
 COPY dashboards/ ./dashboards
 
@@ -29,7 +35,7 @@ WORKDIR /app/
 
 USER 1001
 
-EXPOSE 8585
+EXPOSE 8590
 
 COPY --from=build /src/sk8l /app
 

@@ -1,0 +1,6 @@
+```release-note:breaking-change
+helm: Remove separate UI/Envoy deployment, service, and legacy gRPC/health ports (8585, 8588, 8001, 9080) in favor of unified port 8590
+```
+```release-note:enhancement
+go: Embed sk8l-ui static assets via go:embed and serve SPA, Connect/gRPC-Web/gRPC RPCs, metrics, and health probes from a single server on port 8590
+```
