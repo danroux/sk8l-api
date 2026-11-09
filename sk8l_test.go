@@ -612,8 +612,9 @@ func TestAllAndRunningJobsAnPods_NoConcurrentRace(t *testing.T) {
 
 type fakeHealthStore struct {
 	store.Store
-	ready         atomic.Bool
+	notifyCh      chan struct{}
 	degradedSince time.Duration
+	ready         atomic.Bool
 }
 
 func (f *fakeHealthStore) Ready() bool {
@@ -622,6 +623,13 @@ func (f *fakeHealthStore) Ready() bool {
 
 func (f *fakeHealthStore) DegradedSince() time.Duration {
 	return f.degradedSince
+}
+
+func (f *fakeHealthStore) Subscribe(ctx context.Context) <-chan struct{} {
+	if f.notifyCh != nil {
+		return f.notifyCh
+	}
+	return make(chan struct{})
 }
 
 // newHealthServer builds a minimal Sk8lServer wired to a mock store
@@ -1025,4 +1033,138 @@ func TestCheckStoreHealth(t *testing.T) {
 			t.Fatalf("expected CodeUnavailable, got %v", connect.CodeOf(err))
 		}
 	})
+}
+
+func TestSortPodResponses(t *testing.T) {
+	pods := []*protos.PodResponse{
+		{
+			Metadata: &protos.ObjectMetaResponse{Name: "pod-b"},
+			Status:   &protos.PodStatusResponse{StartTime: "2026-11-09T12:00:00Z"},
+		},
+		{
+			Metadata: &protos.ObjectMetaResponse{Name: "pod-a"},
+			Status:   &protos.PodStatusResponse{StartTime: "2026-11-09T12:00:00Z"},
+		},
+		{
+			Metadata: &protos.ObjectMetaResponse{Name: "pod-pending-z"},
+			Status:   &protos.PodStatusResponse{StartTime: ""},
+		},
+		{
+			Metadata: &protos.ObjectMetaResponse{Name: "pod-pending-a"},
+			Status:   &protos.PodStatusResponse{StartTime: ""},
+		},
+		{
+			Metadata: &protos.ObjectMetaResponse{Name: "pod-future"},
+			Status:   &protos.PodStatusResponse{StartTime: "2026-11-09T13:00:00Z"},
+		},
+	}
+
+	sortPodResponses(pods)
+
+	expectedNames := []string{
+		"pod-pending-a",
+		"pod-pending-z",
+		"pod-a",
+		"pod-b",
+		"pod-future",
+	}
+
+	for i, expected := range expectedNames {
+		if pods[i].Metadata.Name != expected {
+			t.Errorf("pod[%d] name: expected %q, got %q", i, expected, pods[i].Metadata.Name)
+		}
+	}
+}
+
+func TestBuildStandaloneJobResponses_DeterministicSort(t *testing.T) {
+	s := &Sk8lServer{}
+	now := time.Now().UTC()
+	jobList := &batchv1.JobList{
+		Items: []batchv1.Job{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "job-b",
+					CreationTimestamp: metav1.NewTime(now),
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "job-a",
+					CreationTimestamp: metav1.NewTime(now),
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "job-earlier",
+					CreationTimestamp: metav1.NewTime(now.Add(-1 * time.Hour)),
+				},
+			},
+		},
+	}
+
+	jobs := s.buildStandaloneJobResponses(jobList)
+	if len(jobs) != 3 {
+		t.Fatalf("expected 3 jobs, got %d", len(jobs))
+	}
+	expected := []string{"job-earlier", "job-a", "job-b"}
+	for i, name := range expected {
+		if jobs[i].Name != name {
+			t.Errorf("job[%d]: expected %q, got %q", i, name, jobs[i].Name)
+		}
+	}
+}
+
+func TestStreamLoop_DebounceCoalescesRapidNotifications(t *testing.T) {
+	notifyCh := make(chan struct{}, 10)
+	fs := &fakeHealthStore{
+		notifyCh: notifyCh,
+	}
+	fs.ready.Store(true)
+
+	srv := NewSk8lServer(fs, nil, nil)
+
+	var sendCount atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.streamLoop(ctx, func() error {
+			sendCount.Add(1)
+			return nil
+		})
+	}()
+
+	// Wait for the initial send
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) && sendCount.Load() < 1 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if sendCount.Load() != 1 {
+		t.Fatalf("expected initial send, got %d", sendCount.Load())
+	}
+
+	// Send 5 rapid notifications within a few milliseconds
+	for i := 0; i < 5; i++ {
+		notifyCh <- struct{}{}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Wait for debounce window (streamDebounceInterval = 250ms) to fire exactly once
+	time.Sleep(streamDebounceInterval + 150*time.Millisecond)
+
+	// sendCount should be 2 (initial send + 1 coalesced send)
+	if count := sendCount.Load(); count != 2 {
+		t.Fatalf("expected sendCount to be 2 after coalesced burst, got %d", count)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("streamLoop returned error: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("streamLoop did not terminate on context cancel")
+	}
 }
