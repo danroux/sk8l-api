@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  packages: read
 
 jobs:
   preview:
@@ -16,6 +17,32 @@ jobs:
       (github.event.action == 'closed')
     runs-on: ubuntu-latest
     steps:
+      - name: Wait for preview image in ghcr.io
+        if: github.event.action == 'labeled' && github.event.label.name == 'deploy-preview'
+        timeout-minutes: 10
+        run: |
+          PR_NUM="${{ github.event.pull_request.number }}"
+          IMAGE="ghcr.io/danroux/sk8l-api:dev-${PR_NUM}"
+          echo "Waiting for ${IMAGE} to be available in ghcr.io..."
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          found=false
+          for i in $(seq 1 40); do
+            if docker manifest inspect "${IMAGE}" >/dev/null 2>&1; then
+              echo "✅ Image ${IMAGE} is available in ghcr.io!"
+              found=true
+              break
+            fi
+            echo "Attempt $i/40: Image not ready yet in ghcr.io. Waiting 15s..."
+            sleep 15
+          done
+
+          if [ "$found" != "true" ]; then
+            echo "❌ Timed out waiting for ${IMAGE} to be published."
+            exit 1
+          fi
+
       - name: Checkout sk8l-config
         uses: actions/checkout@v7
         with:
