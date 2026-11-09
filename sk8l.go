@@ -33,13 +33,18 @@ import (
 var dashboardJSON string
 
 var (
-	ErrStoreNil     = errors.New("store is nil")
-	ErrK8sClientNil = errors.New("k8sClient is nil")
+	ErrStoreNil      = errors.New("store is nil")
+	ErrK8sClientNil  = errors.New("k8sClient is nil")
+	ErrStoreNotReady = errors.New("kubernetes store is not ready")
+	ErrStoreDegraded = errors.New("kubernetes store connection degraded")
 )
 
 const (
 	streamHeartbeatSeconds  = 10
 	streamHeartbeatInterval = streamHeartbeatSeconds * time.Second
+
+	streamGracePeriodSeconds = 15
+	streamGracePeriod        = streamGracePeriodSeconds * time.Second
 
 	// previousJobOffset is the 1-based offset from the end of the jobs list used to
 	// pick the last completed job when more than one job exists (the latest may be running).
@@ -113,6 +118,26 @@ func (s *Sk8lServer) IsHealthy() bool {
 	return st != nil && st.Ready()
 }
 
+// checkStoreHealth verifies that the store is ready or within its transient degraded grace period.
+// If degraded for longer than streamGracePeriod or not yet synced, it returns an Unavailable error.
+func (s *Sk8lServer) checkStoreHealth(st store.Store) error {
+	if st == nil {
+		return fmt.Errorf("sk8l: %w", ErrStoreNil)
+	}
+	if !st.Ready() {
+		degradedSince := st.DegradedSince()
+		if degradedSince == 0 {
+			return connect.NewError(connect.CodeUnavailable, ErrStoreNotReady)
+		}
+		if degradedSince > streamGracePeriod {
+			err := fmt.Errorf("%w for %v (exceeded grace period %v)",
+				ErrStoreDegraded, degradedSince.Round(time.Second), streamGracePeriod)
+			return connect.NewError(connect.CodeUnavailable, err)
+		}
+	}
+	return nil
+}
+
 func (s *Sk8lServer) Run(metricsCxt context.Context) {
 	if starter, ok := s.GetStore().(store.Starter); ok {
 		starter.Start(metricsCxt)
@@ -171,6 +196,9 @@ func (s *Sk8lServer) streamCronjobs(ctx context.Context, _ *protos.CronjobsReque
 	}
 
 	send := func() error {
+		if err := s.checkStoreHealth(st); err != nil {
+			return err
+		}
 		cronjobs, err := s.buildCronjobResponses(ctx, st)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
@@ -237,6 +265,9 @@ func (s *Sk8lServer) streamCronjob(ctx context.Context, in *protos.CronjobReques
 	}
 
 	send := func() error {
+		if err := s.checkStoreHealth(st); err != nil {
+			return err
+		}
 		cronjob, err := st.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
@@ -314,6 +345,9 @@ func (s *Sk8lServer) streamCronjobPods(ctx context.Context, in *protos.CronjobPo
 	}
 
 	send := func() error {
+		if err := s.checkStoreHealth(st); err != nil {
+			return err
+		}
 		cronjob, err := st.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
@@ -398,6 +432,23 @@ func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJo
 	return s.streamJobs(stream.Context(), in, stream)
 }
 
+// buildStandaloneJobResponses filters standalone jobs (not owned by a CronJob)
+// and maps each into a JobResponse.
+func (s *Sk8lServer) buildStandaloneJobResponses(jobList *batchv1.JobList) []*protos.JobResponse {
+	jobTasks := make([]*batchv1.Job, 0, len(jobList.Items))
+	for i := range jobList.Items {
+		if jobList.Items[i].OwnerReferences == nil {
+			jobTasks = append(jobTasks, &jobList.Items[i])
+		}
+	}
+
+	jobs := make([]*protos.JobResponse, 0, len(jobTasks))
+	for _, job := range jobTasks {
+		jobs = append(jobs, s.buildJobResponse(job))
+	}
+	return jobs
+}
+
 func (s *Sk8lServer) streamJobs(ctx context.Context, _ *protos.JobsRequest, stream serverStream[protos.JobsResponse]) error {
 	st := s.GetStore()
 	if st == nil {
@@ -405,6 +456,9 @@ func (s *Sk8lServer) streamJobs(ctx context.Context, _ *protos.JobsRequest, stre
 	}
 
 	send := func() error {
+		if err := s.checkStoreHealth(st); err != nil {
+			return err
+		}
 		jobList, err := st.FindJobs()
 		if err != nil {
 			if isClientCanceled(ctx, err) {
@@ -415,19 +469,7 @@ func (s *Sk8lServer) streamJobs(ctx context.Context, _ *protos.JobsRequest, stre
 			return fmt.Errorf("sk8l#GetJobs: FindJobs() failed: %w", err)
 		}
 
-		// filter out jobs that belong to cronjobs
-		jobTasks := make([]*batchv1.Job, 0, len(jobList.Items))
-		for i := range jobList.Items {
-			if jobList.Items[i].OwnerReferences == nil {
-				jobTasks = append(jobTasks, &jobList.Items[i])
-			}
-		}
-
-		n := len(jobTasks)
-		jobs := make([]*protos.JobResponse, 0, n)
-		for _, job := range jobTasks {
-			jobs = append(jobs, s.buildJobResponse(job))
-		}
+		jobs := s.buildStandaloneJobResponses(jobList)
 
 		if err := stream.Send(&protos.JobsResponse{Jobs: jobs}); err != nil {
 			if isClientCanceled(ctx, err) {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/danroux/sk8l/internal/store"
+	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -23,10 +24,12 @@ import (
 )
 
 const (
-	jobNameIndex       = "byJobName"
-	noResyncPeriod     = time.Duration(0)
-	notifyChannelCap   = 1
-	defaultPodSelector = "batch.kubernetes.io/job-name"
+	jobNameIndex                 = "byJobName"
+	noResyncPeriod               = time.Duration(0)
+	notifyChannelCap             = 1
+	defaultPodSelector           = "batch.kubernetes.io/job-name"
+	defaultRecoveryProbeInterval = 5 * time.Second
+	defaultProbeTimeout          = 3 * time.Second
 
 	jobNameLabel      = "job-name"
 	batchJobNameLabel = "batch.kubernetes.io/job-name"
@@ -56,22 +59,33 @@ func WithPodLabelSelector(selector string) Option {
 	}
 }
 
+// WithRecoveryProbeInterval configures a custom interval for API server recovery probes when degraded.
+func WithRecoveryProbeInterval(d time.Duration) Option {
+	return func(s *Store) {
+		s.recoveryProbeInterval = d
+	}
+}
+
 // Store is an in-memory store backed by client-go informers.
 type Store struct {
-	client           kubernetes.Interface
-	factory          informers.SharedInformerFactory
-	podFactory       informers.SharedInformerFactory
-	cronJobInformer  cache.SharedIndexInformer
-	jobInformer      cache.SharedIndexInformer
-	podInformer      cache.SharedIndexInformer
-	cronJobLister    batchlisters.CronJobLister
-	jobLister        batchlisters.JobLister
-	podLister        corelisters.PodLister
-	podIndexer       cache.Indexer
-	notifier         *notifier
-	namespace        string
-	podLabelSelector string
-	resyncPeriod     time.Duration
+	degradedAt            time.Time
+	podLister             corelisters.PodLister
+	podIndexer            cache.Indexer
+	cronJobInformer       cache.SharedIndexInformer
+	jobInformer           cache.SharedIndexInformer
+	podInformer           cache.SharedIndexInformer
+	cronJobLister         batchlisters.CronJobLister
+	jobLister             batchlisters.JobLister
+	client                kubernetes.Interface
+	podFactory            informers.SharedInformerFactory
+	factory               informers.SharedInformerFactory
+	notifier              *notifier
+	podLabelSelector      string
+	namespace             string
+	resyncPeriod          time.Duration
+	recoveryProbeInterval time.Duration
+	mu                    sync.RWMutex
+	degraded              bool
 }
 
 // New creates and configures a new informer-backed Store.
@@ -81,11 +95,12 @@ func New(client kubernetes.Interface, namespace string, opts ...Option) (*Store,
 	}
 
 	s := &Store{
-		client:           client,
-		namespace:        namespace,
-		resyncPeriod:     noResyncPeriod,
-		podLabelSelector: defaultPodSelector,
-		notifier:         newNotifier(),
+		client:                client,
+		namespace:             namespace,
+		resyncPeriod:          noResyncPeriod,
+		recoveryProbeInterval: defaultRecoveryProbeInterval,
+		podLabelSelector:      defaultPodSelector,
+		notifier:              newNotifier(),
 	}
 
 	for _, opt := range opts {
@@ -127,6 +142,7 @@ func New(client kubernetes.Interface, namespace string, opts ...Option) (*Store,
 
 	// Strip managedFields to drastically reduce in-memory footprint
 	stripManagedFields := func(obj any) (any, error) {
+		s.markHealthy()
 		if accessor, err := meta.Accessor(obj); err == nil {
 			accessor.SetManagedFields(nil)
 		}
@@ -143,6 +159,24 @@ func New(client kubernetes.Interface, namespace string, opts ...Option) (*Store,
 		return nil, fmt.Errorf("informer: set Pod transform failed: %w", err)
 	}
 
+	watchErrHandler := func(_ context.Context, r *cache.Reflector, err error) {
+		name := "unknown"
+		if r != nil {
+			name = r.Name()
+		}
+		s.markDegraded(name, err)
+	}
+
+	if err := s.cronJobInformer.SetWatchErrorHandlerWithContext(watchErrHandler); err != nil {
+		return nil, fmt.Errorf("informer: set CronJob watch error handler failed: %w", err)
+	}
+	if err := s.jobInformer.SetWatchErrorHandlerWithContext(watchErrHandler); err != nil {
+		return nil, fmt.Errorf("informer: set Job watch error handler failed: %w", err)
+	}
+	if err := s.podInformer.SetWatchErrorHandlerWithContext(watchErrHandler); err != nil {
+		return nil, fmt.Errorf("informer: set Pod watch error handler failed: %w", err)
+	}
+
 	// Register custom indexer for pods by job-name
 	err := s.podIndexer.AddIndexers(cache.Indexers{
 		jobNameIndex: jobNameIndexFunc,
@@ -154,9 +188,11 @@ func New(client kubernetes.Interface, namespace string, opts ...Option) (*Store,
 	// Event handlers for change notification
 	handlers := cache.ResourceEventHandlerFuncs{
 		AddFunc: func(_ any) {
+			s.markHealthy()
 			s.notifier.notify()
 		},
 		UpdateFunc: func(oldObj, newObj any) {
+			s.markHealthy()
 			oldMeta, err1 := meta.Accessor(oldObj)
 			newMeta, err2 := meta.Accessor(newObj)
 			if err1 == nil && err2 == nil && oldMeta.GetResourceVersion() == newMeta.GetResourceVersion() {
@@ -165,6 +201,7 @@ func New(client kubernetes.Interface, namespace string, opts ...Option) (*Store,
 			s.notifier.notify()
 		},
 		DeleteFunc: func(_ any) {
+			s.markHealthy()
 			s.notifier.notify()
 		},
 	}
@@ -188,6 +225,7 @@ func (s *Store) Start(ctx context.Context) {
 	if s.podFactory != nil {
 		s.podFactory.Start(ctx.Done())
 	}
+	go s.runRecoveryProbe(ctx)
 }
 
 // WaitForSync blocks until all informers have synced initial caches or ctx is canceled.
@@ -199,11 +237,90 @@ func (s *Store) WaitForSync(ctx context.Context) bool {
 	)
 }
 
-// Ready reports whether all underlying informers have completed initial cache synchronization.
+// Ready reports whether all underlying informers have completed initial cache synchronization
+// and watch connections are not degraded.
 func (s *Store) Ready() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.degraded {
+		return false
+	}
 	return s.cronJobInformer.HasSynced() &&
 		s.jobInformer.HasSynced() &&
 		s.podInformer.HasSynced()
+}
+
+// DegradedSince reports how long the store has been degraded, or 0 if healthy/not degraded.
+func (s *Store) DegradedSince() time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !s.degraded || s.degradedAt.IsZero() {
+		return 0
+	}
+	return time.Since(s.degradedAt)
+}
+
+func (s *Store) markDegraded(reflectorName string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.degraded {
+		s.degraded = true
+		s.degradedAt = time.Now()
+		log.Warn().
+			Str("reflector", reflectorName).
+			Err(err).
+			Msg("informer: watch connection dropped; store entering degraded state")
+	}
+}
+
+func (s *Store) markHealthy() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.degraded {
+		s.degraded = false
+		s.degradedAt = time.Time{}
+		log.Info().Msg("informer: connection to API server active; store is healthy")
+	}
+}
+
+func (s *Store) checkAPIServer(ctx context.Context) error {
+	probeCtx, cancel := context.WithTimeout(ctx, defaultProbeTimeout)
+	defer cancel()
+
+	var err error
+	if s.namespace != "" {
+		_, err = s.client.CoreV1().Pods(s.namespace).List(probeCtx, metav1.ListOptions{Limit: 1})
+	} else {
+		_, err = s.client.CoreV1().Pods("").List(probeCtx, metav1.ListOptions{Limit: 1})
+	}
+	if err != nil {
+		return fmt.Errorf("informer#checkAPIServer: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) runRecoveryProbe(ctx context.Context) {
+	ticker := time.NewTicker(s.recoveryProbeInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.mu.RLock()
+			isDegraded := s.degraded
+			s.mu.RUnlock()
+
+			if !isDegraded {
+				continue
+			}
+
+			if err := s.checkAPIServer(ctx); err == nil {
+				s.markHealthy()
+			}
+		}
+	}
 }
 
 // Subscribe returns a coalesced notification channel (cap 1) receiving a signal on any relevant change.

@@ -19,6 +19,11 @@ const (
 	expectedSingle = 1
 )
 
+var (
+	errTestWatchDrop = errors.New("connection reset by peer")
+	errTestTimeout   = errors.New("timeout")
+)
+
 func TestNew_Validation(t *testing.T) {
 	_, err := New(nil, testNamespace)
 	if !errors.Is(err, ErrClientRequired) {
@@ -505,5 +510,72 @@ func TestFindJobPodsForJob_LegacyLabelOption(t *testing.T) {
 	}
 	if pods.Items[0].Name != "job-legacy-pod-1" {
 		t.Errorf("expected pod job-legacy-pod-1, got %s", pods.Items[0].Name)
+	}
+}
+
+func TestStore_DegradedAndRecovery(t *testing.T) {
+	cj := &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cj",
+			Namespace: testNamespace,
+		},
+	}
+	cs := fake.NewClientset(cj)
+	probeInterval := 25 * time.Millisecond
+	s, err := New(cs, testNamespace, WithRecoveryProbeInterval(probeInterval))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	s.Start(ctx)
+	if !s.WaitForSync(ctx) {
+		t.Fatal("timed out waiting for informer sync")
+	}
+
+	if !s.Ready() {
+		t.Fatal("expected Ready() == true after initial sync")
+	}
+	if s.DegradedSince() != 0 {
+		t.Fatalf("expected DegradedSince() == 0, got %v", s.DegradedSince())
+	}
+
+	// 1. Simulate a watch error occurring on an informer
+	s.markDegraded("cronjobs", errTestWatchDrop)
+
+	if s.Ready() {
+		t.Fatal("expected Ready() == false while degraded")
+	}
+	if s.DegradedSince() <= 0 {
+		t.Fatalf("expected DegradedSince() > 0 while degraded, got %v", s.DegradedSince())
+	}
+
+	// 2. Active recovery probe should detect reachable API server and restore health
+	deadline := time.Now().Add(2 * time.Second)
+	recovered := false
+	for time.Now().Before(deadline) {
+		if s.Ready() {
+			recovered = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !recovered {
+		t.Fatal("expected store to recover to Ready() == true via background probe")
+	}
+	if s.DegradedSince() != 0 {
+		t.Fatalf("expected DegradedSince() == 0 after recovery, got %v", s.DegradedSince())
+	}
+
+	// 3. Test event-driven recovery: degrade again, then trigger markHealthy
+	s.markDegraded("cronjobs", errTestTimeout)
+	if s.Ready() {
+		t.Fatal("expected Ready() == false after second degradation")
+	}
+	s.markHealthy()
+	if !s.Ready() {
+		t.Fatal("expected Ready() == true after markHealthy")
 	}
 }
