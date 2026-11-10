@@ -621,8 +621,8 @@ func (f *fakeHealthStore) Ready() bool {
 	return f.ready.Load()
 }
 
-func (f *fakeHealthStore) DegradedSince() time.Duration {
-	return f.degradedSince
+func (f *fakeHealthStore) Health() (bool, time.Duration) {
+	return f.ready.Load(), f.degradedSince
 }
 
 func (f *fakeHealthStore) Subscribe(ctx context.Context) <-chan struct{} {

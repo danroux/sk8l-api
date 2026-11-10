@@ -237,30 +237,54 @@ func (s *Store) WaitForSync(ctx context.Context) bool {
 	)
 }
 
-// Ready reports whether all underlying informers have completed initial cache synchronization
-// and watch connections are not degraded.
-func (s *Store) Ready() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.degraded {
-		return false
-	}
+// synced reports whether all underlying informers have completed their initial cache synchronization.
+func (s *Store) synced() bool {
 	return s.cronJobInformer.HasSynced() &&
 		s.jobInformer.HasSynced() &&
 		s.podInformer.HasSynced()
 }
 
-// DegradedSince reports how long the store has been degraded, or 0 if healthy/not degraded.
-func (s *Store) DegradedSince() time.Duration {
+// Health returns a consistent snapshot of the store state taken under a single lock:
+// ready is true when all informers are synced and the watch connections are not degraded;
+// degradedFor is how long a previously synced store has been degraded, or 0 when it is
+// healthy or has not completed its initial sync yet.
+func (s *Store) Health() (ready bool, degradedFor time.Duration) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if !s.degraded || s.degradedAt.IsZero() {
-		return 0
+	if s.degraded {
+		if s.degradedAt.IsZero() {
+			return false, 0
+		}
+		return false, time.Since(s.degradedAt)
 	}
-	return time.Since(s.degradedAt)
+	return s.synced(), 0
 }
 
+// Ready reports whether all underlying informers have completed initial cache synchronization
+// and watch connections are not degraded.
+func (s *Store) Ready() bool {
+	ready, _ := s.Health()
+	return ready
+}
+
+// DegradedSince reports how long the store has been degraded, or 0 if healthy/not degraded.
+func (s *Store) DegradedSince() time.Duration {
+	_, degradedFor := s.Health()
+	return degradedFor
+}
+
+// markDegraded flags the store as degraded after a watch/list failure. Failures that happen
+// before the initial cache sync are only logged: the store is not ready yet and there is no
+// previously served data to keep within a grace period, so consumers must keep seeing "not ready".
 func (s *Store) markDegraded(reflectorName string, err error) {
+	if !s.synced() {
+		log.Warn().
+			Str("reflector", reflectorName).
+			Err(err).
+			Msg("informer: list/watch failed before initial sync; store is not ready yet")
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.degraded {
@@ -287,13 +311,8 @@ func (s *Store) checkAPIServer(ctx context.Context) error {
 	probeCtx, cancel := context.WithTimeout(ctx, defaultProbeTimeout)
 	defer cancel()
 
-	var err error
-	if s.namespace != "" {
-		_, err = s.client.CoreV1().Pods(s.namespace).List(probeCtx, metav1.ListOptions{Limit: 1})
-	} else {
-		_, err = s.client.CoreV1().Pods("").List(probeCtx, metav1.ListOptions{Limit: 1})
-	}
-	if err != nil {
+	// An empty namespace (metav1.NamespaceAll) lists pods across all namespaces.
+	if _, err := s.client.CoreV1().Pods(s.namespace).List(probeCtx, metav1.ListOptions{Limit: 1}); err != nil {
 		return fmt.Errorf("informer#checkAPIServer: %w", err)
 	}
 	return nil

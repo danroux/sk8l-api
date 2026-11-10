@@ -9,7 +9,9 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 const (
@@ -20,8 +22,10 @@ const (
 )
 
 var (
-	errTestWatchDrop = errors.New("connection reset by peer")
-	errTestTimeout   = errors.New("timeout")
+	errTestWatchDrop         = errors.New("connection reset by peer")
+	errTestTimeout           = errors.New("timeout")
+	errTestConnectionRefused = errors.New("connection refused")
+	errTestInitialListFailed = errors.New("initial list failed")
 )
 
 func TestNew_Validation(t *testing.T) {
@@ -577,5 +581,34 @@ func TestStore_DegradedAndRecovery(t *testing.T) {
 	s.markHealthy()
 	if !s.Ready() {
 		t.Fatal("expected Ready() == true after markHealthy")
+	}
+}
+
+func TestStore_StartupFailureNotDegraded(t *testing.T) {
+	cs := fake.NewClientset()
+	cs.PrependReactor("list", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errTestConnectionRefused
+	})
+	s, err := New(cs, testNamespace)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	s.Start(ctx)
+	// Failures before initial sync must NOT mark the store degraded (which would allow grace period).
+	s.markDegraded("cronjobs", errTestInitialListFailed)
+
+	ready, degradedFor := s.Health()
+	if ready {
+		t.Fatal("expected Ready() == false before initial sync")
+	}
+	if degradedFor != 0 {
+		t.Fatalf("expected degradedFor == 0 before initial sync, got %v", degradedFor)
+	}
+	if s.DegradedSince() != 0 {
+		t.Fatalf("expected DegradedSince() == 0 before initial sync, got %v", s.DegradedSince())
 	}
 }

@@ -122,21 +122,23 @@ func (s *Sk8lServer) IsHealthy() bool {
 }
 
 // checkStoreHealth verifies that the store is ready or within its transient degraded grace period.
-// If degraded for longer than streamGracePeriod or not yet synced, it returns an Unavailable error.
+// A store that has not completed its initial sync, or that has been degraded for longer than
+// streamGracePeriod, yields an Unavailable error so clients never receive an empty cache as data.
 func (s *Sk8lServer) checkStoreHealth(st store.Store) error {
 	if st == nil {
 		return fmt.Errorf("sk8l: %w", ErrStoreNil)
 	}
-	if !st.Ready() {
-		degradedSince := st.DegradedSince()
-		if degradedSince == 0 {
-			return connect.NewError(connect.CodeUnavailable, ErrStoreNotReady)
-		}
-		if degradedSince > streamGracePeriod {
-			err := fmt.Errorf("%w for %v (exceeded grace period %v)",
-				ErrStoreDegraded, degradedSince.Round(time.Second), streamGracePeriod)
-			return connect.NewError(connect.CodeUnavailable, err)
-		}
+	ready, degradedFor := st.Health()
+	if ready {
+		return nil
+	}
+	if degradedFor == 0 {
+		return connect.NewError(connect.CodeUnavailable, ErrStoreNotReady)
+	}
+	if degradedFor > streamGracePeriod {
+		err := fmt.Errorf("%w for %v (exceeded grace period %v)",
+			ErrStoreDegraded, degradedFor.Round(time.Second), streamGracePeriod)
+		return connect.NewError(connect.CodeUnavailable, err)
 	}
 	return nil
 }

@@ -1,0 +1,3 @@
+```release-note:bug
+api: Map Kubernetes errors to canonical ConnectRPC status codes and reject un-synced requests during startup API server outages
+```

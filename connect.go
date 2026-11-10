@@ -2,12 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"connectrpc.com/connect"
 	"github.com/danroux/sk8l/protos"
 	"github.com/danroux/sk8l/protos/protosconnect"
+	"github.com/rs/zerolog/log"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
+
+// ErrInternal is the generic message returned to clients for unclassified server errors.
+// The underlying cause is logged server-side and never sent over the wire.
+var ErrInternal = errors.New("internal error")
 
 const (
 	corsAllowMethods = "GET, POST, OPTIONS"
@@ -18,6 +25,52 @@ const (
 		"Connect-Content-Encoding, Grpc-Message, Grpc-Status, Grpc-Status-Details-Bin"
 	corsMaxAge = "1728000"
 )
+
+// toConnectError converts an error returned by Sk8lServer into a *connect.Error carrying the
+// proper status code, so Connect, gRPC-Web, and gRPC clients can distinguish NotFound,
+// PermissionDenied, Unavailable, etc. instead of receiving CodeUnknown for everything.
+// Errors that already are *connect.Error are returned unchanged. Unclassified errors become
+// CodeInternal with a generic message; the detail is logged to avoid leaking internals.
+func toConnectError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var connectErr *connect.Error
+	if errors.As(err, &connectErr) {
+		return err
+	}
+
+	switch {
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, err)
+	case apierrors.IsNotFound(err):
+		return connect.NewError(connect.CodeNotFound, err)
+	case apierrors.IsForbidden(err):
+		return connect.NewError(connect.CodePermissionDenied, err)
+	case apierrors.IsUnauthorized(err):
+		return connect.NewError(connect.CodeUnauthenticated, err)
+	case apierrors.IsAlreadyExists(err):
+		return connect.NewError(connect.CodeAlreadyExists, err)
+	case apierrors.IsConflict(err):
+		return connect.NewError(connect.CodeAborted, err)
+	case apierrors.IsBadRequest(err), apierrors.IsInvalid(err):
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	case apierrors.IsServerTimeout(err), apierrors.IsTimeout(err):
+		return connect.NewError(connect.CodeDeadlineExceeded, err)
+	case apierrors.IsServiceUnavailable(err),
+		errors.Is(err, ErrStoreNil),
+		errors.Is(err, ErrK8sClientNil),
+		errors.Is(err, ErrStoreNotReady),
+		errors.Is(err, ErrStoreDegraded):
+		return connect.NewError(connect.CodeUnavailable, err)
+	}
+
+	log.Error().Err(err).Str("operation", operation).Msg("unclassified error; returning internal")
+	return connect.NewError(connect.CodeInternal, ErrInternal)
+}
 
 // ConnectHandler adapts Sk8lServer to the protosconnect.CronjobHandler interface,
 // allowing the same service implementation to serve Connect, gRPC-Web, and gRPC
@@ -37,7 +90,7 @@ func (h *ConnectHandler) GetCronjobs(
 	req *connect.Request[protos.CronjobsRequest],
 	stream *connect.ServerStream[protos.CronjobsResponse],
 ) error {
-	return h.server.streamCronjobs(ctx, req.Msg, stream)
+	return toConnectError("GetCronjobs", h.server.streamCronjobs(ctx, req.Msg, stream))
 }
 
 func (h *ConnectHandler) GetCronjob(
@@ -45,7 +98,7 @@ func (h *ConnectHandler) GetCronjob(
 	req *connect.Request[protos.CronjobRequest],
 	stream *connect.ServerStream[protos.CronjobResponse],
 ) error {
-	return h.server.streamCronjob(ctx, req.Msg, stream)
+	return toConnectError("GetCronjob", h.server.streamCronjob(ctx, req.Msg, stream))
 }
 
 func (h *ConnectHandler) GetCronjobPods(
@@ -53,7 +106,7 @@ func (h *ConnectHandler) GetCronjobPods(
 	req *connect.Request[protos.CronjobPodsRequest],
 	stream *connect.ServerStream[protos.CronjobPodsResponse],
 ) error {
-	return h.server.streamCronjobPods(ctx, req.Msg, stream)
+	return toConnectError("GetCronjobPods", h.server.streamCronjobPods(ctx, req.Msg, stream))
 }
 
 func (h *ConnectHandler) GetJobs(
@@ -61,7 +114,7 @@ func (h *ConnectHandler) GetJobs(
 	req *connect.Request[protos.JobsRequest],
 	stream *connect.ServerStream[protos.JobsResponse],
 ) error {
-	return h.server.streamJobs(ctx, req.Msg, stream)
+	return toConnectError("GetJobs", h.server.streamJobs(ctx, req.Msg, stream))
 }
 
 func (h *ConnectHandler) GetCronjobYAML(
@@ -70,7 +123,7 @@ func (h *ConnectHandler) GetCronjobYAML(
 ) (*connect.Response[protos.CronjobYAMLResponse], error) {
 	resp, err := h.server.GetCronjobYAML(ctx, req.Msg)
 	if err != nil {
-		return nil, err
+		return nil, toConnectError("GetCronjobYAML", err)
 	}
 	return connect.NewResponse(resp), nil
 }
@@ -81,7 +134,7 @@ func (h *ConnectHandler) GetJobYAML(
 ) (*connect.Response[protos.JobYAMLResponse], error) {
 	resp, err := h.server.GetJobYAML(ctx, req.Msg)
 	if err != nil {
-		return nil, err
+		return nil, toConnectError("GetJobYAML", err)
 	}
 	return connect.NewResponse(resp), nil
 }
@@ -92,7 +145,7 @@ func (h *ConnectHandler) GetPodYAML(
 ) (*connect.Response[protos.PodYAMLResponse], error) {
 	resp, err := h.server.GetPodYAML(ctx, req.Msg)
 	if err != nil {
-		return nil, err
+		return nil, toConnectError("GetPodYAML", err)
 	}
 	return connect.NewResponse(resp), nil
 }
@@ -103,7 +156,7 @@ func (h *ConnectHandler) GetDashboardAnnotations(
 ) (*connect.Response[protos.DashboardAnnotationsResponse], error) {
 	resp, err := h.server.GetDashboardAnnotations(ctx, req.Msg)
 	if err != nil {
-		return nil, err
+		return nil, toConnectError("GetDashboardAnnotations", err)
 	}
 	return connect.NewResponse(resp), nil
 }
