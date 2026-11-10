@@ -102,8 +102,6 @@ func TestConnectUnaryRPCs(t *testing.T) {
 		},
 	}
 
-	_, httpClient := newConnectTestEnv(t, cronjob, job, pod)
-
 	protocols := []struct {
 		name string
 		opts []connect.ClientOption
@@ -114,6 +112,7 @@ func TestConnectUnaryRPCs(t *testing.T) {
 
 	for _, protoTC := range protocols {
 		t.Run(protoTC.name, func(t *testing.T) {
+			_, httpClient := newConnectTestEnv(t, cronjob, job, pod)
 			client := protosconnect.NewCronjobClient(httpClient, testConnectBaseURL, protoTC.opts...)
 			ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
 			defer cancel()

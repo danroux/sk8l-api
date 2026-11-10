@@ -33,13 +33,21 @@ import (
 var dashboardJSON string
 
 var (
-	ErrStoreNil     = errors.New("store is nil")
-	ErrK8sClientNil = errors.New("k8sClient is nil")
+	ErrStoreNil      = errors.New("store is nil")
+	ErrK8sClientNil  = errors.New("k8sClient is nil")
+	ErrStoreNotReady = errors.New("kubernetes store is not ready")
+	ErrStoreDegraded = errors.New("kubernetes store connection degraded")
 )
 
 const (
 	streamHeartbeatSeconds  = 10
 	streamHeartbeatInterval = streamHeartbeatSeconds * time.Second
+
+	streamGracePeriodSeconds = 15
+	streamGracePeriod        = streamGracePeriodSeconds * time.Second
+
+	streamDebounceInterval    = 250 * time.Millisecond
+	streamMaxDebounceInterval = 1 * time.Second
 
 	// previousJobOffset is the 1-based offset from the end of the jobs list used to
 	// pick the last completed job when more than one job exists (the latest may be running).
@@ -113,6 +121,26 @@ func (s *Sk8lServer) IsHealthy() bool {
 	return st != nil && st.Ready()
 }
 
+// checkStoreHealth verifies that the store is ready or within its transient degraded grace period.
+// If degraded for longer than streamGracePeriod or not yet synced, it returns an Unavailable error.
+func (s *Sk8lServer) checkStoreHealth(st store.Store) error {
+	if st == nil {
+		return fmt.Errorf("sk8l: %w", ErrStoreNil)
+	}
+	if !st.Ready() {
+		degradedSince := st.DegradedSince()
+		if degradedSince == 0 {
+			return connect.NewError(connect.CodeUnavailable, ErrStoreNotReady)
+		}
+		if degradedSince > streamGracePeriod {
+			err := fmt.Errorf("%w for %v (exceeded grace period %v)",
+				ErrStoreDegraded, degradedSince.Round(time.Second), streamGracePeriod)
+			return connect.NewError(connect.CodeUnavailable, err)
+		}
+	}
+	return nil
+}
+
 func (s *Sk8lServer) Run(metricsCxt context.Context) {
 	if starter, ok := s.GetStore().(store.Starter); ok {
 		starter.Start(metricsCxt)
@@ -164,13 +192,113 @@ func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronj
 	return s.streamCronjobs(stream.Context(), in, stream)
 }
 
-func (s *Sk8lServer) streamCronjobs(ctx context.Context, _ *protos.CronjobsRequest, stream serverStream[protos.CronjobsResponse]) error {
+type streamDebouncer struct {
+	timer   *time.Timer
+	ch      <-chan time.Time
+	started time.Time
+}
+
+func (d *streamDebouncer) reset() {
+	if d.timer == nil {
+		d.started = time.Now()
+		d.timer = time.NewTimer(streamDebounceInterval)
+		d.ch = d.timer.C
+		return
+	}
+	if time.Since(d.started) >= streamMaxDebounceInterval {
+		return
+	}
+	if !d.timer.Stop() {
+		select {
+		case <-d.timer.C:
+		default:
+		}
+	}
+	d.timer.Reset(streamDebounceInterval)
+}
+
+func (d *streamDebouncer) clear() {
+	d.timer = nil
+	d.ch = nil
+}
+
+func (d *streamDebouncer) stop() {
+	if d.timer != nil {
+		d.timer.Stop()
+	}
+}
+
+func (d *streamDebouncer) active() bool {
+	return d.ch != nil
+}
+
+// streamLoop executes the initial send and runs a throttled event-driven streaming loop.
+// It coalesces rapid bursts of change notifications within streamDebounceInterval up to
+// streamMaxDebounceInterval to prevent client stream flooding and UI thrashing.
+func (s *Sk8lServer) streamLoop(ctx context.Context, send func() error) error {
+	if err := send(); err != nil {
+		return err
+	}
+
+	if isClientCanceled(ctx, nil) {
+		return nil
+	}
+
+	st := s.GetStore()
+	if st == nil {
+		return fmt.Errorf("sk8l#streamLoop: %w", ErrStoreNil)
+	}
+
+	notifyCh := st.Subscribe(ctx)
+
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
+
+	var debouncer streamDebouncer
+	defer debouncer.stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case _, ok := <-notifyCh:
+			if !ok || ctx.Err() != nil {
+				return nil
+			}
+			debouncer.reset()
+		case <-debouncer.ch:
+			debouncer.clear()
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		case <-ticker.C:
+			if ctx.Err() != nil || debouncer.active() {
+				continue
+			}
+			if err := send(); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (s *Sk8lServer) streamCronjobs(
+	ctx context.Context,
+	_ *protos.CronjobsRequest,
+	stream serverStream[protos.CronjobsResponse],
+) error {
 	st := s.GetStore()
 	if st == nil {
 		return fmt.Errorf("sk8l#GetCronjobs: %w", ErrStoreNil)
 	}
 
 	send := func() error {
+		if err := s.checkStoreHealth(st); err != nil {
+			return err
+		}
 		cronjobs, err := s.buildCronjobResponses(ctx, st)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
@@ -191,52 +319,27 @@ func (s *Sk8lServer) streamCronjobs(ctx context.Context, _ *protos.CronjobsReque
 		return nil
 	}
 
-	if err := send(); err != nil {
-		return err
-	}
-
-	if isClientCanceled(ctx, nil) {
-		return nil
-	}
-
-	notifyCh := st.Subscribe(ctx)
-
-	ticker := time.NewTicker(streamHeartbeatInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case _, ok := <-notifyCh:
-			if !ok || ctx.Err() != nil {
-				return nil
-			}
-			if err := send(); err != nil {
-				return err
-			}
-		case <-ticker.C:
-			if ctx.Err() != nil {
-				return nil
-			}
-			if err := send(); err != nil {
-				return err
-			}
-		}
-	}
+	return s.streamLoop(ctx, send)
 }
 
 func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
 	return s.streamCronjob(stream.Context(), in, stream)
 }
 
-func (s *Sk8lServer) streamCronjob(ctx context.Context, in *protos.CronjobRequest, stream serverStream[protos.CronjobResponse]) error {
+func (s *Sk8lServer) streamCronjob(
+	ctx context.Context,
+	in *protos.CronjobRequest,
+	stream serverStream[protos.CronjobResponse],
+) error {
 	st := s.GetStore()
 	if st == nil {
 		return fmt.Errorf("sk8l#GetCronjob: %w", ErrStoreNil)
 	}
 
 	send := func() error {
+		if err := s.checkStoreHealth(st); err != nil {
+			return err
+		}
 		cronjob, err := st.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
@@ -268,52 +371,27 @@ func (s *Sk8lServer) streamCronjob(ctx context.Context, in *protos.CronjobReques
 		return nil
 	}
 
-	if err := send(); err != nil {
-		return err
-	}
-
-	if isClientCanceled(ctx, nil) {
-		return nil
-	}
-
-	notifyCh := st.Subscribe(ctx)
-
-	ticker := time.NewTicker(streamHeartbeatInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case _, ok := <-notifyCh:
-			if !ok || ctx.Err() != nil {
-				return nil
-			}
-			if err := send(); err != nil {
-				return err
-			}
-		case <-ticker.C:
-			if ctx.Err() != nil {
-				return nil
-			}
-			if err := send(); err != nil {
-				return err
-			}
-		}
-	}
+	return s.streamLoop(ctx, send)
 }
 
 func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
 	return s.streamCronjobPods(stream.Context(), in, stream)
 }
 
-func (s *Sk8lServer) streamCronjobPods(ctx context.Context, in *protos.CronjobPodsRequest, stream serverStream[protos.CronjobPodsResponse]) error {
+func (s *Sk8lServer) streamCronjobPods(
+	ctx context.Context,
+	in *protos.CronjobPodsRequest,
+	stream serverStream[protos.CronjobPodsResponse],
+) error {
 	st := s.GetStore()
 	if st == nil {
 		return fmt.Errorf("sk8l#GetCronjobPods: %w", ErrStoreNil)
 	}
 
 	send := func() error {
+		if err := s.checkStoreHealth(st); err != nil {
+			return err
+		}
 		cronjob, err := st.FindCronjob(ctx, in.CronjobNamespace, in.CronjobName)
 		if err != nil {
 			if isClientCanceled(ctx, err) {
@@ -337,10 +415,7 @@ func (s *Sk8lServer) streamCronjobPods(ctx context.Context, in *protos.CronjobPo
 		jobs := s.jobsForCronjob(jobsMapped, cronjob.Name)
 		cronjobResponse := s.cronJobResponse(*cronjob, jobs)
 
-		slices.SortFunc(cronjobResponse.JobsPods,
-			func(a, b *protos.PodResponse) int {
-				return strings.Compare(a.Status.StartTime, b.Status.StartTime)
-			})
+		sortPodResponses(cronjobResponse.JobsPods)
 
 		if err := stream.Send(&protos.CronjobPodsResponse{
 			Pods: cronjobResponse.JobsPods,
@@ -359,52 +434,52 @@ func (s *Sk8lServer) streamCronjobPods(ctx context.Context, in *protos.CronjobPo
 		return nil
 	}
 
-	if err := send(); err != nil {
-		return err
-	}
-
-	if isClientCanceled(ctx, nil) {
-		return nil
-	}
-
-	notifyCh := st.Subscribe(ctx)
-
-	ticker := time.NewTicker(streamHeartbeatInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case _, ok := <-notifyCh:
-			if !ok || ctx.Err() != nil {
-				return nil
-			}
-			if err := send(); err != nil {
-				return err
-			}
-		case <-ticker.C:
-			if ctx.Err() != nil {
-				return nil
-			}
-			if err := send(); err != nil {
-				return err
-			}
-		}
-	}
+	return s.streamLoop(ctx, send)
 }
 
 func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJobsServer) error {
 	return s.streamJobs(stream.Context(), in, stream)
 }
 
-func (s *Sk8lServer) streamJobs(ctx context.Context, _ *protos.JobsRequest, stream serverStream[protos.JobsResponse]) error {
+// buildStandaloneJobResponses filters standalone jobs (not owned by a CronJob)
+// and maps each into a JobResponse.
+func (s *Sk8lServer) buildStandaloneJobResponses(jobList *batchv1.JobList) []*protos.JobResponse {
+	jobTasks := make([]*batchv1.Job, 0, len(jobList.Items))
+	for i := range jobList.Items {
+		if jobList.Items[i].OwnerReferences == nil {
+			jobTasks = append(jobTasks, &jobList.Items[i])
+		}
+	}
+
+	jobs := make([]*protos.JobResponse, 0, len(jobTasks))
+	for _, job := range jobTasks {
+		jobs = append(jobs, s.buildJobResponse(job))
+	}
+	slices.SortFunc(jobs, func(a, b *protos.JobResponse) int {
+		aTime, _ := time.Parse(time.RFC3339, a.CreationTimestamp)
+		bTime, _ := time.Parse(time.RFC3339, b.CreationTimestamp)
+		if c := aTime.Compare(bTime); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	return jobs
+}
+
+func (s *Sk8lServer) streamJobs(
+	ctx context.Context,
+	_ *protos.JobsRequest,
+	stream serverStream[protos.JobsResponse],
+) error {
 	st := s.GetStore()
 	if st == nil {
 		return fmt.Errorf("sk8l#GetJobs: %w", ErrStoreNil)
 	}
 
 	send := func() error {
+		if err := s.checkStoreHealth(st); err != nil {
+			return err
+		}
 		jobList, err := st.FindJobs()
 		if err != nil {
 			if isClientCanceled(ctx, err) {
@@ -415,19 +490,7 @@ func (s *Sk8lServer) streamJobs(ctx context.Context, _ *protos.JobsRequest, stre
 			return fmt.Errorf("sk8l#GetJobs: FindJobs() failed: %w", err)
 		}
 
-		// filter out jobs that belong to cronjobs
-		jobTasks := make([]*batchv1.Job, 0, len(jobList.Items))
-		for i := range jobList.Items {
-			if jobList.Items[i].OwnerReferences == nil {
-				jobTasks = append(jobTasks, &jobList.Items[i])
-			}
-		}
-
-		n := len(jobTasks)
-		jobs := make([]*protos.JobResponse, 0, n)
-		for _, job := range jobTasks {
-			jobs = append(jobs, s.buildJobResponse(job))
-		}
+		jobs := s.buildStandaloneJobResponses(jobList)
 
 		if err := stream.Send(&protos.JobsResponse{Jobs: jobs}); err != nil {
 			if isClientCanceled(ctx, err) {
@@ -439,39 +502,7 @@ func (s *Sk8lServer) streamJobs(ctx context.Context, _ *protos.JobsRequest, stre
 		return nil
 	}
 
-	if err := send(); err != nil {
-		return err
-	}
-
-	if isClientCanceled(ctx, nil) {
-		return nil
-	}
-
-	notifyCh := st.Subscribe(ctx)
-
-	ticker := time.NewTicker(streamHeartbeatInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case _, ok := <-notifyCh:
-			if !ok || ctx.Err() != nil {
-				return nil
-			}
-			if err := send(); err != nil {
-				return err
-			}
-		case <-ticker.C:
-			if ctx.Err() != nil {
-				return nil
-			}
-			if err := send(); err != nil {
-				return err
-			}
-		}
-	}
+	return s.streamLoop(ctx, send)
 }
 
 func (s *Sk8lServer) GetCronjobYAML(
@@ -713,15 +744,24 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(
 		func(a, b *protos.JobResponse) int {
 			aTime, _ := time.Parse(time.RFC3339, a.CreationTimestamp)
 			bTime, _ := time.Parse(time.RFC3339, b.CreationTimestamp)
-			return aTime.Compare(bTime)
+			if c := aTime.Compare(bTime); c != 0 {
+				return c
+			}
+			return strings.Compare(a.Name, b.Name)
 		})
 
 	slices.SortFunc(allJobsForCronJob,
 		func(a, b *protos.JobResponse) int {
 			aTime, _ := time.Parse(time.RFC3339, a.CreationTimestamp)
 			bTime, _ := time.Parse(time.RFC3339, b.CreationTimestamp)
-			return aTime.Compare(bTime)
+			if c := aTime.Compare(bTime); c != 0 {
+				return c
+			}
+			return strings.Compare(a.Name, b.Name)
 		})
+
+	sortPodResponses(runningPods)
+	sortPodResponses(allJobPodsForCronjob)
 
 	return allJobsForCronJob, allJobPodsForCronjob, runningJobs, runningPods
 }
@@ -917,7 +957,33 @@ func buildJobPodsResponses(gJobPods *corev1.PodList) []*protos.PodResponse {
 		}
 		jobPodsResponses = append(jobPodsResponses, podResponse)
 	}
+	sortPodResponses(jobPodsResponses)
 	return jobPodsResponses
+}
+
+// sortPodResponses sorts a slice of PodResponses deterministically by StartTime,
+// tie-breaking by pod name so lists never re-order or flicker across stream updates.
+func sortPodResponses(pods []*protos.PodResponse) {
+	slices.SortFunc(pods, func(a, b *protos.PodResponse) int {
+		var aStart, bStart string
+		if a != nil && a.Status != nil {
+			aStart = a.Status.StartTime
+		}
+		if b != nil && b.Status != nil {
+			bStart = b.Status.StartTime
+		}
+		if c := strings.Compare(aStart, bStart); c != 0 {
+			return c
+		}
+		var aName, bName string
+		if a != nil && a.Metadata != nil {
+			aName = a.Metadata.Name
+		}
+		if b != nil && b.Metadata != nil {
+			bName = b.Metadata.Name
+		}
+		return strings.Compare(aName, bName)
+	})
 }
 
 func jobSucceeded(job *batchv1.Job) bool {

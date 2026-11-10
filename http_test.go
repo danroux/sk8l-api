@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/danroux/sk8l/internal/k8s"
 	"github.com/danroux/sk8l/internal/store"
@@ -19,6 +20,10 @@ type fakeStore struct {
 
 func (f *fakeStore) Ready() bool {
 	return f.ready.Load()
+}
+
+func (f *fakeStore) DegradedSince() time.Duration {
+	return 0
 }
 
 // newHTTPTestServer builds a test Sk8lServer with a mock store

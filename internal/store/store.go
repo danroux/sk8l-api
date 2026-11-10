@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -21,6 +22,7 @@ type Store interface {
 	// when ctx is done or the store is closed.
 	Subscribe(ctx context.Context) <-chan struct{}
 	Ready() bool
+	DegradedSince() time.Duration
 }
 
 // Starter is an optional interface implemented by stores that require

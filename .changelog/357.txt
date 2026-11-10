@@ -1,0 +1,3 @@
+```release-note:enhancement
+go: Detect informer watch errors to degrade /readyz and recover automatically on Kubernetes API Server reconnection
+```
