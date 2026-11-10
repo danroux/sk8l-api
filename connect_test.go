@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -26,7 +27,9 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -42,6 +45,11 @@ const (
 	testTLSServerName         = "localhost"
 	testConnectTimeoutSeconds = 5
 	testConnectTimeout        = testConnectTimeoutSeconds * time.Second
+)
+
+var (
+	errTestAlreadyConnect = errors.New("already connect")
+	errTestUnclassified   = errors.New("boom")
 )
 
 func newConnectTestEnvWithServer(t *testing.T, srv *Sk8lServer) (*http.ServeMux, *http.Client) {
@@ -280,12 +288,20 @@ func TestConnectErrorPropagation(t *testing.T) {
 
 	if _, err := client.GetCronjobYAML(ctx, connect.NewRequest(&protos.CronjobRequest{})); err == nil {
 		t.Error("expected error from GetCronjobYAML when k8sClient is nil")
+	} else if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Errorf("expected CodeUnavailable from GetCronjobYAML, got %v", connect.CodeOf(err))
 	}
+
 	if _, err := client.GetJobYAML(ctx, connect.NewRequest(&protos.JobRequest{})); err == nil {
 		t.Error("expected error from GetJobYAML when k8sClient is nil")
+	} else if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Errorf("expected CodeUnavailable from GetJobYAML, got %v", connect.CodeOf(err))
 	}
+
 	if _, err := client.GetPodYAML(ctx, connect.NewRequest(&protos.PodRequest{})); err == nil {
 		t.Error("expected error from GetPodYAML when k8sClient is nil")
+	} else if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Errorf("expected CodeUnavailable from GetPodYAML, got %v", connect.CodeOf(err))
 	}
 
 	stream, err := client.GetCronjobs(ctx, connect.NewRequest(&protos.CronjobsRequest{}))
@@ -293,7 +309,100 @@ func TestConnectErrorPropagation(t *testing.T) {
 		defer stream.Close()
 		if stream.Receive() || stream.Err() == nil {
 			t.Error("expected error from GetCronjobs stream when store is nil")
+		} else if connect.CodeOf(stream.Err()) != connect.CodeUnavailable {
+			t.Errorf("expected CodeUnavailable from GetCronjobs stream, got %v", connect.CodeOf(stream.Err()))
 		}
+	}
+}
+
+func TestConnectNotFoundErrorPropagation(t *testing.T) {
+	fakeClientSet := fake.NewClientset()
+	k8sClient := k8s.NewClientWithInterface(fakeClientSet)
+	srv := NewSk8lServer(nil, k8sClient, nil)
+	_, httpClient := newConnectTestEnvWithServer(t, srv)
+
+	client := protosconnect.NewCronjobClient(httpClient, testConnectBaseURL)
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
+
+	t.Run("GetCronjobYAML_NotFound", func(t *testing.T) {
+		_, err := client.GetCronjobYAML(ctx, connect.NewRequest(&protos.CronjobRequest{
+			CronjobName:      "nonexistent-cj",
+			CronjobNamespace: testConnectNamespace,
+		}))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			t.Errorf("expected CodeNotFound, got %v", connect.CodeOf(err))
+		}
+	})
+
+	t.Run("GetJobYAML_NotFound", func(t *testing.T) {
+		_, err := client.GetJobYAML(ctx, connect.NewRequest(&protos.JobRequest{
+			JobName:      "nonexistent-job",
+			JobNamespace: testConnectNamespace,
+		}))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			t.Errorf("expected CodeNotFound, got %v", connect.CodeOf(err))
+		}
+	})
+
+	t.Run("GetPodYAML_NotFound", func(t *testing.T) {
+		_, err := client.GetPodYAML(ctx, connect.NewRequest(&protos.PodRequest{
+			PodName:      "nonexistent-pod",
+			PodNamespace: testConnectNamespace,
+		}))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			t.Errorf("expected CodeNotFound, got %v", connect.CodeOf(err))
+		}
+	})
+}
+
+func TestToConnectError(t *testing.T) {
+	if err := toConnectError("op", nil); err != nil {
+		t.Errorf("expected nil for nil input, got %v", err)
+	}
+
+	alreadyConnect := connect.NewError(connect.CodeNotFound, errTestAlreadyConnect)
+	if got := toConnectError("op", alreadyConnect); !errors.Is(got, alreadyConnect) {
+		t.Errorf("expected already connect error returned as-is, got %v", got)
+	}
+
+	cases := []struct {
+		err      error
+		name     string
+		wantCode connect.Code
+	}{
+		{name: "Canceled", err: context.Canceled, wantCode: connect.CodeCanceled},
+		{name: "DeadlineExceeded", err: context.DeadlineExceeded, wantCode: connect.CodeDeadlineExceeded},
+		{name: "NotFound", err: apierrors.NewNotFound(batchv1.Resource("cronjobs"), "foo"), wantCode: connect.CodeNotFound},
+		{name: "Forbidden", err: apierrors.NewForbidden(batchv1.Resource("cronjobs"), "foo", nil), wantCode: connect.CodePermissionDenied},
+		{name: "Unauthorized", err: apierrors.NewUnauthorized("reason"), wantCode: connect.CodeUnauthenticated},
+		{name: "AlreadyExists", err: apierrors.NewAlreadyExists(batchv1.Resource("cronjobs"), "foo"), wantCode: connect.CodeAlreadyExists},
+		{name: "Conflict", err: apierrors.NewConflict(batchv1.Resource("cronjobs"), "foo", nil), wantCode: connect.CodeAborted},
+		{name: "BadRequest", err: apierrors.NewBadRequest("bad request"), wantCode: connect.CodeInvalidArgument},
+		{name: "ServerTimeout", err: apierrors.NewServerTimeout(batchv1.Resource("cronjobs"), "op", 1), wantCode: connect.CodeDeadlineExceeded},
+		{name: "StoreNil", err: ErrStoreNil, wantCode: connect.CodeUnavailable},
+		{name: "K8sClientNil", err: ErrK8sClientNil, wantCode: connect.CodeUnavailable},
+		{name: "StoreNotReady", err: ErrStoreNotReady, wantCode: connect.CodeUnavailable},
+		{name: "StoreDegraded", err: ErrStoreDegraded, wantCode: connect.CodeUnavailable},
+		{name: "Unclassified", err: errTestUnclassified, wantCode: connect.CodeInternal},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := toConnectError(tc.name, tc.err)
+			if connect.CodeOf(got) != tc.wantCode {
+				t.Errorf("toConnectError() code = %v, want %v", connect.CodeOf(got), tc.wantCode)
+			}
+		})
 	}
 }
 

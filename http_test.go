@@ -22,8 +22,8 @@ func (f *fakeStore) Ready() bool {
 	return f.ready.Load()
 }
 
-func (f *fakeStore) DegradedSince() time.Duration {
-	return 0
+func (f *fakeStore) Health() (bool, time.Duration) {
+	return f.ready.Load(), 0
 }
 
 // newHTTPTestServer builds a test Sk8lServer with a mock store

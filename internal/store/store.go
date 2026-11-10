@@ -22,7 +22,12 @@ type Store interface {
 	// when ctx is done or the store is closed.
 	Subscribe(ctx context.Context) <-chan struct{}
 	Ready() bool
-	DegradedSince() time.Duration
+
+	// Health returns a consistent snapshot of the store state: ready reports whether the
+	// store can serve data, and degradedFor is how long a previously synced store has been
+	// degraded (0 when healthy or not yet synced). Reading both in one call avoids races
+	// between separate Ready()/degraded-duration reads.
+	Health() (ready bool, degradedFor time.Duration)
 }
 
 // Starter is an optional interface implemented by stores that require
