@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,id=gomodcache \
     --mount=type=cache,target=/root/.cache/go-build,id=gocache \
     make go-out
 
-FROM alpine:3.24.3
+FROM alpine:3.24.4
 
 LABEL org.opencontainers.image.source=https://github.com/danroux/sk8l-api
 LABEL org.opencontainers.image.description="sk8l-api image"
