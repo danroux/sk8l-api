@@ -1,0 +1,15 @@
+```release-note:security
+api: Disable CORS by default; allow cross-origin callers only through exact origins in SK8L_CORS_ALLOWED_ORIGINS (chart: sk8lApi.corsAllowedOrigins) instead of reflecting any Origin
+```
+
+```release-note:security
+api: Limit Connect request messages to 64 KiB and request headers to 64 KiB, and recover from handler panics with an Internal status
+```
+
+```release-note:breaking-change
+helm: Default service.type is now ClusterIP instead of LoadBalancer; set service.type=LoadBalancer explicitly to keep external exposure
+```
+
+```release-note:breaking-change
+go: Remove the no-op tls.caSecretName / TLS_CA_FILE client CA support
+```

@@ -36,6 +36,12 @@ sk8lApi:
   # apiURL: Optional override for the embedded UI API base URL (VITE_SK8L_API_URL).
   # Defaults to "" (same-origin requests to the unified sk8l-api HTTP server).
   apiURL: ""
+  # corsAllowedOrigins: Exact origins (scheme://host[:port]) allowed to call the API cross-origin.
+  # Defaults to [] (CORS disabled): the embedded UI is served same-origin and needs no CORS.
+  # Only set this when a UI runs on another origin, e.g. a local Vite dev server
+  # ("http://localhost:5173"). Wildcards are rejected: the API has no authentication, so any web
+  # page the user visits could otherwise read workload data.
+  corsAllowedOrigins: []
   # logLevel controls the verbosity of the sk8l-api logger.
   # Valid values: trace, debug, info, warn, warning, error, disabled, off.
   # Defaults to info when unset.
@@ -51,9 +57,8 @@ tls:
   enabled: false
   # secretName: Kubernetes TLS Secret containing tls.crt and tls.key when tls.enabled is true.
   secretName: "sk8l-server-cert-secret"
-  # caSecretName: Optional Secret containing tls.crt for a custom CA (ClientCAs) when tls.enabled is true.
-  # Leave empty when using standard kubernetes.io/tls secrets without a separate CA bundle secret.
-  caSecretName: ""
+  # Client certificates (mTLS) are not requested or verified. Authenticate/authorize callers at an
+  # Ingress, Gateway API, or service mesh in front of sk8l.
 # Security context for the pod template and containers
 securityContext:
   pod:
@@ -68,7 +73,8 @@ securityContext:
       type: RuntimeDefault
 service:
   annotations: []
-  type: LoadBalancer
+  # type: ClusterIP by default (no built-in auth); use port-forward or an authenticating Ingress/Gateway.
+  type: ClusterIP
   labels:
     app.kubernetes.io/name: sk8l
   ports:

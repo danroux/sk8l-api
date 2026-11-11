@@ -111,7 +111,7 @@ func TestSetupHTTPRoutes(t *testing.T) {
 	defer teardown()
 
 	mux := &http.ServeMux{}
-	setupHTTPRoutes(mux, s)
+	setupHTTPRoutes(mux, s, nil)
 
 	routes := []struct {
 		path           string

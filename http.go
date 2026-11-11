@@ -17,13 +17,16 @@ type healthStatus struct {
 
 // setupHTTPRoutes registers all HTTP handlers on mux. It is extracted from
 // main() so the function stays within the revive function-length limit.
-func setupHTTPRoutes(mux *http.ServeMux, s *Sk8lServer) {
+//
+// corsAllowedOrigins lists the cross-origin callers allowed to reach the Connect handler; when
+// empty, CORS stays disabled (the embedded UI is same-origin).
+func setupHTTPRoutes(mux *http.ServeMux, s *Sk8lServer, corsAllowedOrigins []string) {
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/readyz", readyzHandler(s))
 
-	path, handler := protosconnect.NewCronjobHandler(NewConnectHandler(s))
-	mux.Handle(path, withCORS(handler))
+	path, handler := protosconnect.NewCronjobHandler(NewConnectHandler(s), connectHandlerOptions()...)
+	mux.Handle(path, withCORS(corsAllowedOrigins, handler))
 	mux.Handle("/", ui.NewHandler(K8Namespace, UIAPIURL))
 }
 

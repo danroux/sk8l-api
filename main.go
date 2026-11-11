@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/http"
@@ -27,6 +26,10 @@ const (
 	ReadTimeoutSeconds = 10
 	ReadTimeout        = ReadTimeoutSeconds * time.Second
 
+	// maxHeaderBytes caps request header size (net/http defaults to 1 MiB); sk8l clients only
+	// send small Connect/gRPC headers.
+	maxHeaderBytes = 64 << 10
+
 	shutdownTimeoutSeconds = 5
 	shutdownTimeout        = shutdownTimeoutSeconds * time.Second
 
@@ -38,7 +41,7 @@ const (
 	envTLSEnabled        = "TLS_ENABLED"
 	envTLSCertFile       = "TLS_CERT_FILE"
 	envTLSKeyFile        = "TLS_KEY_FILE"
-	envTLSCAFile         = "TLS_CA_FILE"
+	envCORSOrigins       = "SK8L_CORS_ALLOWED_ORIGINS"
 )
 
 var (
@@ -47,7 +50,6 @@ var (
 	HTTPPort    = resolveHTTPPort()
 	certFile    = resolveEnvOrDefault(envTLSCertFile, filepath.Join(defaultCertsDir, "server-cert.pem"))
 	certKeyFile = resolveEnvOrDefault(envTLSKeyFile, filepath.Join(defaultCertsDir, "server-key.pem"))
-	caFile      = resolveEnvOrDefault(envTLSCAFile, filepath.Join(defaultCertsDir, "ca-cert.pem"))
 )
 
 func resolveEnvOrDefault(envKey, fallback string) string {
@@ -87,6 +89,7 @@ func newHTTPServer(addr string, handler http.Handler, tlsConfig *tls.Config) *ht
 		Addr:              addr,
 		IdleTimeout:       time.Minute,
 		ReadHeaderTimeout: ReadTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
 		Handler:           handler,
 	}
 	if tlsConfig != nil {
@@ -107,10 +110,14 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to parse TLS_ENABLED")
 	}
 
+	corsOrigins, err := parseCORSAllowedOrigins(os.Getenv(envCORSOrigins))
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to parse " + envCORSOrigins)
+	}
+
 	var serverTLSConfig *tls.Config
 	if tlsEnabled {
-		certPool := x509.NewCertPool()
-		serverTLSConfig, err = setupTLS(certFile, certKeyFile, caFile, certPool)
+		serverTLSConfig, err = setupTLS(certFile, certKeyFile)
 		if err != nil {
 			log.Fatal().Err(err).Msg("setupTLS")
 		}
@@ -139,7 +146,7 @@ func main() {
 	)
 
 	mux := &http.ServeMux{}
-	setupHTTPRoutes(mux, sk8lServer)
+	setupHTTPRoutes(mux, sk8lServer, corsOrigins)
 	httpS := newHTTPServer(fmt.Sprintf("0.0.0.0:%s", HTTPPort), mux, serverTLSConfig)
 
 	log.Info().Bool("tls", tlsEnabled).Msg(fmt.Sprintf("Starting sk8l server %s on %s", Version(), httpS.Addr))
