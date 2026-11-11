@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -52,15 +53,13 @@ var (
 	errTestUnclassified   = errors.New("boom")
 )
 
-func newConnectTestEnvWithServer(t *testing.T, srv *Sk8lServer) (*http.ServeMux, *http.Client) {
+// newBufconnHTTPClient serves handler over an in-memory listener and returns a client wired to it.
+func newBufconnHTTPClient(t *testing.T, handler http.Handler) *http.Client {
 	t.Helper()
-
-	mux := &http.ServeMux{}
-	setupHTTPRoutes(mux, srv)
 
 	bl := bufconn.Listen(bufSize)
 	httpSrv := &http.Server{
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: ReadTimeout,
 	}
 	go func() {
@@ -71,7 +70,7 @@ func newConnectTestEnvWithServer(t *testing.T, srv *Sk8lServer) (*http.ServeMux,
 		_ = bl.Close()
 	})
 
-	httpClient := &http.Client{
+	return &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				conn, err := bl.DialContext(ctx)
@@ -82,7 +81,14 @@ func newConnectTestEnvWithServer(t *testing.T, srv *Sk8lServer) (*http.ServeMux,
 			},
 		},
 	}
-	return mux, httpClient
+}
+
+func newConnectTestEnvWithServer(t *testing.T, srv *Sk8lServer) (*http.ServeMux, *http.Client) {
+	t.Helper()
+
+	mux := &http.ServeMux{}
+	setupHTTPRoutes(mux, srv, nil)
+	return mux, newBufconnHTTPClient(t, mux)
 }
 
 func newConnectTestEnv(t *testing.T, objs ...runtime.Object) (*http.ServeMux, *http.Client) {
@@ -406,20 +412,61 @@ func TestToConnectError(t *testing.T) {
 	}
 }
 
-func TestWithCORS(t *testing.T) {
-	mux, _ := newConnectTestEnv(t)
+func newCORSTestEnv(t *testing.T, allowed []string) *http.ServeMux {
+	t.Helper()
+	clientSet := fake.NewClientset()
+	st := setupTestInformerStore(t, clientSet, testConnectNamespace)
+	srv := NewSk8lServer(st, k8s.NewClientWithInterface(clientSet), nil)
+	mux := &http.ServeMux{}
+	setupHTTPRoutes(mux, srv, allowed)
+	return mux
+}
 
-	t.Run("Preflight OPTIONS with Origin", func(t *testing.T) {
-		req := httptest.NewRequestWithContext(
-			context.Background(),
-			http.MethodOptions,
-			protosconnect.CronjobGetDashboardAnnotationsProcedure,
-			nil,
-		)
-		req.Header.Set("Origin", testConnectOrigin)
+func corsRequest(method, origin string, preflight bool, body string) *http.Request {
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		method,
+		protosconnect.CronjobGetDashboardAnnotationsProcedure,
+		strings.NewReader(body),
+	)
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	if preflight {
+		req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return req
+}
+
+func TestWithCORS_DisabledByDefault(t *testing.T) {
+	mux := newCORSTestEnv(t, nil)
+
+	for _, preflight := range []bool{true, false} {
+		method, body := http.MethodPost, "{}"
+		if preflight {
+			method, body = http.MethodOptions, ""
+		}
 		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, corsRequest(method, testConnectOrigin, preflight, body))
 
-		mux.ServeHTTP(rr, req)
+		if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("%s: expected no Access-Control-Allow-Origin, got %q", method, got)
+		}
+		if preflight && rr.Code == http.StatusNoContent {
+			t.Errorf("preflight must not be answered with 204 when CORS is disabled")
+		}
+	}
+}
+
+func TestWithCORS_AllowList(t *testing.T) {
+	mux := newCORSTestEnv(t, []string{testConnectOrigin})
+
+	t.Run("preflight from allowed origin", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, corsRequest(http.MethodOptions, testConnectOrigin, true, ""))
 
 		if rr.Code != http.StatusNoContent {
 			t.Errorf("expected 204 No Content, got %d", rr.Code)
@@ -430,20 +477,14 @@ func TestWithCORS(t *testing.T) {
 		if got := rr.Header().Get("Access-Control-Allow-Methods"); got != corsAllowMethods {
 			t.Errorf("expected Access-Control-Allow-Methods %q, got %q", corsAllowMethods, got)
 		}
+		if got := rr.Header().Get("Vary"); got != "Origin" {
+			t.Errorf("expected Vary: Origin, got %q", got)
+		}
 	})
 
-	t.Run("POST with Origin sets CORS headers", func(t *testing.T) {
-		req := httptest.NewRequestWithContext(
-			context.Background(),
-			http.MethodPost,
-			protosconnect.CronjobGetDashboardAnnotationsProcedure,
-			strings.NewReader("{}"),
-		)
-		req.Header.Set("Origin", testConnectOrigin)
-		req.Header.Set("Content-Type", "application/json")
+	t.Run("POST from allowed origin", func(t *testing.T) {
 		rr := httptest.NewRecorder()
-
-		mux.ServeHTTP(rr, req)
+		mux.ServeHTTP(rr, corsRequest(http.MethodPost, testConnectOrigin, false, "{}"))
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("expected 200 OK, got %d", rr.Code)
@@ -452,6 +493,133 @@ func TestWithCORS(t *testing.T) {
 			t.Errorf("expected Access-Control-Allow-Origin %s, got %q", testConnectOrigin, got)
 		}
 	})
+
+	t.Run("origin not in allow-list gets no CORS headers", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, corsRequest(http.MethodOptions, "https://evil.example", true, ""))
+
+		if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("expected no Access-Control-Allow-Origin, got %q", got)
+		}
+		if rr.Code == http.StatusNoContent {
+			t.Error("preflight from a disallowed origin must not be answered with 204")
+		}
+		if got := rr.Header().Get("Vary"); got != "Origin" {
+			t.Errorf("expected Vary: Origin even for rejected origins, got %q", got)
+		}
+	})
+
+	t.Run("request without Origin passes through", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, corsRequest(http.MethodPost, "", false, "{}"))
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200 OK, got %d", rr.Code)
+		}
+		if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("expected no Access-Control-Allow-Origin, got %q", got)
+		}
+	})
+}
+
+func TestParseCORSAllowedOrigins(t *testing.T) {
+	testCases := []struct {
+		name    string
+		raw     string
+		want    []string
+		wantErr bool
+	}{
+		{name: "empty", raw: "", want: nil},
+		{name: "blank entries", raw: " , ,", want: nil},
+		{name: "single", raw: "https://localhost:5173", want: []string{"https://localhost:5173"}},
+		{
+			name: "multiple trimmed lowercased deduped",
+			raw:  " HTTP://Localhost:5173 ,https://sk8l.example.com,http://localhost:5173",
+			want: []string{"http://localhost:5173", "https://sk8l.example.com"},
+		},
+		{name: "wildcard rejected", raw: "*", wantErr: true},
+		{name: "missing scheme", raw: "localhost:5173", wantErr: true},
+		{name: "unsupported scheme", raw: "ftp://localhost", wantErr: true},
+		{name: "path rejected", raw: "https://localhost:5173/app", wantErr: true},
+		{name: "trailing slash rejected", raw: "https://localhost:5173/", wantErr: true},
+		{name: "userinfo rejected", raw: "https://user@localhost", wantErr: true},
+		{name: "one bad entry fails all", raw: "https://ok.example,*", wantErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseCORSAllowedOrigins(tc.raw)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidCORSOrigin) {
+					t.Fatalf("expected ErrInvalidCORSOrigin, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConnectRejectsOversizedRequest(t *testing.T) {
+	_, httpClient := newConnectTestEnv(t)
+	client := protosconnect.NewCronjobClient(httpClient, testConnectBaseURL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
+
+	_, err := client.GetCronjobYAML(ctx, connect.NewRequest(&protos.CronjobRequest{
+		CronjobName: strings.Repeat("a", maxRequestBytes+1),
+	}))
+	if got := connect.CodeOf(err); got != connect.CodeResourceExhausted {
+		t.Fatalf("expected CodeResourceExhausted, got %v (err=%v)", got, err)
+	}
+}
+
+func TestRecoverHandlerPanic(t *testing.T) {
+	err := recoverHandlerPanic(
+		context.Background(),
+		connect.Spec{Procedure: protosconnect.CronjobGetCronjobsProcedure},
+		http.Header{},
+		"boom",
+	)
+	if got := connect.CodeOf(err); got != connect.CodeInternal {
+		t.Fatalf("expected CodeInternal, got %v", got)
+	}
+	if strings.Contains(err.Error(), "boom") {
+		t.Errorf("panic value must not leak to clients: %v", err)
+	}
+}
+
+func TestConnectHandlerRecoversFromPanic(t *testing.T) {
+	// Serve a handler that always panics through the same options used in production.
+	path, handler := protosconnect.NewCronjobHandler(panicCronjobHandler{}, connectHandlerOptions()...)
+	mux := &http.ServeMux{}
+	mux.Handle(path, handler)
+
+	client := protosconnect.NewCronjobClient(newBufconnHTTPClient(t, mux), testConnectBaseURL)
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
+
+	_, err := client.GetDashboardAnnotations(ctx, connect.NewRequest(&protos.DashboardAnnotationsRequest{}))
+	if got := connect.CodeOf(err); got != connect.CodeInternal {
+		t.Fatalf("expected CodeInternal after panic, got %v (err=%v)", got, err)
+	}
+}
+
+type panicCronjobHandler struct {
+	protosconnect.UnimplementedCronjobHandler
+}
+
+func (panicCronjobHandler) GetDashboardAnnotations(
+	context.Context,
+	*connect.Request[protos.DashboardAnnotationsRequest],
+) (*connect.Response[protos.DashboardAnnotationsResponse], error) {
+	panic("handler bug")
 }
 
 // TestNativeGRPCOverTLSHTTPServer verifies that native gRPC clients (such as grpcurl)
@@ -498,7 +666,7 @@ func TestNativeGRPCOverTLSHTTPServer(t *testing.T) {
 	srv := NewSk8lServer(st, k8sClient, nil)
 
 	mux := &http.ServeMux{}
-	setupHTTPRoutes(mux, srv)
+	setupHTTPRoutes(mux, srv, nil)
 
 	bl := bufconn.Listen(bufSize)
 	httpSrv := newHTTPServer("", mux, serverTLS)
@@ -593,7 +761,7 @@ func TestPlaintextH2CHTTPServer(t *testing.T) {
 	srv := NewSk8lServer(st, k8sClient, nil)
 
 	mux := &http.ServeMux{}
-	setupHTTPRoutes(mux, srv)
+	setupHTTPRoutes(mux, srv, nil)
 
 	bl := bufconn.Listen(bufSize)
 	httpSrv := newHTTPServer("", mux, nil)

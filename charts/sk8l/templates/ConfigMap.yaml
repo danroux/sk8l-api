@@ -20,6 +20,9 @@ data:
   {{- else }}
   K8_NAMESPACE: {{ default (include "sk8l.namespace" .) .Values.sk8lApi.targetNamespace | quote }}
   {{- end }}
+  {{- with .Values.sk8lApi.corsAllowedOrigins }}
+  SK8L_CORS_ALLOWED_ORIGINS: {{ join "," . | quote }}
+  {{- end }}
   {{- if .Values.sk8lApi.logLevel }}
   LOG_LEVEL: {{ .Values.sk8lApi.logLevel | quote }}
   {{- end }}

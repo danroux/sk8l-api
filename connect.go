@@ -3,7 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
+	"runtime/debug"
+	"slices"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/danroux/sk8l/protos"
@@ -16,6 +21,9 @@ import (
 // The underlying cause is logged server-side and never sent over the wire.
 var ErrInternal = errors.New("internal error")
 
+// ErrInvalidCORSOrigin is returned when SK8L_CORS_ALLOWED_ORIGINS contains an unusable entry.
+var ErrInvalidCORSOrigin = errors.New("invalid CORS origin")
+
 const (
 	corsAllowMethods = "GET, POST, OPTIONS"
 	corsAllowHeaders = "Accept-Encoding, Content-Encoding, Content-Type, " +
@@ -24,7 +32,33 @@ const (
 	corsExposeHeaders = "Content-Encoding, Connect-Accept-Encoding, " +
 		"Connect-Content-Encoding, Grpc-Message, Grpc-Status, Grpc-Status-Details-Bin"
 	corsMaxAge = "1728000"
+
+	// maxRequestBytes bounds the size of a single request message. Every sk8l RPC takes a
+	// handful of short string fields, so 64 KiB is orders of magnitude above legitimate use.
+	maxRequestBytes = 64 << 10
 )
+
+// connectHandlerOptions returns the hardening options applied to the Cronjob service handler:
+// a per-message request-size limit (connect-go allows any size by default) and RPC-aware panic
+// recovery. net/http already recovers a panicking handler per request; WithRecover additionally
+// logs the procedure and stack and answers with a proper Internal status instead of a dropped stream.
+func connectHandlerOptions() []connect.HandlerOption {
+	return []connect.HandlerOption{
+		connect.WithReadMaxBytes(maxRequestBytes),
+		connect.WithRecover(recoverHandlerPanic),
+	}
+}
+
+// recoverHandlerPanic converts a panic inside an RPC handler into CodeInternal. The panic value
+// and stack are logged server-side only.
+func recoverHandlerPanic(_ context.Context, spec connect.Spec, _ http.Header, p any) error {
+	log.Error().
+		Str("procedure", spec.Procedure).
+		Interface("panic", p).
+		Bytes("stack", debug.Stack()).
+		Msg("panic recovered in RPC handler")
+	return connect.NewError(connect.CodeInternal, ErrInternal)
+}
 
 // toConnectError converts an error returned by Sk8lServer into a *connect.Error carrying the
 // proper status code, so Connect, gRPC-Web, and gRPC clients can distinguish NotFound,
@@ -161,19 +195,52 @@ func (h *ConnectHandler) GetDashboardAnnotations(
 	return connect.NewResponse(resp), nil
 }
 
-// withCORS wraps an http.Handler with CORS headers required by browser-based
-// Connect and gRPC-Web clients when running across origins.
-func withCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", corsAllowMethods)
-			w.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
-			w.Header().Set("Access-Control-Expose-Headers", corsExposeHeaders)
-			w.Header().Set("Access-Control-Max-Age", corsMaxAge)
+// parseCORSAllowedOrigins parses a comma-separated list of exact origins (scheme://host[:port]).
+// An empty value yields no origins, which keeps CORS disabled. Wildcards are rejected on purpose:
+// sk8l exposes cluster workload data without authentication, so a blanket allow-list would let any
+// web page the user visits read it.
+func parseCORSAllowedOrigins(raw string) ([]string, error) {
+	var origins []string
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
 		}
-		if r.Method == http.MethodOptions {
+		u, err := url.Parse(entry)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return nil, fmt.Errorf("%w: %q must look like scheme://host[:port]", ErrInvalidCORSOrigin, entry)
+		}
+		origin := strings.ToLower(u.Scheme + "://" + u.Host)
+		if !slices.Contains(origins, origin) {
+			origins = append(origins, origin)
+		}
+	}
+	return origins, nil
+}
+
+// withCORS wraps an http.Handler with the CORS headers browser-based Connect and gRPC-Web clients
+// need when they run on a different origin than sk8l-api (for example a local Vite dev server).
+// It is opt-in: with no allowed origins the handler is returned untouched, because the embedded
+// UI is served same-origin and needs no CORS. Only origins in allowedOrigins receive CORS headers;
+// requests from any other origin are passed through without them, so browsers block the response.
+func withCORS(allowedOrigins []string, next http.Handler) http.Handler {
+	if len(allowedOrigins) == 0 {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Origin")
+		origin := r.Header.Get("Origin")
+		if origin == "" || !slices.Contains(allowedOrigins, strings.ToLower(origin)) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", corsAllowMethods)
+		w.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
+		w.Header().Set("Access-Control-Expose-Headers", corsExposeHeaders)
+		w.Header().Set("Access-Control-Max-Age", corsMaxAge)
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

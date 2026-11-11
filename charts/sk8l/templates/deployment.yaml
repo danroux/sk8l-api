@@ -4,11 +4,9 @@
 {{- end }}
 {{- $tlsEnabled := false }}
 {{- $tlsSecretName := "sk8l-server-cert-secret" }}
-{{- $tlsCASecretName := "" }}
 {{- if .Values.tls }}
 {{- $tlsEnabled = .Values.tls.enabled | default false }}
 {{- $tlsSecretName = .Values.tls.secretName | default "sk8l-server-cert-secret" }}
-{{- $tlsCASecretName = .Values.tls.caSecretName | default "" }}
 {{- end }}
 {{- $probeScheme := ternary "HTTPS" "HTTP" $tlsEnabled }}
 apiVersion: apps/v1
@@ -108,13 +106,6 @@ spec:
                       path: server-cert.pem
                     - key: tls.key
                       path: server-key.pem
-              {{- if $tlsCASecretName }}
-              - secret:
-                  name: {{ $tlsCASecretName | quote }}
-                  items:
-                    - key: tls.crt
-                      path: ca-cert.pem
-              {{- end }}
         {{- end }}
         {{- if .Values.sk8lApi.volumes }}
         {{- toYaml .Values.sk8lApi.volumes | nindent 8 }}

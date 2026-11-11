@@ -75,11 +75,34 @@ To enable end-to-end HTTPS/TLS directly on the `sk8l-api` pod:
      --set tls.enabled=true \
      --set tls.secretName=sk8l-server-cert-secret
    ```
-   *(Optional: set `tls.caSecretName` if you also want to mount a separate CA bundle secret into `ClientCAs`).*
+
+> [!NOTE]
+> TLS here only encrypts traffic to the pod. Client certificates (mTLS) are not requested or verified, and sk8l has no built-in authentication. Put an authenticating Ingress, Gateway API, or service mesh in front of it if it is reachable beyond your own workstation.
 
 ### Environment Variables
 
 The web UI is embedded directly in `sk8l-api` and uses same-origin ConnectRPC/gRPC-Web requests on port `8590` by default. If needed, you can override `sk8lApi.apiURL` in `values.yaml`.
+
+### Network exposure
+
+The chart creates a `ClusterIP` Service by default. sk8l exposes workload details (including pod, job, and cronjob YAML) without authentication, so it is not published outside the cluster unless you ask for it:
+
+* Local access: `kubectl -n [NAMESPACE] port-forward svc/sk8l 8590:8590`
+* Cluster-wide/public access: front it with an authenticating Ingress or Gateway API route. Set `service.type=LoadBalancer` or `NodePort` only on trusted networks.
+
+Existing installs that relied on the previous `LoadBalancer` default must now set `service.type=LoadBalancer` explicitly to keep it.
+
+### Cross-origin access (CORS)
+
+CORS is disabled by default because the embedded UI is served from the same origin as the API. If you run a UI on another origin (for example a local Vite dev server), allow it explicitly with exact origins:
+
+```bash
+helm upgrade --install [RELEASE_NAME] sk8l/sk8l \
+  --namespace [NAMESPACE] \
+  --set 'sk8lApi.corsAllowedOrigins={http://localhost:5173}'
+```
+
+Wildcards (`*`) are rejected.
 
 ## Usage
 
