@@ -21,8 +21,6 @@ import (
 	gyaml "sigs.k8s.io/yaml"
 
 	"github.com/rs/zerolog/log"
-	"google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,7 +53,7 @@ const (
 )
 
 // serverStream is the minimal server-streaming contract used by Sk8lServer,
-// satisfied by both gRPC (protos.Cronjob_Get*Server) and ConnectRPC (*connect.ServerStream[T]).
+// satisfied by ConnectRPC (*connect.ServerStream[T]).
 type serverStream[T any] interface {
 	Send(*T) error
 }
@@ -65,18 +63,13 @@ func isClientCanceled(ctx context.Context, err error) bool {
 	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
 		return true
 	}
-	if connect.CodeOf(err) == connect.CodeCanceled {
-		return true
-	}
-	return grpcstatus.Code(err) == codes.Canceled
+	return connect.CodeOf(err) == connect.CodeCanceled
 }
 
 type Sk8lServer struct {
-	protos.UnimplementedCronjobServer
 	store           store.Store
 	k8sClient       k8s.ClientInterface
 	metricsNamesMap *sync.Map
-	mu              sync.RWMutex
 }
 
 func NewSk8lServer(
@@ -92,27 +85,11 @@ func NewSk8lServer(
 }
 
 func (s *Sk8lServer) GetStore() store.Store {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	return s.store
 }
 
-func (s *Sk8lServer) SetStore(st store.Store) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.store = st
-}
-
 func (s *Sk8lServer) GetK8sClient() k8s.ClientInterface {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	return s.k8sClient
-}
-
-func (s *Sk8lServer) SetK8sClient(cl k8s.ClientInterface) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.k8sClient = cl
 }
 
 // IsHealthy reports whether the server's backing store is ready.
@@ -188,10 +165,6 @@ func (s *Sk8lServer) buildCronjobResponses(ctx context.Context, st store.Store) 
 		})
 
 	return cronjobs, nil
-}
-
-func (s *Sk8lServer) GetCronjobs(in *protos.CronjobsRequest, stream protos.Cronjob_GetCronjobsServer) error {
-	return s.streamCronjobs(stream.Context(), in, stream)
 }
 
 type streamDebouncer struct {
@@ -324,10 +297,6 @@ func (s *Sk8lServer) streamCronjobs(
 	return s.streamLoop(ctx, send)
 }
 
-func (s *Sk8lServer) GetCronjob(in *protos.CronjobRequest, stream protos.Cronjob_GetCronjobServer) error {
-	return s.streamCronjob(stream.Context(), in, stream)
-}
-
 func (s *Sk8lServer) streamCronjob(
 	ctx context.Context,
 	in *protos.CronjobRequest,
@@ -374,10 +343,6 @@ func (s *Sk8lServer) streamCronjob(
 	}
 
 	return s.streamLoop(ctx, send)
-}
-
-func (s *Sk8lServer) GetCronjobPods(in *protos.CronjobPodsRequest, stream protos.Cronjob_GetCronjobPodsServer) error {
-	return s.streamCronjobPods(stream.Context(), in, stream)
 }
 
 func (s *Sk8lServer) streamCronjobPods(
@@ -437,10 +402,6 @@ func (s *Sk8lServer) streamCronjobPods(
 	}
 
 	return s.streamLoop(ctx, send)
-}
-
-func (s *Sk8lServer) GetJobs(in *protos.JobsRequest, stream protos.Cronjob_GetJobsServer) error {
-	return s.streamJobs(stream.Context(), in, stream)
 }
 
 // buildStandaloneJobResponses filters standalone jobs (not owned by a CronJob)

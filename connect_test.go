@@ -37,6 +37,7 @@ import (
 )
 
 const (
+	bufSize                   = 1 << 20
 	testConnectNamespace      = "sk8l"
 	testConnectCronjobName    = "process-videos"
 	testConnectJobName        = "standalone-job"

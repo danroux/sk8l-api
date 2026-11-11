@@ -2,7 +2,7 @@ ARG UI_IMAGE=danroux/sk8l-ui:v0.21.0
 
 FROM --platform=$BUILDPLATFORM ${UI_IMAGE} AS ui
 
-FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS build
 
 WORKDIR /src/
 

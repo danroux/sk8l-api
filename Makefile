@@ -33,6 +33,22 @@ GO_LDFLAGS += '
 go-out:
 	CGO_ENABLED=0 GOEXPERIMENT=loopvar GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags $(GO_LDFLAGS) -o ./sk8l .
 
+PROTOC_VERSION ?= 36.2
+PROTOC_GEN_GO_VERSION ?= v1.36.12
+PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.2
+PROTOC_GEN_CONNECT_GO_VERSION ?= v1.21.1
+PROTOC_INSTALL_DIR ?= $(shell go env GOPATH)
+
+.PHONY: proto-tools
+proto-tools: ## Install pinned protoc and Go protobuf plugins into PROTOC_INSTALL_DIR
+	PROTOC_VERSION="$(PROTOC_VERSION)" \
+		PROTOC_GEN_GO_VERSION="$(PROTOC_GEN_GO_VERSION)" \
+		PROTOC_GEN_GO_GRPC_VERSION="$(PROTOC_GEN_GO_GRPC_VERSION)" \
+		PROTOC_GEN_CONNECT_GO_VERSION="$(PROTOC_GEN_CONNECT_GO_VERSION)" \
+		PROTOC_INSTALL_DIR="$(PROTOC_INSTALL_DIR)" \
+		GOBIN="$(or $(GOBIN),$(PROTOC_INSTALL_DIR)/bin)" \
+		bash ./ci/install_proto_tools.sh
+
 .PHONY: proto
 proto: ## Generate protobuf, gRPC, and Connect-Go stubs from protos/*.proto
 	protoc -I protos \

@@ -1,0 +1,7 @@
+```release-note:improvement
+api: Regenerate protobuf/Connect stubs and remove legacy gRPC server implementation from Sk8lServer
+```
+
+```release-note:enhancement
+ci: Pin protobuf codegen tool versions and add CI proto-drift verification
+```

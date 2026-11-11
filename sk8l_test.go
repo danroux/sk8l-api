@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log"
-	"net"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -20,6 +16,7 @@ import (
 	"github.com/danroux/sk8l/internal/store"
 	"github.com/danroux/sk8l/internal/store/informer"
 	"github.com/danroux/sk8l/protos"
+	"github.com/danroux/sk8l/protos/protosconnect"
 	"github.com/danroux/sk8l/testutil"
 	"github.com/google/go-cmp/cmp"
 	batchv1 "k8s.io/api/batch/v1"
@@ -30,19 +27,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	gyaml "sigs.k8s.io/yaml"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
-)
-
-const bufSize = 1 << 20
-
-var (
-	lis        = &bufconn.Listener{}
-	sk8lServer = &Sk8lServer{}
 )
 
 func setupTestInformerStore(t *testing.T, cs kubernetes.Interface, ns string) *informer.Store {
@@ -62,73 +46,45 @@ func setupTestInformerStore(t *testing.T, cs kubernetes.Interface, ns string) *i
 	return st
 }
 
-func bufDialer(context.Context, string) (net.Conn, error) {
-	conn, err := lis.Dial()
-	if err != nil {
-		return nil, fmt.Errorf("bufDialer: failed to lis.Dial: %w", err)
-	}
-	return conn, nil
-}
-
-func TestMain(m *testing.M) {
-	lis = bufconn.Listen(bufSize)
-	s := grpc.NewServer()
-
-	protos.RegisterCronjobServer(s, sk8lServer)
-
-	go func() {
-		if err := s.Serve(lis); err != nil {
-			log.Fatalf("Server exited with error: %v", err)
-		}
-	}()
-
-	c := m.Run()
-
-	s.GracefulStop()
-	lis.Close()
-	os.Exit(c)
+func newTestConnectClient(
+	t *testing.T,
+	namespace string,
+	objs ...runtime.Object,
+) (protosconnect.CronjobClient, *fake.Clientset) {
+	t.Helper()
+	clientSet := fake.NewClientset(objs...)
+	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace(namespace))
+	st := setupTestInformerStore(t, clientSet, namespace)
+	srv := NewSk8lServer(st, k8sClient, nil)
+	_, httpClient := newConnectTestEnvWithServer(t, srv)
+	return protosconnect.NewCronjobClient(httpClient, testConnectBaseURL), clientSet
 }
 
 func TestGetCronjobYAML(t *testing.T) {
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	client := protos.NewCronjobClient(conn)
-
 	cronjob1 := testutil.NewCronJobBuilder().
 		WithName("process-videos").
 		WithNamespace("sk8l").
 		Build()
 
-	clientSet := fake.NewClientset(cronjob1)
-	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := setupTestInformerStore(t, clientSet, "sk8l")
-	sk8lServer.SetStore(st)
-	sk8lServer.SetK8sClient(k8sClient)
+	client, _ := newTestConnectClient(t, "sk8l", cronjob1)
 
-	yamlResp, err := client.GetCronjobYAML(ctx, &protos.CronjobRequest{CronjobName: cronjob1.Name, CronjobNamespace: cronjob1.Namespace})
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
+
+	yamlResp, err := client.GetCronjobYAML(ctx, connect.NewRequest(&protos.CronjobRequest{
+		CronjobName:      cronjob1.Name,
+		CronjobNamespace: cronjob1.Namespace,
+	}))
 	if err != nil {
 		t.Fatalf("GetCronjobYAML failed: %v", err)
 	}
 
-	if yamlResp.Cronjob == "" {
+	if yamlResp.Msg.GetCronjob() == "" {
 		t.Error("CronjobYAMLResponse.Cronjob is empty")
 	}
 
 	cronJob := &batchv1.CronJob{}
-	if err := gyaml.Unmarshal([]byte(yamlResp.Cronjob), cronJob); err != nil {
+	if err := gyaml.Unmarshal([]byte(yamlResp.Msg.GetCronjob()), cronJob); err != nil {
 		t.Errorf("failed to gyaml.Unmarshal: %v", err)
 	}
 
@@ -166,98 +122,54 @@ func TestGetCronjobYAML(t *testing.T) {
 }
 
 func TestGetCronjobYAML_NotFound(t *testing.T) {
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	defer conn.Close()
+	client, _ := newTestConnectClient(t, "default")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
 	defer cancel()
 
-	clientSet := fake.NewClientset()
-	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := setupTestInformerStore(t, clientSet, "default")
-	sk8lServer.SetStore(st)
-	sk8lServer.SetK8sClient(k8sClient)
-
-	client := protos.NewCronjobClient(conn)
-	_, err = client.GetCronjobYAML(ctx, &protos.CronjobRequest{
+	_, err := client.GetCronjobYAML(ctx, connect.NewRequest(&protos.CronjobRequest{
 		CronjobName:      "non-existent",
 		CronjobNamespace: "default",
-	})
+	}))
 	if err == nil {
 		t.Error("expected error for non-existent cronjob, got nil")
 	}
 }
 
 func TestGetJobYAML(t *testing.T) {
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	job := testutil.NewJobBuilder().
 		WithName("test-job").
 		WithNamespace("default").
 		Build()
 
-	clientSet := fake.NewClientset(job)
-	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := setupTestInformerStore(t, clientSet, "default")
-	sk8lServer.SetStore(st)
-	sk8lServer.SetK8sClient(k8sClient)
+	client, _ := newTestConnectClient(t, "default", job)
 
-	client := protos.NewCronjobClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
 
-	// Success case
-	yamlResp, err := client.GetJobYAML(ctx, &protos.JobRequest{
+	// Success case.
+	yamlResp, err := client.GetJobYAML(ctx, connect.NewRequest(&protos.JobRequest{
 		JobName:      "test-job",
 		JobNamespace: "default",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("GetJobYAML failed: %v", err)
 	}
-	if yamlResp.Job == "" {
+	if yamlResp.Msg.GetJob() == "" {
 		t.Error("expected non-empty Job YAML")
 	}
 
-	// Error case (not found)
-	_, err = client.GetJobYAML(ctx, &protos.JobRequest{
+	// Error case (not found).
+	_, err = client.GetJobYAML(ctx, connect.NewRequest(&protos.JobRequest{
 		JobName:      "non-existent-job",
 		JobNamespace: "default",
-	})
+	}))
 	if err == nil {
 		t.Error("expected error for non-existent job, got nil")
 	}
 }
 
 func TestGetPodYAML(t *testing.T) {
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
@@ -265,52 +177,34 @@ func TestGetPodYAML(t *testing.T) {
 		},
 	}
 
-	clientSet := fake.NewClientset(pod)
-	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := setupTestInformerStore(t, clientSet, "default")
-	sk8lServer.SetStore(st)
-	sk8lServer.SetK8sClient(k8sClient)
+	client, _ := newTestConnectClient(t, "default", pod)
 
-	client := protos.NewCronjobClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
 
-	// Success case
-	yamlResp, err := client.GetPodYAML(ctx, &protos.PodRequest{
+	// Success case.
+	yamlResp, err := client.GetPodYAML(ctx, connect.NewRequest(&protos.PodRequest{
 		PodName:      "test-pod",
 		PodNamespace: "default",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("GetPodYAML failed: %v", err)
 	}
-	if yamlResp.Pod == "" {
+	if yamlResp.Msg.GetPod() == "" {
 		t.Error("expected non-empty Pod YAML")
 	}
 
-	// Error case (not found)
-	_, err = client.GetPodYAML(ctx, &protos.PodRequest{
+	// Error case (not found).
+	_, err = client.GetPodYAML(ctx, connect.NewRequest(&protos.PodRequest{
 		PodName:      "non-existent-pod",
 		PodNamespace: "default",
-	})
+	}))
 	if err == nil {
 		t.Error("expected error for non-existent pod, got nil")
 	}
 }
 
 func TestGetCronjosbDB(t *testing.T) {
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	client := protos.NewCronjobClient(conn)
-
 	cronjob1 := testutil.NewCronJobBuilder().
 		WithName("cronjob1").
 		WithNamespace("sk8l").
@@ -325,16 +219,16 @@ func TestGetCronjosbDB(t *testing.T) {
 		WithItems(cronjob1, cronjob2).
 		Build()
 
-	clientSet := fake.NewClientset(cronjob1, cronjob2)
-	k8sClient := k8s.NewClientWithInterface(clientSet)
-	st := setupTestInformerStore(t, clientSet, "sk8l")
-	sk8lServer.SetStore(st)
-	sk8lServer.SetK8sClient(k8sClient)
+	client, _ := newTestConnectClient(t, "sk8l", cronjob1, cronjob2)
 
-	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
+	defer cancel()
+
+	stream, err := client.GetCronjobs(ctx, connect.NewRequest(&protos.CronjobsRequest{}))
 	if err != nil {
 		t.Fatalf("GetCronjobs RPC failed: %v", err)
 	}
+	defer stream.Close()
 
 	cronJobResponse := drainCronjobStream(t, stream, cancel, len(cronjobList.Items))
 
@@ -348,29 +242,27 @@ func TestGetCronjosbDB(t *testing.T) {
 	}
 }
 
-func drainCronjobStream(t *testing.T, stream protos.Cronjob_GetCronjobsClient, cancel context.CancelFunc, expected int) *protos.CronjobsResponse {
+func drainCronjobStream(
+	t *testing.T,
+	stream *connect.ServerStreamForClient[protos.CronjobsResponse],
+	cancel context.CancelFunc,
+	expected int,
+) *protos.CronjobsResponse {
 	t.Helper()
 	result := &protos.CronjobsResponse{}
-	for {
-		resp, recvErr := stream.Recv()
-		if errors.Is(recvErr, io.EOF) || status.Code(recvErr) == codes.Canceled {
-			break
-		}
-		if recvErr != nil {
-			t.Errorf("unexpected stream error: %v", recvErr)
-			break
-		}
-		result.Cronjobs = append(result.Cronjobs, resp.Cronjobs...)
+	for stream.Receive() {
+		result.Cronjobs = append(result.Cronjobs, stream.Msg().Cronjobs...)
 		if len(result.Cronjobs) >= expected {
 			cancel()
-			for {
-				_, drainErr := stream.Recv()
-				if drainErr != nil {
-					break
-				}
+			for stream.Receive() {
 			}
 			break
 		}
+	}
+	if err := stream.Err(); err != nil &&
+		!errors.Is(err, context.Canceled) &&
+		connect.CodeOf(err) != connect.CodeCanceled {
+		t.Errorf("unexpected stream error: %v", err)
 	}
 	return result
 }
@@ -410,31 +302,12 @@ func TestGetCronjobsService(t *testing.T) {
 		WithCronjob(*cronjob).
 		Build()
 
-	clientSet := fake.NewClientset(job, jobTwo, cronjob)
-	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
-	st := setupTestInformerStore(t, clientSet, "default")
-	sk8lServer.SetStore(st)
-	sk8lServer.SetK8sClient(k8sClient)
+	client, clientSet := newTestConnectClient(t, "default", job, jobTwo, cronjob)
 
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testConnectTimeout)
 	defer cancel()
 
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-
-	defer conn.Close()
-
-	client := protos.NewCronjobClient(conn)
 	cronJobs, err := clientSet.BatchV1().CronJobs("default").List(ctx, metav1.ListOptions{})
-
 	if err != nil {
 		t.Errorf("failed to list CronJobs in namespace %q: %v", "default", err)
 	}
@@ -443,10 +316,11 @@ func TestGetCronjobsService(t *testing.T) {
 		t.Error("expected cronJobs to exist in the cluster")
 	}
 
-	stream, err := client.GetCronjobs(ctx, &protos.CronjobsRequest{})
+	stream, err := client.GetCronjobs(ctx, connect.NewRequest(&protos.CronjobsRequest{}))
 	if err != nil {
 		t.Fatalf("GetCronjobs failed: %v", err)
 	}
+	defer stream.Close()
 
 	cronJobsResponse := drainCronjobStream(t, stream, cancel, len(cronJobs.Items))
 
@@ -554,8 +428,7 @@ func TestGetCronjobs_NoConcurrentRace(t *testing.T) {
 	clientSet := fake.NewClientset(objs...)
 	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
 	st := setupTestInformerStore(t, clientSet, "default")
-	sk8lServer.SetStore(st)
-	sk8lServer.SetK8sClient(k8sClient)
+	srv := NewSk8lServer(st, k8sClient, nil)
 
 	jobsMapped := map[string][]*batchv1.Job{}
 
@@ -567,8 +440,8 @@ func TestGetCronjobs_NoConcurrentRace(t *testing.T) {
 	for _, item := range cronjobList.Items {
 		go func(cj batchv1.CronJob) {
 			defer wg.Done()
-			jobs := sk8lServer.jobsForCronjob(jobsMapped, cj.Name)
-			resp := sk8lServer.cronJobResponse(cj, jobs)
+			jobs := srv.jobsForCronjob(jobsMapped, cj.Name)
+			resp := srv.cronJobResponse(cj, jobs)
 			mu.Lock()
 			cronjobs = append(cronjobs, resp)
 			mu.Unlock()
@@ -587,8 +460,7 @@ func TestAllAndRunningJobsAnPods_NoConcurrentRace(t *testing.T) {
 	clientSet := fake.NewClientset()
 	k8sClient := k8s.NewClientWithInterface(clientSet, k8s.WithNamespace("default"))
 	st := setupTestInformerStore(t, clientSet, "default")
-	sk8lServer.SetStore(st)
-	sk8lServer.SetK8sClient(k8sClient)
+	srv := NewSk8lServer(st, k8sClient, nil)
 
 	const numJobs = 10
 	jobs := make([]*batchv1.Job, 0, numJobs)
@@ -598,7 +470,7 @@ func TestAllAndRunningJobsAnPods_NoConcurrentRace(t *testing.T) {
 			Build())
 	}
 
-	allJobs, allPods, runningJobs, runningPods := sk8lServer.allAndRunningJobsAnPods(jobs, "")
+	allJobs, allPods, runningJobs, runningPods := srv.allAndRunningJobsAnPods(jobs, "")
 
 	if len(allJobs) != numJobs {
 		t.Errorf("expected %d job responses, got %d", numJobs, len(allJobs))
