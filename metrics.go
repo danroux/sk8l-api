@@ -15,7 +15,13 @@ import (
 
 // metricsRefreshInterval is the periodic refresh used in addition to store change
 // notifications, so time-derived values (e.g. the duration of running jobs) keep advancing.
-const metricsRefreshInterval = streamHeartbeatInterval
+const (
+	metricsRefreshInterval = streamHeartbeatInterval
+
+	metricLabelNamespace = "namespace"
+	metricLabelCronjob   = "cronjob"
+	metricLabelStatus    = "status"
+)
 
 var (
 	metricNamespace = "sk8l"
@@ -35,7 +41,7 @@ var (
 			Name:      "cronjobs_count",
 			Help:      "Current count of cronjobs grouped by namespace and status (registered, running, failing, completed).",
 		},
-		[]string{"namespace", "status"},
+		[]string{metricLabelNamespace, metricLabelStatus},
 	)
 
 	// cronjobLastRunStatusGauge tracks the latest run status per cronjob.
@@ -45,7 +51,7 @@ var (
 			Name:      "cronjob_last_run_status",
 			Help:      "Status of the last execution of a cronjob (1 if true, 0 if false).",
 		},
-		[]string{"namespace", "cronjob", "status"},
+		[]string{metricLabelNamespace, metricLabelCronjob, metricLabelStatus},
 	)
 
 	// cronjobLastRunDurationGauge tracks the duration of the latest cronjob execution.
@@ -55,7 +61,7 @@ var (
 			Name:      "cronjob_last_run_duration_seconds",
 			Help:      "Duration in seconds of the latest execution of a cronjob.",
 		},
-		[]string{"namespace", "cronjob"},
+		[]string{metricLabelNamespace, metricLabelCronjob},
 	)
 
 	// cronjobActiveJobsGauge tracks active child jobs per cronjob.
@@ -65,7 +71,7 @@ var (
 			Name:      "cronjob_active_jobs",
 			Help:      "Number of currently active child jobs for a cronjob.",
 		},
-		[]string{"namespace", "cronjob"},
+		[]string{metricLabelNamespace, metricLabelCronjob},
 	)
 
 	// cronjobJobsCountGauge tracks the count of child jobs by status.
@@ -75,7 +81,7 @@ var (
 			Name:      "cronjob_jobs_count",
 			Help:      "Count of retained child jobs for a cronjob by state (succeeded, failed).",
 		},
-		[]string{"namespace", "cronjob", "status"},
+		[]string{metricLabelNamespace, metricLabelCronjob, metricLabelStatus},
 	)
 
 	// cronjobInfoGauge exports metadata and configuration for a cronjob.
@@ -85,7 +91,7 @@ var (
 			Name:      "cronjob_info",
 			Help:      "Metadata and configuration for a cronjob (constant value of 1).",
 		},
-		[]string{"namespace", "cronjob", "schedule", "suspend"},
+		[]string{metricLabelNamespace, metricLabelCronjob, "schedule", "suspend"},
 	)
 )
 

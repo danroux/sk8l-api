@@ -145,17 +145,15 @@ func (s *Sk8lServer) buildCronjobResponses(ctx context.Context, st store.Store) 
 	cronjobs := make([]*protos.CronjobResponse, 0, n)
 
 	var mu sync.Mutex
-	wg := sync.WaitGroup{}
-	wg.Add(n)
+	var wg sync.WaitGroup
 	for _, cronjobItem := range cronJobList.Items {
-		go func(cronjobItem batchv1.CronJob) {
-			defer wg.Done()
+		wg.Go(func() {
 			jobsForCronjob := s.jobsForCronjob(jobsMapped, cronjobItem.Name)
 			cronjob := s.cronJobResponse(cronjobItem, jobsForCronjob)
 			mu.Lock()
 			cronjobs = append(cronjobs, cronjob)
 			mu.Unlock()
-		}(cronjobItem)
+		})
 	}
 	wg.Wait()
 
@@ -384,14 +382,15 @@ func (s *Sk8lServer) streamCronjobPods(
 
 		sortPodResponses(cronjobResponse.JobsPods)
 
-		if err := stream.Send(&protos.CronjobPodsResponse{
+		err = stream.Send(&protos.CronjobPodsResponse{
 			Pods: cronjobResponse.JobsPods,
 			Cronjob: &protos.CronjobResponse{
 				Name:      cronjob.Name,
 				Namespace: cronjob.Namespace,
 				Jobs:      cronjobResponse.Jobs,
 			},
-		}); err != nil {
+		})
+		if err != nil {
 			if isClientCanceled(ctx, err) {
 				log.Debug().Str("operation", "GetCronjobPods").Msg("client canceled stream; aborting stream.Send")
 				return nil
@@ -675,12 +674,10 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(
 	runningPods := make([]*protos.PodResponse, 0)
 
 	var mu sync.Mutex
-	wg := sync.WaitGroup{}
-	wg.Add(jn)
+	var wg sync.WaitGroup
 
 	for _, batchJob := range jobs {
-		go func(batchJob *batchv1.Job) {
-			defer wg.Done()
+		wg.Go(func() {
 			jobResponse := s.buildJobResponse(batchJob)
 
 			running := jobResponse.Status.Active > 0
@@ -699,7 +696,7 @@ func (s *Sk8lServer) allAndRunningJobsAnPods(
 			}
 			runningPods = append(runningPods, runningPodsList...)
 			mu.Unlock()
-		}(batchJob)
+		})
 	}
 	wg.Wait()
 
