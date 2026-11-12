@@ -34,9 +34,9 @@ go-out:
 	CGO_ENABLED=0 GOEXPERIMENT=loopvar GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags $(GO_LDFLAGS) -o ./sk8l .
 
 PROTOC_VERSION ?= 36.2
-PROTOC_GEN_GO_VERSION ?= v1.36.12
+PROTOC_GEN_GO_VERSION ?= $(shell go list -m -f '{{.Version}}' google.golang.org/protobuf)
 PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.2
-PROTOC_GEN_CONNECT_GO_VERSION ?= v1.21.1
+PROTOC_GEN_CONNECT_GO_VERSION ?= $(shell go list -m -f '{{.Version}}' connectrpc.com/connect)
 PROTOC_INSTALL_DIR ?= $(shell go env GOPATH)
 
 .PHONY: proto-tools
@@ -48,6 +48,15 @@ proto-tools: ## Install pinned protoc and Go protobuf plugins into PROTOC_INSTAL
 		PROTOC_INSTALL_DIR="$(PROTOC_INSTALL_DIR)" \
 		GOBIN="$(or $(GOBIN),$(PROTOC_INSTALL_DIR)/bin)" \
 		bash ./ci/install_proto_tools.sh
+
+.PHONY: proto-tools-latest
+proto-tools-latest: ## Print pinned vs latest versions of protoc and protoc-gen-go-grpc
+	@printf 'PROTOC_VERSION:            pinned=%s  latest=%s\n' \
+		"$(PROTOC_VERSION)" \
+		"$$(curl -fsSL https://api.github.com/repos/protocolbuffers/protobuf/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')"
+	@printf 'PROTOC_GEN_GO_GRPC_VERSION: pinned=%s  latest=%s\n' \
+		"$(PROTOC_GEN_GO_GRPC_VERSION)" \
+		"$$(go list -m -f '{{.Version}}' google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest)"
 
 .PHONY: proto
 proto: ## Generate protobuf, gRPC, and Connect-Go stubs from protos/*.proto

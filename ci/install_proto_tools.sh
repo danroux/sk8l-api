@@ -4,9 +4,9 @@ set -euo pipefail
 # Install pinned protoc and Go protobuf codegen plugins.
 # Override versions or install paths via environment variables or Makefile args.
 PROTOC_VERSION="${PROTOC_VERSION:-36.2}"
-PROTOC_GEN_GO_VERSION="${PROTOC_GEN_GO_VERSION:-v1.36.12}"
+PROTOC_GEN_GO_VERSION="${PROTOC_GEN_GO_VERSION:-$(go list -m -f '{{.Version}}' google.golang.org/protobuf)}"
 PROTOC_GEN_GO_GRPC_VERSION="${PROTOC_GEN_GO_GRPC_VERSION:-v1.6.2}"
-PROTOC_GEN_CONNECT_GO_VERSION="${PROTOC_GEN_CONNECT_GO_VERSION:-v1.21.1}"
+PROTOC_GEN_CONNECT_GO_VERSION="${PROTOC_GEN_CONNECT_GO_VERSION:-$(go list -m -f '{{.Version}}' connectrpc.com/connect)}"
 
 INSTALL_BASE="${PROTOC_INSTALL_DIR:-$(go env GOPATH)}"
 BIN_DIR="${GOBIN:-$INSTALL_BASE/bin}"

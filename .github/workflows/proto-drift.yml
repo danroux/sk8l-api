@@ -1,0 +1,40 @@
+name: Proto drift
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'protos/**'
+      - 'Makefile'
+      - 'ci/check_proto_drift.sh'
+      - 'ci/install_proto_tools.sh'
+      - 'go.mod'
+      - '.github/workflows/proto-drift.yml'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'protos/**'
+      - 'Makefile'
+      - 'ci/check_proto_drift.sh'
+      - 'ci/install_proto_tools.sh'
+      - 'go.mod'
+      - '.github/workflows/proto-drift.yml'
+
+jobs:
+  proto-drift:
+    runs-on: ubuntu-latest
+    name: Check proto drift
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '^1.27'
+          check-latest: false
+          cache: false
+      - name: Check proto drift
+        run: bash ci/check_proto_drift.sh
