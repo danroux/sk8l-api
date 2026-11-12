@@ -496,16 +496,23 @@ linters:
             - ""
     unparam:
       check-exported: false
+    wrapcheck:
+      extra-ignore-sigs:
+        - connectrpc.com/connect.NewError(
   exclusions:
     generated: lax
     rules:
       - linters:
           - dupl
           - errcheck
+          - goconst
           - gocyclo
           - gosec
           - revive
         path: _test\.go
+      - linters:
+          - goconst
+        path: ^testutil/
       - linters:
           - gosec
         path: vendor/github.com/stretchr/testify/

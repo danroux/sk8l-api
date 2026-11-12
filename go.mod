@@ -1,6 +1,6 @@
 module github.com/danroux/sk8l
 
-go 1.26.0
+go 1.27.4
 
 require (
 	connectrpc.com/connect v1.21.1

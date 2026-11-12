@@ -39,7 +39,7 @@ func newHTTPTestServer(t *testing.T) (*Sk8lServer, func()) {
 }
 
 func TestHealthzHandler(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
 	rr := httptest.NewRecorder()
 
 	healthzHandler(rr, req)
@@ -65,7 +65,7 @@ func TestReadyzHandler_Healthy(t *testing.T) {
 	s, teardown := newHTTPTestServer(t)
 	defer teardown()
 
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
 
 	readyzHandler(s)(rr, req)
@@ -88,7 +88,7 @@ func TestReadyzHandler_Degraded(t *testing.T) {
 	// Close the DB before the request to simulate a degraded state.
 	teardown()
 
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
 
 	readyzHandler(s)(rr, req)
@@ -126,7 +126,7 @@ func TestSetupHTTPRoutes(t *testing.T) {
 
 	for _, tc := range routes {
 		t.Run(tc.path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.path, nil)
 			rr := httptest.NewRecorder()
 			mux.ServeHTTP(rr, req)
 			if rr.Code != tc.expectedStatus {
