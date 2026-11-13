@@ -1,0 +1,3 @@
+```release-note:bug
+go: Replace non-atomic GaugeVec resets with atomic Prometheus metric snapshots, suppress pre-sync zeroes, and debounce metrics refreshes on informer bursts
+```
