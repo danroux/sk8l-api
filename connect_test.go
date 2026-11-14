@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -47,6 +48,7 @@ const (
 	testTLSServerName         = "localhost"
 	testConnectTimeoutSeconds = 5
 	testConnectTimeout        = testConnectTimeoutSeconds * time.Second
+	testShutdownGraceTimeout  = 500 * time.Millisecond
 )
 
 var (
@@ -670,7 +672,7 @@ func TestNativeGRPCOverTLSHTTPServer(t *testing.T) {
 	setupHTTPRoutes(mux, srv, nil)
 
 	bl := bufconn.Listen(bufSize)
-	httpSrv := newHTTPServer("", mux, serverTLS)
+	httpSrv := newHTTPServer(t.Context(), "", mux, serverTLS)
 	go func() {
 		_ = httpSrv.Serve(tls.NewListener(bl, serverTLS))
 	}()
@@ -765,7 +767,7 @@ func TestPlaintextH2CHTTPServer(t *testing.T) {
 	setupHTTPRoutes(mux, srv, nil)
 
 	bl := bufconn.Listen(bufSize)
-	httpSrv := newHTTPServer("", mux, nil)
+	httpSrv := newHTTPServer(t.Context(), "", mux, nil)
 	go func() {
 		_ = httpSrv.Serve(bl)
 	}()
@@ -861,4 +863,142 @@ func TestPlaintextH2CHTTPServer(t *testing.T) {
 	if connectResp.StatusCode != http.StatusOK {
 		t.Errorf("POST Connect JSON: expected 200 OK, got %d", connectResp.StatusCode)
 	}
+}
+
+func setupBufconnShutdownTestServer(
+	t *testing.T,
+	baseCtx context.Context,
+) (*http.Server, *bufconn.Listener) {
+	t.Helper()
+	cronjob := testutil.NewCronJobBuilder().
+		WithName(testConnectCronjobName).
+		WithNamespace(testConnectNamespace).
+		Build()
+	clientSet := fake.NewClientset(cronjob)
+	k8sClient := k8s.NewClientWithInterface(clientSet)
+	st := setupTestInformerStore(t, clientSet, testConnectNamespace)
+	srv := NewSk8lServer(st, k8sClient, nil)
+
+	mux := &http.ServeMux{}
+	setupHTTPRoutes(mux, srv, nil)
+
+	bl := bufconn.Listen(bufSize)
+	httpSrv := newHTTPServer(baseCtx, "", mux, nil)
+	go func() {
+		_ = httpSrv.Serve(bl)
+	}()
+	t.Cleanup(func() {
+		_ = httpSrv.Close()
+		_ = bl.Close()
+	})
+
+	return httpSrv, bl
+}
+
+// TestShutdownHTTPServerUnblocksActiveStreams verifies that canceling BaseContext via
+// shutdownHTTPServer terminates long-lived Connect and native gRPC streams immediately
+// instead of blocking http.Server.Shutdown until the shutdown timeout expires.
+func TestShutdownHTTPServerUnblocksActiveStreams(t *testing.T) {
+	t.Run("ConnectStream", func(t *testing.T) {
+		serverCtx, serverCancel := context.WithCancel(t.Context())
+		defer serverCancel()
+		metricsCtx, metricsCancel := context.WithCancel(t.Context())
+		defer metricsCancel()
+
+		httpSrv, bl := setupBufconnShutdownTestServer(t, serverCtx)
+
+		httpClient := &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(dialCtx context.Context, _, _ string) (net.Conn, error) {
+					c, dialErr := bl.DialContext(dialCtx)
+					if dialErr != nil {
+						return nil, fmt.Errorf("connect_test: failed to dial bufconn: %w", dialErr)
+					}
+					return c, nil
+				},
+			},
+		}
+		client := protosconnect.NewCronjobClient(httpClient, testConnectBaseURL)
+		streamCtx, streamCancel := context.WithTimeout(t.Context(), testConnectTimeout)
+		defer streamCancel()
+
+		stream, err := client.GetCronjobs(streamCtx, connect.NewRequest(&protos.CronjobsRequest{}))
+		if err != nil {
+			t.Fatalf("Connect GetCronjobs failed: %v", err)
+		}
+		defer stream.Close()
+		if !stream.Receive() {
+			t.Fatalf("expected initial Connect GetCronjobs message, got err: %v", stream.Err())
+		}
+
+		shortCtx, shortCancel := context.WithTimeout(t.Context(), testShutdownGraceTimeout)
+		defer shortCancel()
+		if err := shutdownHTTPServer(shortCtx, httpSrv, serverCancel, metricsCancel); err != nil {
+			t.Fatalf("shutdownHTTPServer with active Connect stream failed: %v", err)
+		}
+		if !errors.Is(serverCtx.Err(), context.Canceled) {
+			t.Errorf("expected serverCtx canceled, got %v", serverCtx.Err())
+		}
+		if !errors.Is(metricsCtx.Err(), context.Canceled) {
+			t.Errorf("expected metricsCtx canceled, got %v", metricsCtx.Err())
+		}
+		if stream.Receive() {
+			t.Errorf("expected Connect stream to close on shutdown, received unexpected message")
+		}
+		if stream.Err() != nil {
+			t.Errorf("expected clean Connect stream close, got err: %v", stream.Err())
+		}
+	})
+
+	t.Run("NativeGRPCStream", func(t *testing.T) {
+		serverCtx, serverCancel := context.WithCancel(t.Context())
+		defer serverCancel()
+		metricsCtx, metricsCancel := context.WithCancel(t.Context())
+		defer metricsCancel()
+
+		httpSrv, bl := setupBufconnShutdownTestServer(t, serverCtx)
+
+		conn, err := grpc.NewClient(
+			"passthrough:///bufnet",
+			grpc.WithContextDialer(func(dialCtx context.Context, _ string) (net.Conn, error) {
+				c, dialErr := bl.DialContext(dialCtx)
+				if dialErr != nil {
+					return nil, fmt.Errorf("connect_test: failed to dial h2c bufconn: %w", dialErr)
+				}
+				return c, nil
+			}),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			t.Fatalf("grpc.NewClient failed: %v", err)
+		}
+		defer conn.Close()
+
+		streamCtx, streamCancel := context.WithTimeout(t.Context(), testConnectTimeout)
+		defer streamCancel()
+
+		grpcClient := protos.NewCronjobClient(conn)
+		stream, err := grpcClient.GetCronjobs(streamCtx, &protos.CronjobsRequest{})
+		if err != nil {
+			t.Fatalf("native gRPC GetCronjobs failed: %v", err)
+		}
+		if _, err := stream.Recv(); err != nil {
+			t.Fatalf("expected initial gRPC GetCronjobs message, got err: %v", err)
+		}
+
+		shortCtx, shortCancel := context.WithTimeout(t.Context(), testShutdownGraceTimeout)
+		defer shortCancel()
+		if err := shutdownHTTPServer(shortCtx, httpSrv, serverCancel, metricsCancel); err != nil {
+			t.Fatalf("shutdownHTTPServer with active gRPC stream failed: %v", err)
+		}
+		if !errors.Is(serverCtx.Err(), context.Canceled) {
+			t.Errorf("expected serverCtx canceled, got %v", serverCtx.Err())
+		}
+		if !errors.Is(metricsCtx.Err(), context.Canceled) {
+			t.Errorf("expected metricsCtx canceled, got %v", metricsCtx.Err())
+		}
+		if _, recvErr := stream.Recv(); !errors.Is(recvErr, io.EOF) {
+			t.Errorf("expected io.EOF after server shutdown, got %v", recvErr)
+		}
+	})
 }
