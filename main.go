@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -84,13 +85,23 @@ func parseTLSEnabled(raw string) (bool, error) {
 	return enabled, nil
 }
 
-func newHTTPServer(addr string, handler http.Handler, tlsConfig *tls.Config) *http.Server {
+func newHTTPServer(
+	baseCtx context.Context,
+	addr string,
+	handler http.Handler,
+	tlsConfig *tls.Config,
+) *http.Server {
 	srv := &http.Server{
 		Addr:              addr,
 		IdleTimeout:       time.Minute,
 		ReadHeaderTimeout: ReadTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
 		Handler:           handler,
+	}
+	if baseCtx != nil {
+		srv.BaseContext = func(net.Listener) context.Context {
+			return baseCtx
+		}
 	}
 	if tlsConfig != nil {
 		srv.TLSConfig = tlsConfig
@@ -145,18 +156,23 @@ func main() {
 		metricsNamesMap,
 	)
 
+	serverCtx, serverCancel := context.WithCancel(rootCtx)
+	defer serverCancel()
+	metricsCtx, metricsCancel := context.WithCancel(rootCtx)
+	defer metricsCancel()
+
 	mux := &http.ServeMux{}
 	setupHTTPRoutes(mux, sk8lServer, corsOrigins)
-	httpS := newHTTPServer(fmt.Sprintf("0.0.0.0:%s", HTTPPort), mux, serverTLSConfig)
+	httpS := newHTTPServer(serverCtx, fmt.Sprintf("0.0.0.0:%s", HTTPPort), mux, serverTLSConfig)
 
 	log.Info().Bool("tls", tlsEnabled).Msg(fmt.Sprintf("Starting sk8l server %s on %s", Version(), httpS.Addr))
 	errCh := startHTTPServer(httpS)
-	metricsCtx, metricsCancel := context.WithCancel(rootCtx)
 	sk8lServer.Run(metricsCtx)
 
 	log.Info().Msg("Shutdown: setting up")
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(quit)
 	select {
 	case err := <-errCh:
 		log.Error().Err(err).
@@ -165,7 +181,10 @@ func main() {
 		log.Info().
 			Msg(fmt.Sprintf("Shutdown: Got %v signal. sk8l will shut down shortly", sig))
 	}
-	shutdownHTTPServer(rootCtx, httpS, metricsCancel)
+	if err := shutdownHTTPServer(rootCtx, httpS, serverCancel, metricsCancel); err != nil {
+		log.Error().Err(err).Msg("Shutdown: error during httpS shutdown")
+	}
+	log.Info().Msg("Shutdown: sk8l has stopped")
 }
 
 func startHTTPServer(httpS *http.Server) <-chan error {
@@ -187,13 +206,22 @@ func startHTTPServer(httpS *http.Server) <-chan error {
 func shutdownHTTPServer(
 	rootCtx context.Context,
 	httpS *http.Server,
+	serverCancel context.CancelFunc,
 	metricsCancel context.CancelFunc,
-) {
+) error {
+	// Cancel active request contexts (e.g. open server streams) before Shutdown
+	// drains connections so handlers exit immediately instead of blocking until shutdownTimeout.
+	if serverCancel != nil {
+		serverCancel()
+	}
 	shutdownCtx, shutdownCancel := context.WithTimeout(rootCtx, shutdownTimeout)
 	defer shutdownCancel()
-	if err := httpS.Shutdown(shutdownCtx); err != nil {
-		log.Error().Err(err).Msg("Shutdown: error during httpS shutdown")
+	err := httpS.Shutdown(shutdownCtx)
+	if metricsCancel != nil {
+		metricsCancel()
 	}
-	metricsCancel()
-	log.Info().Msg("Shutdown: sk8l has stopped")
+	if err != nil {
+		return fmt.Errorf("shutdown http server: %w", err)
+	}
+	return nil
 }

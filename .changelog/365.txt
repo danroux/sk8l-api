@@ -1,0 +1,3 @@
+```release-note:bug
+go: Cancel active request contexts via BaseContext before HTTP shutdown so open streams exit immediately
+```
