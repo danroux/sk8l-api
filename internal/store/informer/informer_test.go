@@ -18,6 +18,7 @@ const (
 	testTimeout    = 5 * time.Second
 	testNamespace  = "test-ns"
 	expectedTwo    = 2
+	expectedThree  = 3
 	expectedSingle = 1
 )
 
@@ -192,7 +193,7 @@ func TestFindJobPodsForJob(t *testing.T) {
 				"job-name":                     "job-a",
 			},
 		},
-		// StartTime is nil: should be omitted for consistency with previous store
+		// StartTime is nil: pending/unscheduled pods must still be included
 	}
 
 	podOtherJob := &corev1.Pod{
@@ -229,8 +230,18 @@ func TestFindJobPodsForJob(t *testing.T) {
 		t.Fatalf("FindJobPodsForJob failed: %v", err)
 	}
 
-	if len(pods.Items) != expectedTwo {
-		t.Fatalf("expected %d pods for job-a, got %d", expectedTwo, len(pods.Items))
+	if len(pods.Items) != expectedThree {
+		t.Fatalf("expected %d pods for job-a, got %d", expectedThree, len(pods.Items))
+	}
+
+	got := make(map[string]bool, len(pods.Items))
+	for _, p := range pods.Items {
+		got[p.Name] = true
+	}
+	for _, want := range []string{"job-a-pod-1", "job-a-pod-2", "job-a-pending"} {
+		if !got[want] {
+			t.Errorf("expected pod %q in result, got %v", want, got)
+		}
 	}
 
 	// Test nil job input

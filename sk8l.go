@@ -770,6 +770,7 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 		JobsPods:           jobPodsForCronJob,
 		Spec:               mapper.MapCronJobSpec(cronJob.Spec),
 		Failed:             cjFailed,
+		PodSpec:            mapper.MapPodSpec(cronJob.Spec.JobTemplate.Spec.Template.Spec),
 	}
 }
 

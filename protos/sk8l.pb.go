@@ -2703,6 +2703,7 @@ type CronjobResponse struct {
 	CurrentDuration    int64                         `protobuf:"varint,16,opt,name=currentDuration,json=current_duration,proto3" json:"currentDuration,omitempty"`
 	Spec               *CronJobSpecResponse          `protobuf:"bytes,17,opt,name=spec,proto3" json:"spec,omitempty"`
 	Failed             bool                          `protobuf:"varint,18,opt,name=failed,proto3" json:"failed,omitempty"`
+	PodSpec            *PodSpecResponse              `protobuf:"bytes,19,opt,name=podSpec,json=pod_spec,proto3" json:"podSpec,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -2854,6 +2855,13 @@ func (x *CronjobResponse) GetFailed() bool {
 		return x.Failed
 	}
 	return false
+}
+
+func (x *CronjobResponse) GetPodSpec() *PodSpecResponse {
+	if x != nil {
+		return x.PodSpec
+	}
+	return nil
 }
 
 type CronjobPodsResponse struct {
@@ -3246,7 +3254,7 @@ const file_sk8l_proto_rawDesc = "" +
 	"containers\x18\x02 \x03(\v2\x17.sk8l.ContainerResponseR\n" +
 	"containers\x12J\n" +
 	"\x13ephemeralContainers\x18\x03 \x03(\v2\x17.sk8l.ContainerResponseR\x14ephemeral_containers\x12H\n" +
-	"\x12terminationReasons\x18\x04 \x03(\v2\x17.sk8l.TerminationReasonR\x13termination_reasons\"\xbb\x06\n" +
+	"\x12terminationReasons\x18\x04 \x03(\v2\x17.sk8l.TerminationReasonR\x13termination_reasons\"\xed\x06\n" +
 	"\x0fCronjobResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +
@@ -3267,7 +3275,8 @@ const file_sk8l_proto_rawDesc = "" +
 	"\flastDuration\x18\x0f \x01(\x03R\rlast_duration\x12)\n" +
 	"\x0fcurrentDuration\x18\x10 \x01(\x03R\x10current_duration\x12-\n" +
 	"\x04spec\x18\x11 \x01(\v2\x19.sk8l.CronJobSpecResponseR\x04spec\x12\x16\n" +
-	"\x06failed\x18\x12 \x01(\bR\x06failed\x1a]\n" +
+	"\x06failed\x18\x12 \x01(\bR\x06failed\x120\n" +
+	"\apodSpec\x18\x13 \x01(\v2\x15.sk8l.PodSpecResponseR\bpod_spec\x1a]\n" +
 	"\x16ContainerCommandsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12-\n" +
 	"\x05value\x18\x02 \x01(\v2\x17.sk8l.ContainerCommandsR\x05value:\x028\x01\"m\n" +
@@ -3415,33 +3424,34 @@ var file_sk8l_proto_depIdxs = []int32{
 	33, // 51: sk8l.CronjobResponse.runningJobsPods:type_name -> sk8l.PodResponse
 	33, // 52: sk8l.CronjobResponse.jobsPods:type_name -> sk8l.PodResponse
 	26, // 53: sk8l.CronjobResponse.spec:type_name -> sk8l.CronJobSpecResponse
-	33, // 54: sk8l.CronjobPodsResponse.pods:type_name -> sk8l.PodResponse
-	38, // 55: sk8l.CronjobPodsResponse.cronjob:type_name -> sk8l.CronjobResponse
-	28, // 56: sk8l.JobList.Items:type_name -> sk8l.JobResponse
-	48, // 57: sk8l.MappedJobs.JobLists:type_name -> sk8l.MappedJobs.JobListsEntry
-	34, // 58: sk8l.CronjobResponse.ContainerCommandsEntry.value:type_name -> sk8l.ContainerCommands
-	40, // 59: sk8l.MappedJobs.JobListsEntry.value:type_name -> sk8l.JobList
-	0,  // 60: sk8l.Cronjob.GetCronjobs:input_type -> sk8l.CronjobsRequest
-	1,  // 61: sk8l.Cronjob.GetCronjob:input_type -> sk8l.CronjobRequest
-	2,  // 62: sk8l.Cronjob.GetCronjobPods:input_type -> sk8l.CronjobPodsRequest
-	3,  // 63: sk8l.Cronjob.GetJobs:input_type -> sk8l.JobsRequest
-	1,  // 64: sk8l.Cronjob.GetCronjobYAML:input_type -> sk8l.CronjobRequest
-	4,  // 65: sk8l.Cronjob.GetJobYAML:input_type -> sk8l.JobRequest
-	5,  // 66: sk8l.Cronjob.GetPodYAML:input_type -> sk8l.PodRequest
-	6,  // 67: sk8l.Cronjob.GetDashboardAnnotations:input_type -> sk8l.DashboardAnnotationsRequest
-	27, // 68: sk8l.Cronjob.GetCronjobs:output_type -> sk8l.CronjobsResponse
-	38, // 69: sk8l.Cronjob.GetCronjob:output_type -> sk8l.CronjobResponse
-	39, // 70: sk8l.Cronjob.GetCronjobPods:output_type -> sk8l.CronjobPodsResponse
-	29, // 71: sk8l.Cronjob.GetJobs:output_type -> sk8l.JobsResponse
-	30, // 72: sk8l.Cronjob.GetCronjobYAML:output_type -> sk8l.CronjobYAMLResponse
-	31, // 73: sk8l.Cronjob.GetJobYAML:output_type -> sk8l.JobYAMLResponse
-	32, // 74: sk8l.Cronjob.GetPodYAML:output_type -> sk8l.PodYAMLResponse
-	7,  // 75: sk8l.Cronjob.GetDashboardAnnotations:output_type -> sk8l.DashboardAnnotationsResponse
-	68, // [68:76] is the sub-list for method output_type
-	60, // [60:68] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	22, // 54: sk8l.CronjobResponse.podSpec:type_name -> sk8l.PodSpecResponse
+	33, // 55: sk8l.CronjobPodsResponse.pods:type_name -> sk8l.PodResponse
+	38, // 56: sk8l.CronjobPodsResponse.cronjob:type_name -> sk8l.CronjobResponse
+	28, // 57: sk8l.JobList.Items:type_name -> sk8l.JobResponse
+	48, // 58: sk8l.MappedJobs.JobLists:type_name -> sk8l.MappedJobs.JobListsEntry
+	34, // 59: sk8l.CronjobResponse.ContainerCommandsEntry.value:type_name -> sk8l.ContainerCommands
+	40, // 60: sk8l.MappedJobs.JobListsEntry.value:type_name -> sk8l.JobList
+	0,  // 61: sk8l.Cronjob.GetCronjobs:input_type -> sk8l.CronjobsRequest
+	1,  // 62: sk8l.Cronjob.GetCronjob:input_type -> sk8l.CronjobRequest
+	2,  // 63: sk8l.Cronjob.GetCronjobPods:input_type -> sk8l.CronjobPodsRequest
+	3,  // 64: sk8l.Cronjob.GetJobs:input_type -> sk8l.JobsRequest
+	1,  // 65: sk8l.Cronjob.GetCronjobYAML:input_type -> sk8l.CronjobRequest
+	4,  // 66: sk8l.Cronjob.GetJobYAML:input_type -> sk8l.JobRequest
+	5,  // 67: sk8l.Cronjob.GetPodYAML:input_type -> sk8l.PodRequest
+	6,  // 68: sk8l.Cronjob.GetDashboardAnnotations:input_type -> sk8l.DashboardAnnotationsRequest
+	27, // 69: sk8l.Cronjob.GetCronjobs:output_type -> sk8l.CronjobsResponse
+	38, // 70: sk8l.Cronjob.GetCronjob:output_type -> sk8l.CronjobResponse
+	39, // 71: sk8l.Cronjob.GetCronjobPods:output_type -> sk8l.CronjobPodsResponse
+	29, // 72: sk8l.Cronjob.GetJobs:output_type -> sk8l.JobsResponse
+	30, // 73: sk8l.Cronjob.GetCronjobYAML:output_type -> sk8l.CronjobYAMLResponse
+	31, // 74: sk8l.Cronjob.GetJobYAML:output_type -> sk8l.JobYAMLResponse
+	32, // 75: sk8l.Cronjob.GetPodYAML:output_type -> sk8l.PodYAMLResponse
+	7,  // 76: sk8l.Cronjob.GetDashboardAnnotations:output_type -> sk8l.DashboardAnnotationsResponse
+	69, // [69:77] is the sub-list for method output_type
+	61, // [61:69] is the sub-list for method input_type
+	61, // [61:61] is the sub-list for extension type_name
+	61, // [61:61] is the sub-list for extension extendee
+	0,  // [0:61] is the sub-list for field type_name
 }
 
 func init() { file_sk8l_proto_init() }
