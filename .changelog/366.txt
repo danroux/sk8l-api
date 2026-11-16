@@ -1,0 +1,7 @@
+```release-note:bug
+go: Include Pending and Unschedulable Job Pods with nil Status.StartTime in Store.FindJobPodsForJob responses
+```
+
+```release-note:enhancement
+api: Expose pod_spec (PodSpecResponse) on CronjobResponse so container resources and scheduling constraints are available on CronJob views
+```

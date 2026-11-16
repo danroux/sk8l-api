@@ -330,6 +330,7 @@ message CronjobResponse {
   int64 currentDuration = 16 [json_name="current_duration"];
   CronJobSpecResponse spec = 17 [json_name="spec"];
   bool failed = 18 [json_name="failed"];
+  PodSpecResponse podSpec = 19 [json_name="pod_spec"];
 }
 
 message CronjobPodsResponse {

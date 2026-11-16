@@ -445,9 +445,7 @@ func (s *Store) FindJobPodsForJob(job *batchv1.Job) (*corev1.PodList, error) {
 		if !ok {
 			continue
 		}
-		if pod.Status.StartTime != nil {
-			items = append(items, *pod.DeepCopy())
-		}
+		items = append(items, *pod.DeepCopy())
 	}
 	return &corev1.PodList{Items: items}, nil
 }

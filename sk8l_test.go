@@ -22,6 +22,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -407,6 +408,108 @@ func TestCronJobsResponseWithPods(t *testing.T) {
 	cmp.Equal(expectedPods, pods.Items)
 }
 
+func TestCronJobsResponse_PodSpecAndPendingPod(t *testing.T) {
+	jobTemplate := batchv1.JobTemplateSpec{
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					NodeSelector: map[string]string{"disktype": "ssd"},
+					Containers: []corev1.Container{
+						{
+							Name:  "worker",
+							Image: "busybox:1.36-glibc",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cronjob := testutil.NewCronJobBuilder().
+		WithName("unsched-cj").
+		WithNamespace("sk8l").
+		WithJobTemplate(jobTemplate).
+		Build()
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "unsched-job",
+			Namespace: "sk8l",
+		},
+		Status: batchv1.JobStatus{
+			Active: 1,
+		},
+	}
+
+	pendingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pending-pod",
+			Namespace: "sk8l",
+			Labels: map[string]string{
+				"batch.kubernetes.io/job-name": "unsched-job",
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			// StartTime intentionally nil
+			Conditions: []corev1.PodCondition{
+				{
+					Type:    corev1.PodScheduled,
+					Status:  corev1.ConditionFalse,
+					Reason:  "Unschedulable",
+					Message: "0/1 nodes are available: 1 Insufficient cpu.",
+				},
+			},
+		},
+	}
+
+	cs := fake.NewClientset(cronjob, job, pendingPod)
+	st := setupTestInformerStore(t, cs, "sk8l")
+	srv := NewSk8lServer(st, nil, nil)
+
+	resp := srv.cronJobResponse(*cronjob, []*batchv1.Job{job})
+
+	if resp.PodSpec == nil {
+		t.Fatal("expected PodSpec to be populated")
+	}
+	if got := resp.PodSpec.NodeSelector["disktype"]; got != "ssd" {
+		t.Errorf("expected nodeSelector disktype=ssd, got %q", got)
+	}
+	if len(resp.PodSpec.Containers) != 1 {
+		t.Fatalf("expected 1 container in PodSpec, got %d", len(resp.PodSpec.Containers))
+	}
+	res := resp.PodSpec.Containers[0].Resources
+	if res == nil {
+		t.Fatal("expected container Resources to be populated")
+	}
+	if res.Requests["cpu"] != "500m" || res.Requests["memory"] != "256Mi" {
+		t.Errorf("unexpected requests: %v", res.Requests)
+	}
+	if res.Limits["cpu"] != "1" || res.Limits["memory"] != "512Mi" {
+		t.Errorf("unexpected limits: %v", res.Limits)
+	}
+	if len(resp.JobsPods) != 1 {
+		t.Fatalf("expected 1 pod in JobsPods, got %d", len(resp.JobsPods))
+	}
+	if resp.JobsPods[0].Metadata.Name != "pending-pod" || resp.JobsPods[0].Phase != "Pending" {
+		t.Errorf("unexpected pending pod in JobsPods: name=%q phase=%q",
+			resp.JobsPods[0].Metadata.Name, resp.JobsPods[0].Phase)
+	}
+	if len(resp.RunningJobsPods) != 0 {
+		t.Errorf("expected 0 pods in RunningJobsPods, got %d", len(resp.RunningJobsPods))
+	}
+}
+
 // TestGetCronjobs_NoConcurrentRace validates that concurrent goroutines building
 // CronjobResponse objects and appending to the shared slice in GetCronjobs do not
 // produce data races.
@@ -631,6 +734,63 @@ func TestBuildJobPodsResponses_FinishedAt_Success(t *testing.T) {
 	}
 	if len(resp.FailedContainers.Containers) != 0 {
 		t.Errorf("expected 0 failed containers, got %d", len(resp.FailedContainers.Containers))
+	}
+}
+
+func TestBuildJobPodsResponses_PendingUnscheduledPod(t *testing.T) {
+	podList := &corev1.PodList{
+		Items: []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "job-a-pending",
+					Namespace: "default",
+					Labels: map[string]string{
+						"batch.kubernetes.io/job-name": "job-a",
+						"job-name":                     "job-a",
+					},
+				},
+				// StartTime is nil: pending/unscheduled pods must still be included
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{
+						{
+							Type:    corev1.PodScheduled,
+							Status:  corev1.ConditionFalse,
+							Reason:  corev1.PodReasonUnschedulable,
+							Message: "Unschedulable",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	responses := buildJobPodsResponses(podList)
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 pod response, got %d", len(responses))
+	}
+	resp := responses[0]
+
+	if resp.Phase != string(corev1.PodPending) {
+		t.Errorf("expected Phase %q, got %q", corev1.PodPending, resp.Phase)
+	}
+	if resp.Status.StartTime != "" {
+		t.Errorf("expected empty StartTime, got %q", resp.Status.StartTime)
+	}
+	if resp.FinishedAt != "" {
+		t.Errorf("expected empty FinishedAt, got %q", resp.FinishedAt)
+	}
+	if resp.Failed {
+		t.Errorf("expected Failed == false, got true")
+	}
+	if len(resp.Status.Conditions) != 1 {
+		t.Fatalf("expected 1 pod condition, got %d", len(resp.Status.Conditions))
+	}
+	cond := resp.Status.Conditions[0]
+	if cond.Type != string(corev1.PodScheduled) ||
+		cond.Status != string(corev1.ConditionFalse) ||
+		cond.Reason != corev1.PodReasonUnschedulable {
+		t.Errorf("unexpected condition: %+v", cond)
 	}
 }
 
