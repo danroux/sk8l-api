@@ -5,3 +5,4 @@
 charts/
 testdata
 prometheus-local.yml
+var-cache-*

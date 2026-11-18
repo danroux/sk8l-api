@@ -1,0 +1,191 @@
+name: UI Preview Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      ui_pr_number:
+        description: 'sk8l-ui PR number (optional if ui_branch is provided)'
+        required: false
+        type: string
+      ui_branch:
+        description: 'sk8l-ui branch name (used to look up PR number if ui_pr_number is empty)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy-ui-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve sk8l-ui PR number
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.UI_PREVIEW_PAT || secrets.GITHUB_TOKEN }}
+          INPUT_PR: ${{ inputs.ui_pr_number }}
+          INPUT_BRANCH: ${{ inputs.ui_branch }}
+        run: |
+          PR_NUM="$INPUT_PR"
+          if [ -z "$PR_NUM" ] && [ -n "$INPUT_BRANCH" ]; then
+            PR_NUM=$(gh pr list --repo danroux/sk8l-ui --head "$INPUT_BRANCH" --state open --json number --jq '.[0].number // empty')
+          fi
+          if ! [[ "$PR_NUM" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not resolve a numeric sk8l-ui PR number (ui_pr_number='$INPUT_PR', ui_branch='$INPUT_BRANCH')."
+            exit 1
+          fi
+          HEAD_SHA=$(gh pr view "$PR_NUM" --repo danroux/sk8l-ui --json headRefOid --jq '.headRefOid // empty' || true)
+          echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for sk8l-ui preview image in ghcr.io
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ secrets.UI_PREVIEW_PAT || secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ steps.resolve.outputs.head_sha }}
+        run: |
+          PR_NUM="${{ steps.resolve.outputs.pr_number }}"
+          UI_IMAGE="ghcr.io/danroux/sk8l-ui:pre-${PR_NUM}"
+
+          if [ -n "$HEAD_SHA" ]; then
+            echo "Checking for in-progress sk8l-ui runs on commit ${HEAD_SHA}..."
+            for i in $(seq 1 40); do
+              if ! active_runs=$(gh api "repos/danroux/sk8l-ui/actions/runs?head_sha=${HEAD_SHA}&per_page=100" --jq '[.workflow_runs[] | select(.status != "completed")] | length'); then
+                echo "::warning::Could not query sk8l-ui workflow runs; continuing to GHCR manifest check."
+                break
+              fi
+              if [ "$active_runs" -eq 0 ]; then
+                echo "✅ No active sk8l-ui runs remaining for ${HEAD_SHA}."
+                break
+              fi
+              echo "Attempt $i/40: ${active_runs} sk8l-ui run(s) still running for ${HEAD_SHA}. Waiting 15s..."
+              sleep 15
+            done
+          fi
+
+          echo "Waiting for ${UI_IMAGE} to be available in ghcr.io..."
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          found=false
+          for i in $(seq 1 40); do
+            if docker manifest inspect "${UI_IMAGE}" >/dev/null 2>&1; then
+              echo "✅ Image ${UI_IMAGE} is available in ghcr.io!"
+              found=true
+              break
+            fi
+            echo "Attempt $i/40: Image not ready yet in ghcr.io. Waiting 15s..."
+            sleep 15
+          done
+
+          if [ "$found" != "true" ]; then
+            echo "❌ Timed out waiting for ${UI_IMAGE} to be published."
+            exit 1
+          fi
+
+      - name: Checkout sk8l-api
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        id: setup-buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Cache Go build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: var-cache-gocache
+          key: ${{ runner.os }}-go-build-cache-v2-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-build-cache-v2-
+
+      - name: Cache Go module cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: var-cache-gomodcache
+          key: ${{ runner.os }}-go-mod-cache-v2-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-mod-cache-v2-
+
+      - name: Inject Go caches into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@v3.4.0
+        with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          utility-image: ghcr.io/containerd/busybox:latest
+          cache-map: |
+            {
+              "var-cache-gocache": {
+                "target": "/root/.cache/go-build",
+                "id": "gocache"
+              },
+              "var-cache-gomodcache": {
+                "target": "/go/pkg/mod",
+                "id": "gomodcache"
+              }
+            }
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push sk8l-api preview image with sk8l-ui PR bundle
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=ui-preview
+          cache-to: type=gha,mode=min,scope=ui-preview
+          build-args: |
+            UI_IMAGE=ghcr.io/danroux/sk8l-ui:pre-${{ steps.resolve.outputs.pr_number }}
+          push: true
+          tags: |
+            ${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:ui-pr-${{ steps.resolve.outputs.pr_number }}-${{ github.run_number }}
+
+      - name: Checkout sk8l-config
+        uses: actions/checkout@v7
+        with:
+          repository: danroux/sk8l-config
+          path: sk8l-config
+          token: ${{ secrets.CONFIG_REPO_PAT }}
+          ref: master
+
+      - name: Deploy UI Preview Manifest and comment on sk8l-ui PR
+        working-directory: sk8l-config
+        env:
+          GH_TOKEN: ${{ secrets.UI_PREVIEW_PAT || secrets.CONFIG_REPO_PAT }}
+        run: |
+          PR_NUM="${{ steps.resolve.outputs.pr_number }}"
+          APP_NAME="sk8l-ui-pr-${PR_NUM}"
+          NAMESPACE="sk8l-ui-pr-${PR_NUM}"
+          FILE="apps/previews/ui-pr-${PR_NUM}.yaml"
+          API_TAG="ui-pr-${PR_NUM}-${{ github.run_number }}"
+
+          CHART_VERSION=$(yq '.spec.sources[0].targetRevision' apps/sk8l.yaml)
+
+          mkdir -p apps/previews
+
+          sed -e "s|APP_NAME_PLACEHOLDER|${APP_NAME}|g" \
+              -e "s|NAMESPACE_PLACEHOLDER|${NAMESPACE}|g" \
+              -e "s|CHART_VERSION_PLACEHOLDER|${CHART_VERSION}|g" \
+              -e "s|API_IMAGE_PLACEHOLDER|${{ vars.GHCR_SK8L_API_IMAGE_NAME }}|g" \
+              -e "s|API_TAG_PLACEHOLDER|${API_TAG}|g" \
+              manifests/preview-template/application.yaml > "$FILE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$FILE"
+          if ! git diff --staged --quiet; then
+            git commit -m "preview: deploy sk8l-ui PR #${PR_NUM} (${API_TAG})"
+            git pull --rebase origin master
+            git push origin master
+          fi
+
+          COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **UI Image**: \`ghcr.io/danroux/sk8l-ui:pre-%s\`\n- **API Image**: \`%s:%s\`\n\n\`\`\`bash\nwhile ! kubectl -n %s get deployment sk8l-api &>/dev/null; do sleep 3; done && \\\\\nkubectl -n %s rollout status deployment/sk8l-api --timeout=300s && \\\\\nkubectl -n %s port-forward svc/sk8l 8001:8590\n\`\`\`\nUI: https://localhost:8001" \
+            "${NAMESPACE}" "${APP_NAME}" "${CHART_VERSION}" "${PR_NUM}" "${{ vars.GHCR_SK8L_API_IMAGE_NAME }}" "${API_TAG}" "${NAMESPACE}" "${NAMESPACE}" "${NAMESPACE}")
+          gh pr comment "${PR_NUM}" --repo danroux/sk8l-ui --body "${COMMENT_BODY}"
