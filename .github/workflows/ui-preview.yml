@@ -39,6 +39,35 @@ jobs:
           echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
           echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Comment deploying status on sk8l-ui PR
+        env:
+          GH_TOKEN: ${{ secrets.UI_PREVIEW_PAT || secrets.CONFIG_REPO_PAT }}
+          PR_NUM: ${{ steps.resolve.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.resolve.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MARKER="<!-- sk8l-preview -->"
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+
+          {
+            echo "${MARKER}"
+            echo "⏳ **Preview environment deploying...**"
+            echo ""
+            echo "- **Workflow Run**: [${{ github.run_id }}](${RUN_URL})"
+            if [ -n "$HEAD_SHA" ]; then
+              echo "- **UI Commit**: [\`${HEAD_SHA:0:7}\`](https://github.com/danroux/sk8l-ui/commit/${HEAD_SHA})"
+            fi
+            echo "- **Updated**: ${TIMESTAMP}"
+          } > /tmp/preview-comment.md
+
+          COMMENT_ID=$(gh api --paginate "repos/danroux/sk8l-ui/issues/${PR_NUM}/comments?per_page=100" \
+            --jq ".[] | select((.body // \"\") | contains(\"${MARKER}\")) | .id" | head -n 1 || true)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/danroux/sk8l-ui/issues/comments/${COMMENT_ID}" -f body="$(cat /tmp/preview-comment.md)" >/dev/null || true
+          else
+            gh api -X POST "repos/danroux/sk8l-ui/issues/${PR_NUM}/comments" -f body="$(cat /tmp/preview-comment.md)" >/dev/null || true
+          fi
+
       - name: Wait for sk8l-ui preview image in ghcr.io
         timeout-minutes: 10
         env:
@@ -159,6 +188,8 @@ jobs:
         working-directory: sk8l-config
         env:
           GH_TOKEN: ${{ secrets.UI_PREVIEW_PAT || secrets.CONFIG_REPO_PAT }}
+          HEAD_SHA: ${{ steps.resolve.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           PR_NUM="${{ steps.resolve.outputs.pr_number }}"
           APP_NAME="sk8l-ui-pr-${PR_NUM}"
@@ -186,6 +217,69 @@ jobs:
             git push origin master
           fi
 
-          COMMENT_BODY=$(printf "🚀 **Preview environment deployed!**\n\n- **Namespace**: \`%s\`\n- **ArgoCD App**: \`%s\`\n- **Chart Version**: \`%s\`\n- **UI Image**: \`ghcr.io/danroux/sk8l-ui:pre-%s\`\n- **API Image**: \`%s:%s\`\n\n\`\`\`bash\nwhile ! kubectl -n %s get deployment sk8l-api &>/dev/null; do sleep 3; done && \\\\\nkubectl -n %s rollout status deployment/sk8l-api --timeout=300s && \\\\\nkubectl -n %s port-forward svc/sk8l 8001:8590\n\`\`\`\nUI: https://localhost:8001" \
-            "${NAMESPACE}" "${APP_NAME}" "${CHART_VERSION}" "${PR_NUM}" "${{ vars.GHCR_SK8L_API_IMAGE_NAME }}" "${API_TAG}" "${NAMESPACE}" "${NAMESPACE}" "${NAMESPACE}")
-          gh pr comment "${PR_NUM}" --repo danroux/sk8l-ui --body "${COMMENT_BODY}"
+          CONFIG_SHA=$(git log -n 1 --format=%H -- "$FILE")
+          CONFIG_SHORT="${CONFIG_SHA:0:7}"
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+          MARKER="<!-- sk8l-preview -->"
+
+          {
+            echo "${MARKER}"
+            echo "🚀 **Preview environment deployed!**"
+            echo ""
+            echo "- **Workflow Run**: [${{ github.run_id }}](${RUN_URL})"
+            if [ -n "$HEAD_SHA" ]; then
+              echo "- **UI Commit**: [\`${HEAD_SHA:0:7}\`](https://github.com/danroux/sk8l-ui/commit/${HEAD_SHA})"
+            fi
+            echo "- **Config Commit**: [\`${CONFIG_SHORT}\`](https://github.com/danroux/sk8l-config/commit/${CONFIG_SHA}) ([\`${FILE}\`](https://github.com/danroux/sk8l-config/blob/${CONFIG_SHA}/${FILE}))"
+            echo "- **Namespace**: \`${NAMESPACE}\`"
+            echo "- **ArgoCD App**: \`${APP_NAME}\`"
+            echo "- **Chart Version**: \`${CHART_VERSION}\`"
+            echo "- **UI Image**: \`ghcr.io/danroux/sk8l-ui:pre-${PR_NUM}\`"
+            echo "- **API Image**: \`${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:${API_TAG}\`"
+            echo "- **Updated**: ${TIMESTAMP}"
+            echo ""
+            echo '```bash'
+            echo "while ! kubectl -n ${NAMESPACE} get deployment sk8l-api &>/dev/null; do sleep 3; done && \\"
+            echo "kubectl -n ${NAMESPACE} rollout status deployment/sk8l-api --timeout=300s && \\"
+            echo "kubectl -n ${NAMESPACE} port-forward svc/sk8l 8001:8590"
+            echo '```'
+            echo "UI: https://localhost:8001"
+          } > /tmp/preview-comment.md
+
+          COMMENT_ID=$(gh api --paginate "repos/danroux/sk8l-ui/issues/${PR_NUM}/comments?per_page=100" \
+            --jq ".[] | select((.body // \"\") | contains(\"${MARKER}\")) | .id" | head -n 1 || true)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/danroux/sk8l-ui/issues/comments/${COMMENT_ID}" -f body="$(cat /tmp/preview-comment.md)" >/dev/null
+          else
+            gh api -X POST "repos/danroux/sk8l-ui/issues/${PR_NUM}/comments" -f body="$(cat /tmp/preview-comment.md)" >/dev/null
+          fi
+
+      - name: Comment failure status on sk8l-ui PR
+        if: failure() && steps.resolve.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.UI_PREVIEW_PAT || secrets.CONFIG_REPO_PAT }}
+          PR_NUM: ${{ steps.resolve.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.resolve.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MARKER="<!-- sk8l-preview -->"
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+
+          {
+            echo "${MARKER}"
+            echo "❌ **Preview deployment failed.**"
+            echo ""
+            echo "- **Workflow Run**: [${{ github.run_id }}](${RUN_URL})"
+            if [ -n "$HEAD_SHA" ]; then
+              echo "- **UI Commit**: [\`${HEAD_SHA:0:7}\`](https://github.com/danroux/sk8l-ui/commit/${HEAD_SHA})"
+            fi
+            echo "- **Updated**: ${TIMESTAMP}"
+          } > /tmp/preview-comment.md
+
+          COMMENT_ID=$(gh api --paginate "repos/danroux/sk8l-ui/issues/${PR_NUM}/comments?per_page=100" \
+            --jq ".[] | select((.body // \"\") | contains(\"${MARKER}\")) | .id" | head -n 1 || true)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/danroux/sk8l-ui/issues/comments/${COMMENT_ID}" -f body="$(cat /tmp/preview-comment.md)" >/dev/null || true
+          else
+            gh api -X POST "repos/danroux/sk8l-ui/issues/${PR_NUM}/comments" -f body="$(cat /tmp/preview-comment.md)" >/dev/null || true
+          fi
