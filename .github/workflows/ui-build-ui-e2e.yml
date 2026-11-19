@@ -1,0 +1,95 @@
+name: Build sk8l-api e2e image for sk8l-ui
+
+on:
+  workflow_call:
+    inputs:
+      ui_image:
+        description: 'sk8l-ui image to embed (e.g. ghcr.io/danroux/sk8l-ui:pre-472)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Tag for the local sk8l-api image inside the tar (e.g. e2e-pr-472)'
+        required: true
+        type: string
+      artifact_name:
+        description: 'Upload artifact name (e.g. sk8l-api-e2e-472)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sk8l-api
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: danroux/sk8l-api
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        id: setup-buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Cache Go build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: var-cache-gocache
+          key: ${{ runner.os }}-sk8l-api-gocache-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-sk8l-api-gocache-
+
+      - name: Cache Go module cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: var-cache-gomodcache
+          key: ${{ runner.os }}-sk8l-api-gomodcache-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-sk8l-api-gomodcache-
+
+      - name: Inject Go caches into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@v3.4.0
+        with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          utility-image: ghcr.io/containerd/busybox:latest
+          cache-map: |
+            {
+              "var-cache-gocache": {
+                "target": "/root/.cache/go-build",
+                "id": "gocache"
+              },
+              "var-cache-gomodcache": {
+                "target": "/go/pkg/mod",
+                "id": "gomodcache"
+              }
+            }
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build sk8l-api image embedding UI bundle
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            UI_IMAGE=${{ inputs.ui_image }}
+          outputs: type=docker,dest=sk8l-api-e2e.tar
+          tags: |
+            sk8l-api:${{ inputs.image_tag }}
+
+      - name: Upload sk8l-api e2e image tar
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: sk8l-api-e2e.tar
+          retention-days: 1
