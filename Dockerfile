@@ -1,4 +1,4 @@
-ARG UI_IMAGE=danroux/sk8l-ui:v0.21.0
+ARG UI_IMAGE=danroux/sk8l-ui:v0.22.0
 
 FROM --platform=$BUILDPLATFORM ${UI_IMAGE} AS ui
 

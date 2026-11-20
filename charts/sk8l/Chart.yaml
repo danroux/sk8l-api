@@ -1,7 +1,7 @@
 apiVersion: v2
 name: sk8l
-version: 0.29.0
-appVersion: 0.28.0
+version: 0.30.0
+appVersion: 0.29.0
 description: |
   sk8l is a Cronjob/Job monitoring and visualization tool in Kubernetes. It enables users to monitor Cronjob/Job status by collecting metrics from the configured targets and publish them to prometheus.
 icon: https://sk8l.io/charts/logo.png
@@ -24,14 +24,52 @@ maintainers:
 annotations:
   artifacthub.io/images: |
     - name: sk8l-api
-      image: danroux/sk8l-api:v0.25.0
+      image: danroux/sk8l-api:v0.26.0
   artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: "helm: Default tls.enabled to false so sk8l installs out of the box without cert-manager or pre-existing TLS secrets"
+      description: "go: Remove the no-op tls.caSecretName / TLS_CA_FILE client CA support"
     - kind: changed
-      description: "helm: Remove separate UI/Envoy deployment, service, and legacy gRPC/health ports (8585, 8588, 8001, 9080) in favor of unified port 8590"
+      description: "helm: Default service.type is now ClusterIP instead of LoadBalancer; set service.type=LoadBalancer explicitly to keep external exposure"
+    - kind: security
+      description: "api: Disable CORS by default; allow cross-origin callers only through exact origins in SK8L_CORS_ALLOWED_ORIGINS (chart: sk8lApi.corsAllowedOrigins) instead of reflecting any Origin"
+    - kind: security
+      description: "api: Limit Connect request messages to 64 KiB and request headers to 64 KiB, and recover from handler panics with an Internal status"
     - kind: changed
-      description: "go: Embed sk8l-ui static assets via go:embed and serve SPA, Connect/gRPC-Web/gRPC RPCs, metrics, and health probes from a single server on port 8590"
+      description: "api: Expose pod_spec (PodSpecResponse) on CronjobResponse so container resources and scheduling constraints are available on CronJob views"
     - kind: changed
-      description: "go: Support optional TLS (TLS_ENABLED) and unencrypted HTTP/2 (h2c) alongside HTTP/1.1 on port 8590, with configurable tls.secretName and optional tls.caSecretName in Helm"
+      description: "ci: Pin protobuf codegen tool versions and add CI proto-drift verification"
+    - kind: changed
+      description: "go: Detect informer watch errors to degrade /readyz and recover automatically on Kubernetes API Server reconnection"
+    - kind: changed
+      description: "api: Regenerate protobuf/Connect stubs and remove legacy gRPC server implementation from Sk8lServer"
+    - kind: fixed
+      description: "api: Map Kubernetes errors to canonical ConnectRPC status codes and reject un-synced requests during startup API server outages"
+    - kind: fixed
+      description: "go: Cancel active request contexts via BaseContext before HTTP shutdown so open streams exit immediately"
+    - kind: fixed
+      description: "go: Include Pending and Unschedulable Job Pods with nil Status.StartTime in Store.FindJobPodsForJob responses"
+    - kind: fixed
+      description: "go: Replace non-atomic GaugeVec resets with atomic Prometheus metric snapshots, suppress pre-sync zeroes, and debounce metrics refreshes on informer bursts"
+    - kind: fixed
+      description: "go: mark CronJob active when running jobs exist without status.active"
+    - kind: changed
+      description: "ci/dependabot: docker:(deps): bump alpine from 3.24.3 to 3.24.4"
+    - kind: changed
+      description: "ui: Regenerate Connect TypeScript protobuf stubs and display CronJob container resources and nodeSelector in the Overview sidebar"
+    - kind: fixed
+      description: "ui: Guard unscheduled Pods with empty containerStatuses and surface Unschedulable status and messages on Pod, Job, and CronJob rows, Overview, ProgressBar, and JobCounter"
+    - kind: changed
+      description: "ui/ci/dependabot: docker:(deps): bump cypress/included from 16.2.1 to 16.3.0"
+    - kind: changed
+      description: "ui/ci/dependabot: npm:(deps): bump shiki from 4.5.0 to 4.6.0"
+    - kind: changed
+      description: "ui/ci/dependabot: npm:(deps): bump vue-router from 5.4.0 to 5.5.0"
+    - kind: changed
+      description: "ui/ci/dependabot: npm:(deps-dev): bump eslint from 10.13.0 to 10.14.0"
+    - kind: changed
+      description: "ui/ci/dependabot: npm:(deps-dev): bump eslint-plugin-vue from 10.9.0 to 10.12.1"
+    - kind: changed
+      description: "ui/ci/dependabot: npm:(deps-dev): bump eslint-plugin-vuejs-accessibility from 2.5.0 to 2.6.3"
+    - kind: changed
+      description: "ui/ci/dependabot: npm:(deps-dev): bump vue-eslint-parser from 10.4.0 to 10.4.2"

@@ -9,14 +9,14 @@ help: ## This help.
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # Bump these on release
-APP_VERSION ?= 0.28.0
+APP_VERSION ?= 0.29.0
 
 API_VERSION_MAJOR ?= 0
-API_VERSION_MINOR ?= 25
+API_VERSION_MINOR ?= 26
 API_VERSION_PATCH ?= 0
 
 CHART_VERSION_MAJOR ?= 0
-CHART_VERSION_MINOR ?= 29
+CHART_VERSION_MINOR ?= 30
 CHART_VERSION_PATCH ?= 0
 
 API_WITHOUT ?= $(API_VERSION_MAJOR).$(API_VERSION_MINOR).$(API_VERSION_PATCH)
@@ -152,7 +152,7 @@ update-config-files: # update-config-files
 helm-push:
 	helm push charts/repo/sk8l-$(CHART_VER_WO).tgz oci://ghcr.io/danroux/sk8l
 
-UI_VERSION ?= v0.21.0
+UI_VERSION ?= v0.22.0
 
 create-tag: ## Create release git tag
 	git tag -a $(API_VERSION) -m $(API_VERSION)

@@ -1,3 +1,37 @@
+## v0.26.0 (November 20, 2026)
+
+BREAKING CHANGES:
+
+* go: Remove the no-op tls.caSecretName / TLS_CA_FILE client CA support [[GH-360](https://github.com/danroux/sk8l-api/issues/360)]
+* helm: Default service.type is now ClusterIP instead of LoadBalancer; set service.type=LoadBalancer explicitly to keep external exposure [[GH-360](https://github.com/danroux/sk8l-api/issues/360)]
+
+SECURITY:
+
+* api: Disable CORS by default; allow cross-origin callers only through exact origins in SK8L_CORS_ALLOWED_ORIGINS (chart: sk8lApi.corsAllowedOrigins) instead of reflecting any Origin [[GH-360](https://github.com/danroux/sk8l-api/issues/360)]
+* api: Limit Connect request messages to 64 KiB and request headers to 64 KiB, and recover from handler panics with an Internal status [[GH-360](https://github.com/danroux/sk8l-api/issues/360)]
+
+ENHANCEMENTS:
+
+* api: Expose pod_spec (PodSpecResponse) on CronjobResponse so container resources and scheduling constraints are available on CronJob views [[GH-366](https://github.com/danroux/sk8l-api/issues/366)]
+* ci: Pin protobuf codegen tool versions and add CI proto-drift verification [[GH-361](https://github.com/danroux/sk8l-api/issues/361)]
+* go: Detect informer watch errors to degrade /readyz and recover automatically on Kubernetes API Server reconnection [[GH-357](https://github.com/danroux/sk8l-api/issues/357)]
+
+IMPROVEMENTS:
+
+* api: Regenerate protobuf/Connect stubs and remove legacy gRPC server implementation from Sk8lServer [[GH-361](https://github.com/danroux/sk8l-api/issues/361)]
+
+BUG FIXES:
+
+* api: Map Kubernetes errors to canonical ConnectRPC status codes and reject un-synced requests during startup API server outages [[GH-359](https://github.com/danroux/sk8l-api/issues/359)]
+* go: Cancel active request contexts via BaseContext before HTTP shutdown so open streams exit immediately [[GH-365](https://github.com/danroux/sk8l-api/issues/365)]
+* go: Include Pending and Unschedulable Job Pods with nil Status.StartTime in Store.FindJobPodsForJob responses [[GH-366](https://github.com/danroux/sk8l-api/issues/366)]
+* go: Replace non-atomic GaugeVec resets with atomic Prometheus metric snapshots, suppress pre-sync zeroes, and debounce metrics refreshes on informer bursts [[GH-364](https://github.com/danroux/sk8l-api/issues/364)]
+* go: mark CronJob active when running jobs exist without status.active [[GH-368](https://github.com/danroux/sk8l-api/issues/368)]
+
+DEPENDENCIES:
+
+* ci/dependabot: docker:(deps): bump alpine from 3.24.3 to 3.24.4 [[GH-362](https://github.com/danroux/sk8l-api/issues/362)]
+
 ## v0.25.0 (November 08, 2026)
 
 BREAKING CHANGES:
