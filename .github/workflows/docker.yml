@@ -102,7 +102,7 @@ jobs:
             UI_IMAGE=ghcr.io/danroux/sk8l-ui:pre
           push: true
           tags: |
-            ${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:dev-${{ github.sha }}
+            ${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:dev-${{ github.event.pull_request.head.sha || github.sha }}
             ${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:dev-${{ inputs.image_tag }}
   sk8l-image:
     runs-on: ubuntu-latest

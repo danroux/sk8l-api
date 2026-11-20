@@ -52,8 +52,8 @@ jobs:
         if: github.event.action == 'labeled' && github.event.label.name == 'deploy-preview'
         timeout-minutes: 10
         run: |
-          PR_NUM="${{ github.event.pull_request.number }}"
-          IMAGE="ghcr.io/danroux/sk8l-api:dev-${PR_NUM}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          IMAGE="ghcr.io/danroux/sk8l-api:dev-${HEAD_SHA}"
           echo "Waiting for ${IMAGE} to be available in ghcr.io..."
 
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -92,6 +92,7 @@ jobs:
           APP_NAME="sk8l-api-pr-${PR_NUM}"
           NAMESPACE="sk8l-api-pr-${PR_NUM}"
           FILE="apps/previews/api-pr-${PR_NUM}.yaml"
+          API_TAG="dev-${HEAD_SHA}"
 
           CHART_VERSION=$(yq '.spec.sources[0].targetRevision' apps/sk8l.yaml)
 
@@ -101,14 +102,14 @@ jobs:
               -e "s|NAMESPACE_PLACEHOLDER|${NAMESPACE}|g" \
               -e "s|CHART_VERSION_PLACEHOLDER|${CHART_VERSION}|g" \
               -e "s|API_IMAGE_PLACEHOLDER|ghcr.io/danroux/sk8l-api|g" \
-              -e "s|API_TAG_PLACEHOLDER|dev-${PR_NUM}|g" \
+              -e "s|API_TAG_PLACEHOLDER|${API_TAG}|g" \
               manifests/preview-template/application.yaml > "$FILE"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "$FILE"
           if ! git diff --staged --quiet; then
-            git commit -m "preview: deploy sk8l-api PR #${PR_NUM}"
+            git commit -m "preview: deploy sk8l-api PR #${PR_NUM} (${API_TAG})"
             git pull --rebase origin master
             git push origin master
           fi
@@ -130,7 +131,7 @@ jobs:
             echo "- **Namespace**: \`${NAMESPACE}\`"
             echo "- **ArgoCD App**: \`${APP_NAME}\`"
             echo "- **Chart Version**: \`${CHART_VERSION}\`"
-            echo "- **Image (PR)**: \`ghcr.io/danroux/sk8l-api:dev-${PR_NUM}\`"
+            echo "- **Image (PR)**: \`ghcr.io/danroux/sk8l-api:${API_TAG}\`"
             echo "- **Updated**: ${TIMESTAMP}"
             echo ""
             echo '```bash'
