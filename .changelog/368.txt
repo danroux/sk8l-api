@@ -1,0 +1,3 @@
+```release-note:bug
+go: mark CronJob active when running jobs exist without status.active
+```

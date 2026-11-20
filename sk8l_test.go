@@ -1200,3 +1200,87 @@ func TestStreamLoop_DebounceCoalescesRapidNotifications(t *testing.T) {
 		t.Fatal("streamLoop did not terminate on context cancel")
 	}
 }
+
+func TestCronJobResponse_Active(t *testing.T) {
+	s := &Sk8lServer{}
+
+	cases := []struct {
+		cronJob        *batchv1.CronJob
+		name           string
+		jobs           []*batchv1.Job
+		expectedActive bool
+	}{
+		{
+			name: "status.active populated without running jobs",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-scheduled").
+				WithStatus(batchv1.CronJobStatus{
+					Active: []corev1.ObjectReference{{Name: "cj-scheduled-1"}},
+				}).
+				Build(),
+			jobs:           nil,
+			expectedActive: true,
+		},
+		{
+			name: "status.active and a running job",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-scheduled").
+				WithStatus(batchv1.CronJobStatus{
+					Active: []corev1.ObjectReference{{Name: "cj-schedule-1"}},
+				}).
+				Build(),
+			jobs: []*batchv1.Job{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cj-schedule-1"},
+					Status:     batchv1.JobStatus{Active: 1},
+				},
+			},
+			expectedActive: true,
+		},
+		{
+			name: "running job with empty status.active",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-manual").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs: []*batchv1.Job{
+				{
+					Status: batchv1.JobStatus{Active: 1},
+				},
+			},
+			expectedActive: true,
+		},
+		{
+			name: "completed job only",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-done").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs: []*batchv1.Job{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cj-done-1"},
+					Status:     batchv1.JobStatus{Active: 0},
+				},
+			},
+			expectedActive: false,
+		},
+		{
+			name: "no jobs and empty status.active",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-idle").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs:           nil,
+			expectedActive: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := s.cronJobResponse(*tc.cronJob, tc.jobs)
+			if resp.Active != tc.expectedActive {
+				t.Errorf("Active = %v, want %v", resp.Active, tc.expectedActive)
+			}
+		})
+	}
+}

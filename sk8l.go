@@ -751,6 +751,7 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 			break
 		}
 	}
+	isActive := len(cronJob.Status.Active) > 0 || len(runningJobs) > 0
 
 	return &protos.CronjobResponse{
 		Name:               cronJob.Name,
@@ -761,7 +762,7 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 		CreationTimestamp:  cronJob.GetCreationTimestamp().UTC().Format(time.RFC3339),
 		LastSuccessfulTime: lastSuccessfulTime,
 		LastScheduleTime:   lastScheduleTime,
-		Active:             len(cronJob.Status.Active) > 0,
+		Active:             isActive,
 		LastDuration:       lastDuration,
 		CurrentDuration:    currentDuration,
 		Jobs:               allJobsForCronJob,
