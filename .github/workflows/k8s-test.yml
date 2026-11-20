@@ -39,7 +39,7 @@ jobs:
         run: |
           make update-config-files GITHUB_PR_IMAGE_TAG=dev-${{ inputs.image_tag }}
       - name: Setup Kubernetes cluster ${{ inputs.kind_version }}/${{ inputs.k8s_version }}
-        uses: helm/kind-action@v1.15.1
+        uses: helm/kind-action@v1.15.2
         with:
           cluster_name: "sk8l-${{ inputs.kind_version }}-${{ inputs.k8s_version }}-${{ inputs.image_tag }}"
           version: ${{ inputs.kind_version }}
