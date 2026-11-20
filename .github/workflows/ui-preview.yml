@@ -167,14 +167,14 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           cache-from: type=gha,scope=ui-preview
           cache-to: type=gha,mode=min,scope=ui-preview
           build-args: |
             UI_IMAGE=ghcr.io/danroux/sk8l-ui:pre-${{ steps.resolve.outputs.pr_number }}
           push: true
           tags: |
-            ${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:ui-pr-${{ steps.resolve.outputs.pr_number }}-${{ github.run_number }}
+            ${{ vars.GHCR_SK8L_API_IMAGE_NAME }}:ui-preview-pr-${{ steps.resolve.outputs.pr_number }}-${{ github.run_number }}
 
       - name: Checkout sk8l-config
         uses: actions/checkout@v7
@@ -195,7 +195,7 @@ jobs:
           APP_NAME="sk8l-ui-pr-${PR_NUM}"
           NAMESPACE="sk8l-ui-pr-${PR_NUM}"
           FILE="apps/previews/ui-pr-${PR_NUM}.yaml"
-          API_TAG="ui-pr-${PR_NUM}-${{ github.run_number }}"
+          API_TAG="ui-preview-pr-${PR_NUM}-${{ github.run_number }}"
 
           CHART_VERSION=$(yq '.spec.sources[0].targetRevision' apps/sk8l.yaml)
 
