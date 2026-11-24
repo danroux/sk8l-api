@@ -2,16 +2,19 @@
 package ui
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"mime"
 	"net/http"
 	"path"
 	"strings"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -50,7 +53,9 @@ type embeddedAsset struct {
 }
 
 type handler struct {
+	fsys   fs.FS
 	assets map[string]embeddedAsset
+	logger zerolog.Logger
 }
 
 // NewHandler builds an HTTP handler serving the compiled sk8l-ui assets embedded in dist/.
@@ -72,6 +77,7 @@ func NewHandler(k8sNamespace, apiURL string) http.Handler {
 
 // NewHandlerFromFS builds an HTTP handler from fsys, replacing Vite placeholders once in memory.
 func NewHandlerFromFS(fsys fs.FS, k8sNamespace, apiURL string) (http.Handler, error) {
+	logger := log.With().Str("component", logComponent).Logger()
 	effectiveNamespace := k8sNamespace
 	if effectiveNamespace == "" {
 		effectiveNamespace = DefaultClusterWideNamespace
@@ -81,6 +87,8 @@ func NewHandlerFromFS(fsys fs.FS, k8sNamespace, apiURL string) (http.Handler, er
 		PlaceholderAPIURL, apiURL,
 		PlaceholderNamespace, effectiveNamespace,
 	)
+	placeholderAPI := []byte(PlaceholderAPIURL)
+	placeholderNS := []byte(PlaceholderNamespace)
 
 	assets := make(map[string]embeddedAsset)
 	walkErr := fs.WalkDir(fsys, ".", func(relPath string, d fs.DirEntry, err error) error {
@@ -96,15 +104,17 @@ func NewHandlerFromFS(fsys fs.FS, k8sNamespace, apiURL string) (http.Handler, er
 			return fmt.Errorf("read %s: %w", relPath, readErr)
 		}
 
-		if shouldInjectConfig(relPath) {
+		var retained []byte
+		if shouldInjectConfig(relPath) && (bytes.Contains(raw, placeholderAPI) || bytes.Contains(raw, placeholderNS)) {
 			raw = []byte(replacer.Replace(string(raw)))
+			retained = raw
 		}
 
 		sum := sha256.Sum256(raw)
 		assets[relPath] = embeddedAsset{
 			contentType: contentTypeForAsset(relPath, raw),
 			etag:        fmt.Sprintf("%q", hex.EncodeToString(sum[:etagByteLen])),
-			data:        raw,
+			data:        retained,
 		}
 		return nil
 	})
@@ -112,7 +122,7 @@ func NewHandlerFromFS(fsys fs.FS, k8sNamespace, apiURL string) (http.Handler, er
 		return nil, fmt.Errorf("ui: walk embedded assets: %w", walkErr)
 	}
 
-	return &handler{assets: assets}, nil
+	return &handler{fsys: fsys, assets: assets, logger: logger}, nil
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +137,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if asset, ok := h.assets[cleanPath]; ok {
-		serveAsset(w, r, asset, cleanPath == indexFile)
+		h.serveAsset(w, r, cleanPath, asset, cleanPath == indexFile)
 		return
 	}
 
@@ -142,10 +152,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serveAsset(w, r, indexAsset, true)
+	h.serveAsset(w, r, indexFile, indexAsset, true)
 }
 
-func serveAsset(w http.ResponseWriter, r *http.Request, a embeddedAsset, noCache bool) {
+func (h *handler) serveAsset(w http.ResponseWriter, r *http.Request, relPath string, a embeddedAsset, noCache bool) {
 	w.Header().Set(headerContentType, a.contentType)
 	w.Header().Set(headerETag, a.etag)
 	w.Header().Set(headerContentTypeOpt, "nosniff")
@@ -160,13 +170,35 @@ func serveAsset(w http.ResponseWriter, r *http.Request, a embeddedAsset, noCache
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	if _, err := w.Write(a.data); err != nil {
-		log.Error().Err(err).Str("component", logComponent).Str("operation", "serveAsset").Send()
+	if a.data != nil {
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(a.data); err != nil {
+			h.logger.Error().Err(err).Str("operation", "serveAsset").Send()
+		}
+		return
+	}
+
+	f, err := h.fsys.Open(relPath)
+	if err != nil {
+		h.logger.Error().Err(err).Str("path", relPath).Msg("failed to open embedded asset")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			h.logger.Error().Err(closeErr).Str("path", relPath).Msg("failed to close embedded asset")
+		}
+	}()
+
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, f); err != nil {
+		h.logger.Error().Err(err).Str("operation", "serveAsset").Send()
 	}
 }
 

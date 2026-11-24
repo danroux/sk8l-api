@@ -1,0 +1,3 @@
+```release-note:improvement
+go: Stream untouched embedded UI assets directly from embed.FS instead of copying all static files onto the Go heap at startup
+```
