@@ -2,6 +2,9 @@ package ui_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -232,5 +235,101 @@ func TestNewHandler_EmptyEmbeddedDistGraceful404(t *testing.T) {
 	defaultHandler := ui.NewHandler(testUINamespace, "")
 	if defaultHandler == nil {
 		t.Fatal("expected non-nil handler from ui.NewHandler")
+	}
+}
+
+var errSimulatedOpen = errors.New("simulated open error")
+
+type trackingFS struct {
+	fs.FS
+	failErr error
+	opens   map[string]int
+	track   bool
+}
+
+func (t *trackingFS) Open(name string) (fs.File, error) {
+	if t.opens == nil {
+		t.opens = make(map[string]int)
+	}
+
+	if t.track {
+		t.opens[name]++
+		if t.failErr != nil {
+			return nil, t.failErr
+		}
+	}
+
+	f, err := t.FS.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("trackingFS open %s: %w", name, err)
+	}
+	return f, nil
+}
+
+func TestNewHandlerFromFS_StreamsUntouchedAssetsFromFS(t *testing.T) {
+	tfs := &trackingFS{
+		FS: newMockUIFS(),
+	}
+
+	h, err := ui.NewHandlerFromFS(tfs, testUINamespace, "")
+	if err != nil {
+		t.Fatalf("NewHandlerFromFS returned unexpected error: %v", err)
+	}
+
+	tfs.track = true
+
+	if rr := performRequest(t, h, http.MethodGet, testJSAssetPath, nil); rr.Code != http.StatusOK {
+		t.Fatalf("GET %s: expected 200, got %d", testJSAssetPath, rr.Code)
+	}
+	if got := tfs.opens["assets/index-abc123.js"]; got != 0 {
+		t.Errorf("rewritten asset opened from fsys %d times, want 0", got)
+	}
+
+	const untouchedJS = "assets/_plugin-vue_export-helper-def456.js"
+	rr := performRequest(t, h, http.MethodGet, "/"+untouchedJS, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /%s: expected 200, got %d", untouchedJS, rr.Code)
+	}
+	if got := tfs.opens[untouchedJS]; got != 1 {
+		t.Errorf("untouched JS asset opened %d times, want 1", got)
+	}
+
+	if headResp := performRequest(t, h, http.MethodHead, "/"+untouchedJS, nil); headResp.Code != http.StatusOK {
+		t.Fatalf("HEAD %s: expected 200, got %d", untouchedJS, headResp.Code)
+	}
+	notModResp := performRequest(t, h, http.MethodGet, "/"+untouchedJS, map[string]string{
+		"If-None-Match": rr.Header().Get("ETag"),
+	})
+	if notModResp.Code != http.StatusNotModified {
+		t.Fatalf("GET /%s with ETag: expected 304, got %d", untouchedJS, notModResp.Code)
+	}
+	if got := tfs.opens[untouchedJS]; got != 1 {
+		t.Errorf("HEAD/304 should not reopen untouched asset; opens = %d, want 1", got)
+	}
+
+	if icoResp := performRequest(t, h, http.MethodGet, "/favicon.ico", nil); icoResp.Code != http.StatusOK {
+		t.Fatalf("GET /favicon.ico: expected 200, got %d", icoResp.Code)
+	}
+	if got := tfs.opens["favicon.ico"]; got != 1 {
+		t.Errorf("favicon.ico opened %d times, want 1", got)
+	}
+}
+
+func TestNewHandlerFromFS_OpenFailureReturns500(t *testing.T) {
+	tfs := &trackingFS{
+		FS: newMockUIFS(),
+	}
+
+	h, err := ui.NewHandlerFromFS(tfs, testUINamespace, "")
+	if err != nil {
+		t.Fatalf("NewHandlerFromFS returned unexpected error: %v", err)
+	}
+
+	tfs.track = true
+	tfs.failErr = errSimulatedOpen
+
+	rr := performRequest(t, h, http.MethodGet, "/assets/css/modal.vue.css", nil)
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 Internal Server Error on open failure, got %d", rr.Code)
 	}
 }
