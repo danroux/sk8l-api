@@ -1284,3 +1284,162 @@ func TestCronJobResponse_Active(t *testing.T) {
 		})
 	}
 }
+
+func TestCronJobResponse_LastRunStatusAndDuration(t *testing.T) {
+	s := &Sk8lServer{}
+	t0 := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+
+	makeFailedJob := func(name string, created time.Time, durationSec int) *batchv1.Job {
+		start := metav1.NewTime(created)
+		itFailsAt := created.Add(time.Duration(durationSec) * time.Second)
+		failedAt := metav1.NewTime(itFailsAt)
+		return &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              name,
+				Namespace:         "default",
+				CreationTimestamp: start,
+			},
+			Status: batchv1.JobStatus{
+				StartTime: &start,
+				Failed:    1,
+				Conditions: []batchv1.JobCondition{
+					{
+						Type:               batchv1.JobFailed,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: failedAt,
+						Reason:             batchv1.JobReasonBackoffLimitExceeded,
+					},
+				},
+			},
+		}
+	}
+
+	makeSucceededJob := func(name string, created time.Time, durationSec int) *batchv1.Job {
+		start := metav1.NewTime(created)
+		isDoneAt := created.Add(time.Duration(durationSec) * time.Second)
+		done := metav1.NewTime(isDoneAt)
+		return &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              name,
+				Namespace:         "default",
+				CreationTimestamp: start,
+			},
+			Status: batchv1.JobStatus{
+				StartTime:      &start,
+				CompletionTime: &done,
+				Succeeded:      1,
+			},
+		}
+	}
+
+	cases := []struct {
+		cronJob          *batchv1.CronJob
+		name             string
+		jobs             []*batchv1.Job
+		wantLastDuration int64
+		wantFailed       bool
+	}{
+		{
+			name: "run 1 failed then run 2 succeeded clears failed flag",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-recovered").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs: []*batchv1.Job{
+				makeFailedJob("cj-recovered-1", t0, 15),
+				makeSucceededJob("cj-recovered-2", t0.Add(time.Minute), 42),
+			},
+			wantLastDuration: 42,
+			wantFailed:       false,
+		},
+		{
+			name: "run 1 succeeded then run 2 failed sets failed flag",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-regressed").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs: []*batchv1.Job{
+				makeSucceededJob("cj-regressed-1", t0, 20),
+				makeFailedJob("cj-regressed-2", t0.Add(time.Minute), 35),
+			},
+			wantLastDuration: 35,
+			wantFailed:       true,
+		},
+		{
+			name: "run 1 failed and run 2 still active keeps failed flag until completion",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-still-failing").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs: []*batchv1.Job{
+				makeFailedJob("cj-still-failing-1", t0, 15),
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "cj-still-failing-2",
+						Namespace:         "default",
+						CreationTimestamp: metav1.NewTime(t0.Add(time.Minute)),
+					},
+					Status: batchv1.JobStatus{Active: 1},
+				},
+			},
+			wantLastDuration: 15,
+			wantFailed:       true,
+		},
+		{
+			name: "run 1 succeeded and run 2 in retry backoff does not mark failed prematurely",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-retrying").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs: []*batchv1.Job{
+				makeSucceededJob("cj-retrying-1", t0, 25),
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "cj-retrying-2",
+						Namespace:         "default",
+						CreationTimestamp: metav1.NewTime(t0.Add(time.Minute)),
+					},
+					Status: batchv1.JobStatus{Active: 0, Failed: 1},
+				},
+			},
+			wantLastDuration: 25,
+			wantFailed:       false,
+		},
+		{
+			name: "three completed runs returns third run duration instead of second",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-three").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs: []*batchv1.Job{
+				makeSucceededJob("cj-three-1", t0, 10),
+				makeSucceededJob("cj-three-2", t0.Add(time.Minute), 20),
+				makeSucceededJob("cj-three-3", t0.Add(2*time.Minute), 45),
+			},
+			wantLastDuration: 45,
+			wantFailed:       false,
+		},
+		{
+			name: "never-run cronjob is not failed and has zero duration",
+			cronJob: testutil.NewCronJobBuilder().
+				WithName("cj-new").
+				WithStatus(batchv1.CronJobStatus{}).
+				Build(),
+			jobs:             nil,
+			wantLastDuration: 0,
+			wantFailed:       false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := s.cronJobResponse(*tc.cronJob, tc.jobs)
+			if resp.Failed != tc.wantFailed {
+				t.Errorf("Failed = %v, want %v", resp.Failed, tc.wantFailed)
+			}
+			if resp.LastDuration != tc.wantLastDuration {
+				t.Errorf("LastDuration = %d, want %d", resp.LastDuration, tc.wantLastDuration)
+			}
+		})
+	}
+}
