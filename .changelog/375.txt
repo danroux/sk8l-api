@@ -1,0 +1,3 @@
+```release-note:bug
+go: Evaluate CronJob failure status, last run status, and last run duration from the latest finished Job to prevent stuck alerts after recovery and premature failures during retry backoff
+```

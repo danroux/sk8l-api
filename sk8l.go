@@ -46,10 +46,6 @@ const (
 
 	streamDebounceInterval    = 250 * time.Millisecond
 	streamMaxDebounceInterval = 1 * time.Second
-
-	// previousJobOffset is the 1-based offset from the end of the jobs list used to
-	// pick the last completed job when more than one job exists (the latest may be running).
-	previousJobOffset = 2
 )
 
 // serverStream is the minimal server-streaming contract used by Sk8lServer,
@@ -576,7 +572,7 @@ func jobFailed(
 	for i := range job.Status.Conditions {
 		jobCondition := job.Status.Conditions[i]
 		if !failed {
-			if jobCondition.Type == batchv1.JobFailed {
+			if jobCondition.Type == batchv1.JobFailed && jobCondition.Status == corev1.ConditionTrue {
 				failed = true
 				failureCondition = mapper.MapJobCondition(&jobCondition)
 			}
@@ -744,13 +740,7 @@ func (s *Sk8lServer) cronJobResponse(cronJob batchv1.CronJob, jobsForCronjob []*
 	commands := buildCronJobCommand(cronJob)
 	lastSuccessfulTime, lastScheduleTime := buildLastTimes(cronJob)
 
-	var cjFailed bool
-	for _, job := range allJobsForCronJob {
-		if job.Failed {
-			cjFailed = true
-			break
-		}
-	}
+	cjFailed := jobTerminallyFailed(lastFinishedJob(allJobsForCronJob))
 	isActive := len(cronJob.Status.Active) > 0 || len(runningJobs) > 0
 
 	return &protos.CronjobResponse{
@@ -1029,17 +1019,57 @@ func getCurrentDuration(runningJobsForCronJob []*protos.JobResponse) int64 {
 	return lastDuration
 }
 
-func getLastDuration(allJobsForCronJob []*protos.JobResponse) int64 {
-	var lastDuration int64
-	if len(allJobsForCronJob) > 0 {
-		i := 1
-		if len(allJobsForCronJob) > previousJobOffset {
-			i = previousJobOffset
-		}
-		last := allJobsForCronJob[len(allJobsForCronJob)-i]
-		lastDuration = last.DurationInS
+// isJobResponseSucceeded reports whether a Job reached terminal completion.
+func isJobResponseSucceeded(job *protos.JobResponse) bool {
+	if job == nil {
+		return false
 	}
-	return lastDuration
+	return job.Succeeded || (job.Status != nil && job.Status.CompletionTime != "")
+}
+
+// jobTerminallyFailed reports whether a Job reached terminal failure rather than
+// still running or waiting in retry backoff.
+func jobTerminallyFailed(job *protos.JobResponse) bool {
+	if job == nil || isJobResponseSucceeded(job) {
+		return false
+	}
+	if job.Status != nil && job.Status.Active > 0 {
+		return false
+	}
+	if job.FailureCondition != nil {
+		return job.FailureCondition.Status == string(corev1.ConditionTrue)
+	}
+	if job.Status != nil {
+		return false
+	}
+	return job.Failed
+}
+
+// isJobFinished reports whether a Job reached terminal completion or terminal failure.
+func isJobFinished(job *protos.JobResponse) bool {
+	return isJobResponseSucceeded(job) || jobTerminallyFailed(job)
+}
+
+// lastFinishedJob returns the most recent completed or terminally failed Job from
+// a slice sorted ascending by CreationTimestamp, or nil if no Job has finished yet.
+func lastFinishedJob(jobs []*protos.JobResponse) *protos.JobResponse {
+	for i := len(jobs) - 1; i >= 0; i-- {
+		if isJobFinished(jobs[i]) {
+			return jobs[i]
+		}
+	}
+	return nil
+}
+
+func getLastDuration(allJobsForCronJob []*protos.JobResponse) int64 {
+	if latest := lastFinishedJob(allJobsForCronJob); latest != nil {
+		return latest.DurationInS
+	}
+	if len(allJobsForCronJob) > 0 {
+		last := allJobsForCronJob[len(allJobsForCronJob)-1]
+		return last.DurationInS
+	}
+	return 0
 }
 
 func toDuration(job *batchv1.Job, jobFailed bool, failureCondition *protos.JobConditionResponse) time.Duration {

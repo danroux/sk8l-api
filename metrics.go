@@ -130,13 +130,30 @@ type syncWaiter interface {
 // countRetainedJobs calculates the number of succeeded and failed child jobs.
 func countRetainedJobs(jobs []*protos.JobResponse) (succeeded, failed float64) {
 	for _, job := range jobs {
-		if job.Failed {
-			failed++
-		} else if job.Succeeded || (job.Status != nil && job.Status.CompletionTime != "") {
+		if isJobResponseSucceeded(job) {
 			succeeded++
+		} else if jobTerminallyFailed(job) {
+			failed++
 		}
 	}
 	return succeeded, failed
+}
+
+// evaluateLastRunStatus returns the failed and succeeded gauge values (0 or 1) for a CronJob's latest finished run.
+func evaluateLastRunStatus(cj *protos.CronjobResponse) (failedVal, succeededVal float64) {
+	if latest := lastFinishedJob(cj.Jobs); latest != nil {
+		if jobTerminallyFailed(latest) {
+			return float64(metricValueActive), float64(metricValueInactive)
+		}
+		return float64(metricValueInactive), float64(metricValueActive)
+	}
+	if cj.Failed {
+		return float64(metricValueActive), float64(metricValueInactive)
+	}
+	if cj.LastSuccessfulTime != "" {
+		return float64(metricValueInactive), float64(metricValueActive)
+	}
+	return float64(metricValueInactive), float64(metricValueInactive)
 }
 
 // buildSingleCronjobMetrics constructs per-cronjob const metrics and returns state flags.
@@ -156,20 +173,17 @@ func buildSingleCronjobMetrics(cj *protos.CronjobResponse, ns string) (metrics [
 		running = metricValueActive
 	}
 
-	// Failure / Success state
-	failedVal := float64(metricValueInactive)
-	succeededVal := float64(metricValueActive)
-	if cj.Failed {
+	// Failure / Success state of the latest finished execution.
+	failedVal, succeededVal := evaluateLastRunStatus(cj)
+	if failedVal == metricValueActive {
 		failing = metricValueActive
-		failedVal = metricValueActive
-		succeededVal = metricValueInactive
 	}
 	metrics = append(metrics,
 		prometheus.MustNewConstMetric(cronjobLastRunStatusDesc, prometheus.GaugeValue, failedVal, ns, cronjobName, metricStatusFailed),
 		prometheus.MustNewConstMetric(cronjobLastRunStatusDesc, prometheus.GaugeValue, succeededVal, ns, cronjobName, metricStatusSuccess),
 	)
 
-	if !cj.Failed && activeJobsCount == 0 && cj.LastSuccessfulTime != "" {
+	if succeededVal == metricValueActive && activeJobsCount == 0 {
 		completed = metricValueActive
 	}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,8 +12,10 @@ import (
 	"github.com/danroux/sk8l/protos"
 	"github.com/danroux/sk8l/testutil"
 	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -460,5 +463,205 @@ func TestProcessCronjobsResponse_OpenMetrics(t *testing.T) {
 	}
 	if _, ok := cronjobsMap.Load("sync-job"); ok {
 		t.Errorf("expected deleted sync-job to be pruned from cronjobsMap")
+	}
+}
+
+func TestBuildMetricsSnapshot_LastRunTransition(t *testing.T) {
+	const ns = "production"
+	s := Sk8lServer{}
+	t0 := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+	t0Meta := metav1.NewTime(t0)
+	t0Fail := metav1.NewTime(t0.Add(15 * time.Second))
+	t1Meta := metav1.NewTime(t0.Add(time.Minute))
+	t1Done := metav1.NewTime(t0.Add(time.Minute + 42*time.Second))
+
+	recoveredCJ := testutil.NewCronJobBuilder().
+		WithName("nightly-backup").
+		WithNamespace(ns).
+		WithStatus(batchv1.CronJobStatus{LastSuccessfulTime: &t1Done}).
+		Build()
+
+	recoveredResp := s.cronJobResponse(*recoveredCJ, []*batchv1.Job{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "nightly-backup-1", Namespace: ns, CreationTimestamp: t0Meta},
+			Status: batchv1.JobStatus{
+				StartTime: &t0Meta,
+				Failed:    1,
+				Conditions: []batchv1.JobCondition{
+					{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, LastTransitionTime: t0Fail},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly-backup-2", Namespace: ns, CreationTimestamp: t1Meta},
+			Status: batchv1.JobStatus{
+				StartTime:      &t1Meta,
+				CompletionTime: &t1Done,
+				Succeeded:      1,
+			},
+		},
+	})
+
+	neverRunCJ := testutil.NewCronJobBuilder().
+		WithName("brand-new").
+		WithNamespace(ns).
+		WithStatus(batchv1.CronJobStatus{}).
+		Build()
+	neverRunResp := s.cronJobResponse(*neverRunCJ, nil)
+
+	zeroHistoryResp := &protos.CronjobResponse{
+		Name:               "zero-history",
+		Namespace:          ns,
+		LastSuccessfulTime: "2026-11-25T10:05:00Z",
+	}
+
+	cases := []struct {
+		cronjob           *protos.CronjobResponse
+		name              string
+		wantFailed        float64
+		wantSucceeded     float64
+		wantFailingCount  float64
+		wantCompleted     float64
+		wantFailedJobs    float64
+		wantSucceededJobs float64
+	}{
+		{
+			name:              "run 1 failed then run 2 succeeded flips last_run_status while retaining failed job count",
+			cronjob:           recoveredResp,
+			wantFailed:        0,
+			wantSucceeded:     1,
+			wantFailingCount:  0,
+			wantCompleted:     1,
+			wantFailedJobs:    1,
+			wantSucceededJobs: 1,
+		},
+		{
+			name:              "never-run cronjob emits 0 for both failed and succeeded",
+			cronjob:           neverRunResp,
+			wantFailed:        0,
+			wantSucceeded:     0,
+			wantFailingCount:  0,
+			wantCompleted:     0,
+			wantFailedJobs:    0,
+			wantSucceededJobs: 0,
+		},
+		{
+			name:              "successfulJobHistoryLimit 0 falls back to LastSuccessfulTime",
+			cronjob:           zeroHistoryResp,
+			wantFailed:        0,
+			wantSucceeded:     1,
+			wantFailingCount:  0,
+			wantCompleted:     1,
+			wantFailedJobs:    0,
+			wantSucceededJobs: 0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			collector := newRegisteredMetricsCollector(reg)
+			collector.snapshot.Store(buildMetricsSnapshot([]*protos.CronjobResponse{tc.cronjob}, ns, nil))
+
+			name := tc.cronjob.Name
+			assertGauge(t, reg, "sk8l_cronjob_last_run_status", cjStatusLabels(ns, name, "failed"), tc.wantFailed)
+			assertGauge(t, reg, "sk8l_cronjob_last_run_status", cjStatusLabels(ns, name, "succeeded"), tc.wantSucceeded)
+			assertGauge(t, reg, "sk8l_cronjobs_count", nsStatusLabels(ns, "failing"), tc.wantFailingCount)
+			assertGauge(t, reg, "sk8l_cronjobs_count", nsStatusLabels(ns, "completed"), tc.wantCompleted)
+			assertGauge(t, reg, "sk8l_cronjob_jobs_count", cjStatusLabels(ns, name, "failed"), tc.wantFailedJobs)
+			assertGauge(t, reg, "sk8l_cronjob_jobs_count", cjStatusLabels(ns, name, "succeeded"), tc.wantSucceededJobs)
+		})
+	}
+}
+
+func nsStatusLabels(ns, status string) prometheus.Labels {
+	return prometheus.Labels{"namespace": ns, "status": status}
+}
+
+func cjStatusLabels(ns, cronjob, status string) prometheus.Labels {
+	return prometheus.Labels{"namespace": ns, "cronjob": cronjob, "status": status}
+}
+
+func assertGauge(t *testing.T, g prometheus.Gatherer, metric string, labels prometheus.Labels, want float64) {
+	t.Helper()
+	if got := mustGatherMetricValue(t, g, metric, labels); got != want {
+		t.Errorf("%s%v = %v, want %v", metric, labels, got, want)
+	}
+}
+
+func TestMetricsCollector_ExpositionSnapshot(t *testing.T) {
+	const ns = "production"
+	s := &Sk8lServer{}
+	t0 := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+	t0Meta := metav1.NewTime(t0)
+	t0Fail := metav1.NewTime(t0.Add(15 * time.Second))
+	t1Meta := metav1.NewTime(t0.Add(time.Minute))
+	t1Done := metav1.NewTime(t0.Add(time.Minute + 42*time.Second))
+
+	cj := testutil.NewCronJobBuilder().
+		WithName("nightly-backup").
+		WithNamespace(ns).
+		WithSchedule("0 2 * * *").
+		WithStatus(batchv1.CronJobStatus{LastSuccessfulTime: &t1Done}).
+		Build()
+
+	resp := s.cronJobResponse(*cj, []*batchv1.Job{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly-backup-1", Namespace: ns, CreationTimestamp: t0Meta},
+			Status: batchv1.JobStatus{
+				StartTime: &t0Meta,
+				Failed:    1,
+				Conditions: []batchv1.JobCondition{
+					{
+						Type:               batchv1.JobFailed,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: t0Fail,
+						Reason:             batchv1.JobReasonBackoffLimitExceeded,
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly-backup-2", Namespace: ns, CreationTimestamp: t1Meta},
+			Status: batchv1.JobStatus{
+				StartTime:      &t1Meta,
+				CompletionTime: &t1Done,
+				Succeeded:      1,
+			},
+		},
+	})
+
+	collector := newRegisteredMetricsCollector(prometheus.NewPedanticRegistry())
+	collector.snapshot.Store(buildMetricsSnapshot([]*protos.CronjobResponse{resp}, ns, nil))
+
+	expected := `
+# HELP sk8l_cronjob_active_jobs Number of currently active child jobs for a cronjob.
+# TYPE sk8l_cronjob_active_jobs gauge
+sk8l_cronjob_active_jobs{cronjob="nightly-backup",namespace="production"} 0
+# HELP sk8l_cronjob_info Metadata and configuration for a cronjob (constant value of 1).
+# TYPE sk8l_cronjob_info gauge
+sk8l_cronjob_info{cronjob="nightly-backup",namespace="production",schedule="0 2 * * *",suspend="false"} 1
+# HELP sk8l_cronjob_jobs_count Count of retained child jobs for a cronjob by state (succeeded, failed).
+# TYPE sk8l_cronjob_jobs_count gauge
+sk8l_cronjob_jobs_count{cronjob="nightly-backup",namespace="production",status="failed"} 1
+sk8l_cronjob_jobs_count{cronjob="nightly-backup",namespace="production",status="succeeded"} 1
+# HELP sk8l_cronjob_last_run_duration_seconds Duration in seconds of the latest execution of a cronjob.
+# TYPE sk8l_cronjob_last_run_duration_seconds gauge
+sk8l_cronjob_last_run_duration_seconds{cronjob="nightly-backup",namespace="production"} 42
+# HELP sk8l_cronjob_last_run_status Status of the last execution of a cronjob (1 if true, 0 if false).
+# TYPE sk8l_cronjob_last_run_status gauge
+sk8l_cronjob_last_run_status{cronjob="nightly-backup",namespace="production",status="failed"} 0
+sk8l_cronjob_last_run_status{cronjob="nightly-backup",namespace="production",status="succeeded"} 1
+# HELP sk8l_cronjobs_count Current count of cronjobs grouped by namespace and status (registered, running, failing, completed).
+# TYPE sk8l_cronjobs_count gauge
+sk8l_cronjobs_count{namespace="production",status="completed"} 1
+sk8l_cronjobs_count{namespace="production",status="failing"} 0
+sk8l_cronjobs_count{namespace="production",status="registered"} 1
+sk8l_cronjobs_count{namespace="production",status="running"} 0
+`
+
+	if err := promtest.CollectAndCompare(collector, strings.NewReader(expected)); err != nil {
+		t.Errorf("unexpected Prometheus exposition diff:\n%v", err)
 	}
 }
